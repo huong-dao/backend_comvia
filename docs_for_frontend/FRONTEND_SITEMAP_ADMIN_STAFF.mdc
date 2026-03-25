@@ -1,0 +1,346 @@
+# Frontend Sitemap — Admin & Staff (theo backend hiện tại)
+
+Mục tiêu:
+- Chuẩn hóa **route App Router** cho `UserRole.ADMIN` và `UserRole.STAFF` để FE triển khai layout, guard và gọi API đúng.
+- Mỗi route gắn rõ **HTTP API** tương ứng (global prefix API mặc định gốc host, ví dụ `http://localhost:3000`).
+- Nếu cần bản rút gọn để code nhanh:
+  - `FRONTEND_ADMIN_ROUTER_API_MAP.mdc`
+  - `FRONTEND_STAFF_ROUTER_API_MAP.mdc`
+
+Giả định kỹ thuật:
+- Next.js App Router.
+- JWT Bearer (`Authorization`); payload có `role` — FE redirect: `USER` → `/app/...`, `ADMIN` → được vào `/admin/...`, `STAFF` → được vào `/staff/...`.
+- **ADMIN không có quyền** gọi `POST /internal/templates/:templateId/approve|reject` (backend chỉ `@Roles(STAFF)`). Trang duyệt template đặt dưới `/staff/...`.
+
+---
+
+## 1) Cấu trúc route đề xuất
+
+### Khu vực Admin (`UserRole.ADMIN`)
+
+| Route | Mục đích |
+|-------|-----------|
+| `/admin` | Hub: shortcut tới users, workspaces, audit, quick-chat admin, công cụ dev webhook. |
+| `/admin/users` | Danh sách user, khóa/mở khóa tài khoản. |
+| `/admin/workspaces` | Danh sách workspace, disable. |
+| `/admin/audit-logs` | Xem audit log (lọc theo workspace / action). |
+| `/admin/quick-chat/agents` | CRUD cấu hình agent Quick Chat (admin). |
+| `/admin/quick-chat/tools` | Tham chiếu danh sách tool name (read-only). |
+| `/admin/dev/payment-webhook` | Form gửi **mock** payment webhook (môi trường dev / demo). |
+| `/admin/internal-quick-chat` | Playground tạo session / gửi tin / confirm action (role `ADMIN` trên API). |
+
+### Khu vực Staff (`UserRole.STAFF`)
+
+| Route | Mục đích |
+|-------|-----------|
+| `/staff` | Hub staff nội bộ: link tới duyệt template, internal quick chat. |
+| `/staff/templates-review` | Route cha của khu review template nội bộ toàn hệ thống. |
+| `/staff/templates-review/submitted` | Danh sách template `submitted` chờ staff xử lý. |
+| `/staff/templates-review/pending-zalo-approval` | Danh sách template đang ở trạng thái `pending_zalo_approval`. |
+| `/staff/templates-review/approved` | Danh sách template đã `approved` để staff tra cứu nhanh. |
+| `/staff/templates-review/rejected` | Danh sách template đã `rejected` để staff theo dõi và tra cứu lý do từ chối. |
+| `/staff/templates-review/disabled` | Danh sách template đã `disabled`. |
+| `/staff/templates-review/:templateId` | Chi tiết review template + panel thao tác cập nhật trạng thái. |
+| `/staff/templates-review/:templateId/workspace` | Tab/trang chi tiết thông tin workspace của template đang review. |
+| `/staff/templates-review/:templateId/oa` | Tab/trang chi tiết thông tin OA của template đang review. |
+| `/staff/internal-quick-chat` | Internal playground cho staff; có thể nhắm tới workspace mục tiêu mà **không** ngụ ý staff là member của workspace đó. |
+
+**Gợi ý layout:** nhóm route dưới `app/(admin)/admin/...` và `app/(staff)/staff/...` với layout riêng (sidebar, không dùng shell workspace `/app/w/...`).
+
+---
+
+## 2) Ma trận quyền → API
+
+| API | Method | Role |
+|-----|--------|------|
+| `/admin/users` | GET | ADMIN |
+| `/admin/users/:userId/lock` | PATCH body `{ "locked": boolean }` | ADMIN |
+| `/admin/workspaces` | GET | ADMIN |
+| `/admin/workspaces/:workspaceId/disable` | PATCH | ADMIN |
+| `/admin/audit-logs` | GET query `workspaceId?`, `action?`, `limit?` | ADMIN |
+| `/users` | GET | ADMIN |
+| `/topups/webhook` | POST body mock webhook | ADMIN |
+| `/admin/quick-chat/agents` | GET | ADMIN |
+| `/admin/quick-chat/tools` | GET | ADMIN |
+| `/admin/quick-chat/agents/:agentId` | PUT | ADMIN |
+| `/internal/quick-chat/sessions` | POST | ADMIN, STAFF |
+| `/internal/quick-chat/sessions/:sessionId` | GET | ADMIN, STAFF |
+| `/internal/quick-chat/sessions/:sessionId/messages` | POST | ADMIN, STAFF |
+| `/internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm` | POST | ADMIN, STAFF |
+| `/internal/templates/:templateId/approve` | POST body `{ "providerTemplateId"?: string }` | **STAFF** |
+| `/internal/templates/:templateId/reject` | POST body `{ "reason": string }` | **STAFF** |
+
+Ghi chú:
+- `GET /users` và `GET /admin/users` hiện trả dữ liệu user tương đương cho mục đích list; FE có thể chỉ dùng **`GET /admin/users`** cho trang `/admin/users` để gọn namespace.
+- Duyệt template **không** nằm trong `/admin/*` API — staff dùng `/internal/templates/...`.
+
+---
+
+## 3) Route spec — Admin
+
+### `/admin`
+#### Blocks
+- Welcome / role badge.
+- Card links: Users, Workspaces, Audit logs, Quick Chat agents, Internal Quick Chat, Dev webhook.
+
+#### Buttons
+- Điều hướng tới các route con (không gọi API trên hub nếu không cần).
+
+---
+
+### `/admin/users`
+#### Blocks
+- Bảng user: `email`, `fullName`, `role`, `status`, `createdAt`.
+- Hàng động: toggle hoặc nút **Lock** / **Unlock** (map `locked: true` → `status: LOCKED`, `locked: false` → `ACTIVE` theo backend).
+
+#### API
+- List: `GET /admin/users`
+- Lock: `PATCH /admin/users/:userId/lock` + `{ "locked": true | false }`
+
+---
+
+### `/admin/workspaces`
+#### Blocks
+- Bảng workspace: `name`, `slug`, `ownerUserId`, `status`, `createdAt`.
+- Nút **Disable workspace** (xác nhận modal).
+
+#### API
+- List: `GET /admin/workspaces`
+- Disable: `PATCH /admin/workspaces/:workspaceId/disable`
+
+---
+
+### `/admin/audit-logs`
+#### Blocks
+- Thanh lọc: `workspaceId` (optional string), `action` (optional), `limit` (optional number).
+- Bảng log: `createdAt`, `actorUserId`, `action`, `resourceType`, `resourceId`, `metadata` (render JSON rút gọn).
+
+#### API
+- `GET /admin/audit-logs?workspaceId=&action=&limit=`
+
+---
+
+### `/admin/quick-chat/agents`
+#### Blocks
+- Bảng agent: `id`, `name`, `provider`, `active`, …
+- Nút **Chỉnh sửa** → điều hướng `/admin/quick-chat/agents/:agentId` hoặc drawer.
+
+#### API
+- `GET /admin/quick-chat/agents`
+
+---
+
+### `/admin/quick-chat/agents/:agentId`
+#### Blocks
+- Form: `name`, `provider` (`openai` \| `gemini` \| `claude`), `systemPrompt`, `allowedTools` (mảng string), `skills` (optional), `active` (optional boolean).
+
+#### API
+- `PUT /admin/quick-chat/agents/:agentId` + body theo DTO upsert agent.
+
+---
+
+### `/admin/quick-chat/tools`
+#### Blocks
+- Danh sách read-only các tool name (copy-to-clipboard).
+
+#### API
+- `GET /admin/quick-chat/tools`
+
+---
+
+### `/admin/dev/payment-webhook`
+#### Blocks
+- Form mock: `provider`, `eventId`, `topupCode`, `status` (`success` \| `failed`), optional `paymentRef`, `amountInclVat`, `rawPayload`.
+
+#### API
+- `POST /topups/webhook`
+
+---
+
+### `/admin/internal-quick-chat`
+#### Blocks
+- Field `workspaceId` (để tạo session — theo DTO backend).
+- Nút **Tạo session** → hiển thị `sessionId`.
+- Khung chat: gửi message; danh sách action pending → **Confirm** từng `actionId`.
+
+#### API
+- `POST /internal/quick-chat/sessions`
+- `GET /internal/quick-chat/sessions/:sessionId`
+- `POST /internal/quick-chat/sessions/:sessionId/messages`
+- `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
+
+*(Chi tiết body lấy từ DTO `InternalCreateQuickChatSessionDto`, `SendQuickChatMessageDto` trong repo.)*
+
+---
+
+## 4) Route spec — Staff
+
+### `/staff`
+#### Blocks
+- Hub: link **Templates review**, **Internal Quick Chat**.
+- (Optional) số liệu thống kê nội bộ: số template `submitted`, `pending_zalo_approval`, `rejected`.
+
+---
+
+### `/staff/templates-review`
+#### Blocks
+- Shell cha cho toàn bộ khu review.
+- Tabs/menu con:
+  - `Submitted`
+  - `Pending Zalo Approval`
+  - `Approved`
+  - `Rejected`
+  - `Disabled`
+- Filter gợi ý: `status`, `workspace`, `oa`, thời gian tạo/cập nhật.
+
+#### API — hạn chế backend hiện tại
+- Theo `MAIN_RULES`, staff/reviewer là vai trò nội bộ và **không có yêu cầu phải thuộc workspace**.
+- Vì vậy FE **không** nên thiết kế route kiểu `/staff/workspaces/:workspaceId/...`.
+- Backend hiện tại đã có endpoint list nội bộ toàn cục cho staff:
+  - `GET /internal/templates?status=SUBMITTED`
+  - `GET /internal/templates?status=PENDING_ZALO_APPROVAL`
+- FE có thể build queue review trực tiếp từ các API này và mở rộng sang các status khác bằng cùng endpoint `GET /internal/templates?status=...`.
+
+---
+
+### `/staff/templates-review/submitted`
+#### Blocks
+- Danh sách template `submitted`.
+- Default sort: `updatedAt desc`.
+- Row actions:
+  - `Mở chi tiết`
+  - `Chuyển pending_zalo_approval`
+  - `Approve`
+  - `Reject`
+
+#### API
+- `GET /internal/templates?status=SUBMITTED`
+
+---
+
+### `/staff/templates-review/pending-zalo-approval`
+#### Blocks
+- Danh sách template đang `pending_zalo_approval`.
+- Dùng để staff theo dõi các template đang ở bước chờ duyệt phía provider hoặc nội bộ.
+
+#### API
+- `GET /internal/templates?status=PENDING_ZALO_APPROVAL`
+
+---
+
+### `/staff/templates-review/approved`
+#### Blocks
+- Danh sách template đã `approved`.
+- Chủ yếu phục vụ tra cứu, đối soát `providerTemplateId`, kiểm tra workspace/OA.
+
+#### API
+- `GET /internal/templates?status=APPROVED`
+
+---
+
+### `/staff/templates-review/rejected`
+#### Blocks
+- Danh sách template đã `rejected`.
+- Hiển thị nhanh `rejectedReason`.
+
+#### API
+- `GET /internal/templates?status=REJECTED`
+
+---
+
+### `/staff/templates-review/disabled`
+#### Blocks
+- Danh sách template đã `disabled`.
+- Dùng cho tra cứu và xác minh tác động vận hành.
+
+#### API
+- `GET /internal/templates?status=DISABLED`
+
+---
+
+### `/staff/templates-review/:templateId`
+#### Blocks
+- Chi tiết template.
+- Hiển thị rõ:
+  - nội dung template
+  - placeholders
+  - trạng thái hiện tại
+  - thông tin workspace
+  - thông tin OA
+- Form cập nhật trạng thái nội bộ:
+  - **Pending Zalo Approval**
+  - **Approved**
+  - **Rejected**
+  - **Disabled**
+- Form **Approved**: optional `providerTemplateId`.
+- Form **Rejected**: bắt buộc `reason`.
+- Tab links:
+  - `Thông tin workspace` -> `/staff/templates-review/:templateId/workspace`
+  - `Thông tin OA` -> `/staff/templates-review/:templateId/oa`
+
+#### API
+- `GET /internal/templates/:templateId`
+- `POST /internal/templates/:templateId/mark-pending-zalo-approval`
+- `POST /internal/templates/:templateId/approve`
+- `POST /internal/templates/:templateId/reject`
+- `POST /internal/templates/:templateId/disable`
+
+---
+
+### `/staff/templates-review/:templateId/workspace`
+#### Blocks
+- Thông tin workspace của template đang review:
+  - `workspaceId`
+  - `name`
+  - `slug`
+  - `status`
+- Link quay lại màn detail review chính.
+
+#### API
+- Dùng chung `GET /internal/templates/:templateId`
+
+---
+
+### `/staff/templates-review/:templateId/oa`
+#### Blocks
+- Thông tin OA của template đang review:
+  - `oaConnectionId`
+  - `oaId`
+  - `oaName`
+  - `status`
+  - `connectedAt`
+  - `tokenExpiredAt`
+- Link quay lại màn detail review chính.
+
+#### API
+- Dùng chung `GET /internal/templates/:templateId`
+
+---
+
+### `/staff/internal-quick-chat`
+#### Blocks
+- Giống `/admin/internal-quick-chat` (cùng flow UI).
+- `workspaceId` ở đây nên được hiểu là **target workspace context** cho hành động AI, không phải bằng chứng staff thuộc workspace đó.
+
+#### API
+- Giống admin: `/internal/quick-chat/...` với JWT role `STAFF`.
+
+---
+
+## 5) Auth guard gợi ý (FE)
+
+- Sau `POST /auth/login`, đọc `user.role`.
+- Truy cập `/admin/**` → yêu cầu `role === 'ADMIN'`; ngược lại 403 page hoặc redirect `/app`.
+- Truy cập `/staff/**` → yêu cầu `role === 'STAFF'`; `ADMIN` có thể **không** được coi là staff trên các route duyệt template trừ khi backend mở rộng role — hiện tại approve/reject chỉ STAFF.
+- `ADMIN` và `STAFF` đều có thể dùng `/internal/quick-chat/**` theo bảng trên.
+
+---
+
+## 6) Khác biệt với `FRONTEND_SITEMAP_UX.mdc`
+
+File `FRONTEND_SITEMAP_UX.mdc` có mục admin/staff tổng quan; file này **bám sát router + endpoint thực tế** và làm rõ:
+- Route **Quick Chat admin** (`/admin/quick-chat/...`) và **internal playground** (tách route để tránh nhầm với Quick Chat của owner tại `/app/...`).
+- **Duyệt template** đặt tại `/staff/...` vì đây là chức năng nội bộ global cho `STAFF`, không gắn membership workspace.
+- Các router con cho staff review theo từng trạng thái và tab detail `workspace` / `oa`, để FE không bị thiếu page map khi triển khai.
+
+Khi backend bổ sung endpoint mới, cập nhật **mục 2** và **mục 4** của file này cho đồng bộ.

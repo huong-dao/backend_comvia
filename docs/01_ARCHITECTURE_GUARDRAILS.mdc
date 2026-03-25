@@ -1,0 +1,41 @@
+---
+alwaysApply: false
+---
+
+# Architecture Guardrails
+
+## Mục tiêu
+Đảm bảo mở rộng ứng dụng dễ dàng, không phá vỡ các phần hiện có.
+
+## Nguyên tắc phân tầng
+- Tách rõ: `Controller/API` -> `Service/Usecase` -> `Repository/Data access`.
+- Không để business logic quan trọng nằm ở controller.
+- Không để query trực tiếp rải rác nhiều nơi cho cùng một nghiệp vụ.
+
+## Ranh giới module
+- Không truy cập chéo dữ liệu module theo kiểu "đi tắt" bỏ qua service trung gian.
+- Giao tiếp liên module qua interface/service rõ ràng.
+- Tránh phụ thuộc vòng tròn giữa module.
+
+## Quy tắc dữ liệu lõi
+- Mọi dữ liệu nghiệp vụ theo workspace phải có `workspace_id`.
+- Mọi biến động ví phải đi qua transaction log.
+- Invoice phải giữ snapshot billing info tại thời điểm tạo.
+- Payment callback phải idempotent.
+
+## Quy tắc mở rộng
+- Thiết kế theo hướng "additive first": thêm mới trước, bỏ cũ sau.
+- Dùng feature flag cho thay đổi rủi ro cao nếu cần rollout dần.
+- Không đổi tên field/public contract tùy tiện khi chưa có migration plan.
+
+## Tính nhất quán
+- Tất cả luồng gửi tin (test/single/campaign/API) dùng chung bộ validation cốt lõi:
+  - workspace active
+  - OA connected
+  - template approved
+  - đủ credit
+
+## Cấm
+- Cập nhật số dư ví trực tiếp.
+- Tạo logic VAT mâu thuẫn với `MAIN_RULES`.
+- Tạo nhiều nguồn sự thật cho cùng một trạng thái nghiệp vụ.

@@ -1,0 +1,225 @@
+# Frontend Staff Router -> API Map
+
+Mục tiêu:
+- Bản rút gọn để team frontend code nhanh khu vực `STAFF`.
+- Chỉ tập trung vào: route nào gọi API nào, action nào dùng endpoint nào.
+
+Phạm vi:
+- Áp dụng cho `UserRole.STAFF`.
+- Staff là vai trò nội bộ global, **không yêu cầu** thuộc workspace.
+
+---
+
+## 1) Router map tổng quát
+
+| Router | API load chính | API action chính |
+|-------|-----------------|------------------|
+| `/staff` | Chưa có API dashboard riêng. Có thể dùng `GET /internal/templates?status=SUBMITTED&limit=10` để làm số liệu/preview tạm. | Không có |
+| `/staff/templates-review` | Không cần route data riêng; nên redirect/tab tới `submitted` mặc định. | Không có |
+| `/staff/templates-review/submitted` | `GET /internal/templates?status=SUBMITTED` | Từ row có thể gọi detail hoặc action ở màn detail |
+| `/staff/templates-review/pending-zalo-approval` | `GET /internal/templates?status=PENDING_ZALO_APPROVAL` | Từ row có thể vào detail |
+| `/staff/templates-review/approved` | `GET /internal/templates?status=APPROVED` | Không bắt buộc action |
+| `/staff/templates-review/rejected` | `GET /internal/templates?status=REJECTED` | Không bắt buộc action |
+| `/staff/templates-review/disabled` | `GET /internal/templates?status=DISABLED` | Không bắt buộc action |
+| `/staff/templates-review/:templateId` | `GET /internal/templates/:templateId` | `mark-pending-zalo-approval`, `approve`, `reject`, `disable` |
+| `/staff/templates-review/:templateId/workspace` | `GET /internal/templates/:templateId` | Không có |
+| `/staff/templates-review/:templateId/oa` | `GET /internal/templates/:templateId` | Không có |
+| `/staff/internal-quick-chat` | `POST /internal/quick-chat/sessions` -> `GET /internal/quick-chat/sessions/:sessionId` | `POST /internal/quick-chat/sessions/:sessionId/messages`, `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm` |
+
+---
+
+## 2) Queue pages
+
+### `/staff/templates-review/submitted`
+- Load:
+  - `GET /internal/templates?status=SUBMITTED`
+- Query gợi ý:
+  - `keyword`
+  - `workspaceId`
+  - `oaId`
+  - `limit`
+
+### `/staff/templates-review/pending-zalo-approval`
+- Load:
+  - `GET /internal/templates?status=PENDING_ZALO_APPROVAL`
+
+### `/staff/templates-review/approved`
+- Load:
+  - `GET /internal/templates?status=APPROVED`
+
+### `/staff/templates-review/rejected`
+- Load:
+  - `GET /internal/templates?status=REJECTED`
+
+### `/staff/templates-review/disabled`
+- Load:
+  - `GET /internal/templates?status=DISABLED`
+
+### Response fields nên render ở list
+- `id`
+- `name`
+- `code`
+- `status`
+- `providerTemplateId`
+- `rejectedReason`
+- `createdAt`
+- `updatedAt`
+- `workspace.id`
+- `workspace.name`
+- `workspace.slug`
+- `workspace.status`
+- `oaConnection.id`
+- `oaConnection.oaId`
+- `oaConnection.oaName`
+- `oaConnection.status`
+
+---
+
+## 3) Detail page
+
+### `/staff/templates-review/:templateId`
+- Load:
+  - `GET /internal/templates/:templateId`
+
+### Response fields nên render ở detail
+- `id`
+- `name`
+- `code`
+- `content`
+- `placeholdersJson`
+- `providerTemplateId`
+- `status`
+- `rejectedReason`
+- `createdAt`
+- `updatedAt`
+- `workspace`
+  - `id`
+  - `name`
+  - `slug`
+  - `status`
+  - `ownerUserId`
+- `oaConnection`
+  - `id`
+  - `oaId`
+  - `oaName`
+  - `status`
+  - `tokenExpiredAt`
+  - `connectedAt`
+- `submissions`
+  - `id`
+  - `status`
+  - `providerResponse`
+  - `reason`
+  - `createdAt`
+
+---
+
+## 4) Detail actions
+
+### Chuyển sang pending zalo approval
+- API:
+  - `POST /internal/templates/:templateId/mark-pending-zalo-approval`
+- Body:
+  - không cần body
+
+### Approve
+- API:
+  - `POST /internal/templates/:templateId/approve`
+- Body:
+```json
+{
+  "providerTemplateId": "ZALO_TPL_123"
+}
+```
+
+### Reject
+- API:
+  - `POST /internal/templates/:templateId/reject`
+- Body:
+```json
+{
+  "reason": "Nội dung chưa đúng guideline"
+}
+```
+
+### Disable
+- API:
+  - `POST /internal/templates/:templateId/disable`
+- Body:
+  - không cần body
+
+### Response write action nên dùng chung
+```json
+{
+  "id": "TEMPLATE_ID",
+  "status": "APPROVED",
+  "providerTemplateId": "ZALO_TPL_123",
+  "rejectedReason": null,
+  "updatedAt": "2026-03-24T10:00:00.000Z"
+}
+```
+
+---
+
+## 5) Workspace/OA tabs
+
+### `/staff/templates-review/:templateId/workspace`
+- Không gọi API riêng.
+- Dùng lại dữ liệu từ:
+  - `GET /internal/templates/:templateId`
+- Chỉ render block `workspace`.
+
+### `/staff/templates-review/:templateId/oa`
+- Không gọi API riêng.
+- Dùng lại dữ liệu từ:
+  - `GET /internal/templates/:templateId`
+- Chỉ render block `oaConnection`.
+
+---
+
+## 6) Internal Quick Chat
+
+### Tạo session
+- API:
+  - `POST /internal/quick-chat/sessions`
+- Body:
+```json
+{
+  "workspaceId": "WS_ID",
+  "title": "Staff review helper"
+}
+```
+
+### Lấy session
+- API:
+  - `GET /internal/quick-chat/sessions/:sessionId`
+
+### Gửi message
+- API:
+  - `POST /internal/quick-chat/sessions/:sessionId/messages`
+- Body tối giản:
+```json
+{
+  "message": "Xem template pending hôm nay"
+}
+```
+
+### Confirm action
+- API:
+  - `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
+
+---
+
+## 7) Gợi ý code frontend
+
+- Dùng 1 shared page component cho các route:
+  - `submitted`
+  - `pending-zalo-approval`
+  - `approved`
+  - `rejected`
+  - `disabled`
+- Chỉ thay giá trị `status` khi gọi `GET /internal/templates`.
+- Với `workspace` và `oa` page, không cần fetch riêng nếu đã có dữ liệu detail.
+- Nếu detail action thành công:
+  - reload `GET /internal/templates/:templateId`
+  - đồng thời có thể refresh lại list page hiện tại.

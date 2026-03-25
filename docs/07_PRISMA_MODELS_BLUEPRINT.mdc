@@ -1,0 +1,158 @@
+---
+alwaysApply: false
+---
+
+# Prisma Models Blueprint
+
+## Mục tiêu
+Bản thiết kế nhanh cho Prisma model (field chính, unique/index, quan hệ).
+
+## 1) User và xác thực
+
+### `User`
+- Khóa chính: `id`
+- Trường chính: `email`, `phone`, `fullName`, `avatarUrl`, `status`, `lastActiveWorkspaceId`
+- Ràng buộc:
+  - `email` unique (nullable)
+  - `phone` unique (nullable)
+- Quan hệ:
+  - 1-n với `UserSession`
+  - 1-n với `LoginLog`
+  - 1-n với `Workspace` (as owner)
+  - n-n với `Workspace` qua `WorkspaceMember`
+
+### `OtpRequest`
+- Trường chính: `targetType`, `targetValue`, `purpose`, `otpCodeHash`, `expiredAt`, `usedAt`, `attemptCount`, `status`
+- Index: `(targetType, targetValue, purpose, status)`
+
+### `UserSession`
+- Trường chính: `userId`, `refreshTokenHash`, `deviceInfo`, `ipAddress`, `expiredAt`, `revokedAt`
+- Index: `userId`, `expiredAt`
+
+## 2) Workspace và thành viên
+
+### `Workspace`
+- Trường chính: `id`, `name`, `slug`, `logoUrl`, `ownerUserId`, `status`
+- Ràng buộc:
+  - `slug` unique (nếu sử dụng)
+- Quan hệ:
+  - n-1 với `User` (owner)
+  - 1-1 với `WorkspaceBillingProfile`
+  - 1-n với `WorkspaceMember`
+  - 1-n với `WorkspaceInvitation`
+  - 1-n với dữ liệu nghiệp vụ (template, campaign, order, invoice, v.v.)
+
+### `WorkspaceBillingProfile`
+- Trường chính: `workspaceId`, `billingType`, dữ liệu tổ chức/cá nhân
+- Quan hệ: 1-1 với `Workspace`
+
+### `WorkspaceMember`
+- Trường chính: `workspaceId`, `userId`, `role`, `status`, `joinedAt`
+- Ràng buộc:
+  - unique `(workspaceId, userId)`
+
+### `WorkspaceInvitation`
+- Trường chính: `workspaceId`, `inviteType`, `inviteValue`, `role`, `status`, `token`, `expiredAt`
+- Index: `workspaceId`, `status`
+
+## 3) Wallet, topup, giao dịch tài chính
+
+### `WalletAccount`
+- Trường chính: `ownerUserId`, `balance`, `totalTopup`, `totalSpent`, `totalRefund`
+- Ràng buộc: unique `ownerUserId`
+
+### `WalletTransaction`
+- Trường chính: `transactionCode`, `ownerUserId`, `workspaceId`, `type`, `amount`, `balanceBefore`, `balanceAfter`, `sourceType`, `sourceId`
+- Ràng buộc:
+  - `transactionCode` unique
+- Index:
+  - `(ownerUserId, createdAt)`
+  - `(workspaceId, createdAt)`
+  - `(sourceType, sourceId)`
+
+### `TopupRequest`
+- Trường chính: `topupCode`, `ownerUserId`, `workspaceId`, `amountExclVat`, `vatAmount`, `amountInclVat`, `paymentProvider`, `paymentRef`, `qrContent`, `status`
+- Ràng buộc:
+  - `topupCode` unique
+  - `qrContent` unique
+- Index:
+  - `(workspaceId, createdAt)`
+  - `(paymentProvider, paymentRef)`
+
+### `PaymentWebhookLog`
+- Trường chính: `provider`, `eventId`, `topupRequestId`, `rawPayload`, `status`, `processedAt`
+- Ràng buộc:
+  - unique `(provider, eventId)` nếu có event id
+
+## 4) Order và invoice
+
+### `Order`
+- Trường chính: `orderCode`, `workspaceId`, `ownerUserId`, `orderType`, `currency`, `totalAmountExclVat`, `totalVatAmount`, `totalAmountInclVat`, `status`, `paidAt`
+- Ràng buộc: `orderCode` unique
+
+### `OrderItem`
+- Trường chính: `orderId`, `name`, `quantity`, `unitPrice`, `vatRate`, `vatAmount`, `totalAmountInclVat`
+- Quan hệ: n-1 với `Order`
+
+### `Invoice`
+- Trường chính: `invoiceCode`, `invoiceNumber`, `workspaceId`, `orderId`, `billingType`, `billingSnapshotJson`, `status`, `issueDate`, `pdfUrl`
+- Ràng buộc:
+  - `invoiceCode` unique
+  - `orderId` unique (1 order topup -> 1 invoice)
+
+### `InvoiceItem`
+- Trường chính: `invoiceId`, `name`, `quantity`, `unitPrice`, `vatRate`, `vatAmount`, `totalAmountInclVat`
+- Quan hệ: n-1 với `Invoice`
+
+## 5) OA, template, messaging
+
+### `WorkspaceOaConnection`
+- Trường chính: `workspaceId`, `oaId`, `oaName`, `accessToken`, `refreshToken`, `tokenExpiredAt`, `status`, `connectedAt`
+- Ràng buộc:
+  - unique `workspaceId` (phase hiện tại 1 workspace = 1 OA)
+
+### `Template`
+- Trường chính: `workspaceId`, `oaConnectionId`, `name`, `code`, `content`, `placeholdersJson`, `providerTemplateId`, `status`, `rejectedReason`
+- Ràng buộc:
+  - unique `(workspaceId, code)`
+- Index:
+  - `(workspaceId, status)`
+
+### `MessageLog`
+- Trường chính: `workspaceId`, `oaConnectionId`, `templateId`, `sendType`, `phoneNumber`, `payloadSnapshot`, `status`, `errorCode`, `providerMessageId`, `costAtTime`, `walletTransactionId`
+- Index:
+  - `(workspaceId, sentAt)`
+  - `(templateId, sentAt)`
+  - `(phoneNumber, sentAt)`
+
+### `Campaign`
+- Trường chính: `workspaceId`, `oaConnectionId`, `templateId`, `name`, `status`, `totalData`, `totalValid`, `totalInvalid`, `totalPending`, `totalSuccess`, `totalFailed`, `unitPriceAtCreate`, `estimatedTotalAmount`
+
+### `CampaignRow`
+- Trường chính: `campaignId`, `phoneNumber`, `payloadData`, `status`, `failureReason`, `providerMessageId`, `retryCount`, `walletTransactionId`, `messageLogId`
+- Index:
+  - `(campaignId, status)`
+  - `(campaignId, phoneNumber)`
+
+## 6) API key, audit, notification
+
+### `ApiKey`
+- Trường chính: `workspaceId`, `name`, `keyPrefix`, `keyHash`, `status`, `lastUsedAt`, `createdBy`
+- Ràng buộc:
+  - `keyHash` unique
+- Index:
+  - `(workspaceId, status)`
+
+### `AuditLog`
+- Trường chính: `actorUserId`, `workspaceId`, `action`, `resourceType`, `resourceId`, `metadataJson`, `createdAt`
+- Index:
+  - `(workspaceId, createdAt)`
+  - `(action, createdAt)`
+
+### `NotificationLog`
+- Trường chính: `channel`, `recipient`, `eventType`, `status`, `payloadJson`, `sentAt`
+
+## Ghi chú triển khai Prisma
+- Tất cả model nên có `createdAt`, `updatedAt`, `deletedAt` (nếu soft delete).
+- Dùng `Decimal` cho tiền.
+- Dùng `Json` cho snapshot/payload linh hoạt.

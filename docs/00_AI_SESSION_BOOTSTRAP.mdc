@@ -1,0 +1,51 @@
+---
+alwaysApply: false
+---
+
+# AI Session Bootstrap
+
+## Mục đích
+Checklist bắt buộc ở đầu mỗi phiên để AI không đi sai hướng khi code.
+
+## Quy trình đọc tài liệu mỗi phiên
+
+### Bước 1 - Đọc bắt buộc (luôn đọc, theo đúng thứ tự)
+1. `docs/MAIN_RULES.mdc`
+2. `docs/00_AI_SESSION_BOOTSTRAP.mdc`
+3. `docs/01_ARCHITECTURE_GUARDRAILS.mdc`
+4. `docs/02_CODING_CONVENTIONS.mdc`
+5. `docs/03_DELIVERY_WORKFLOW.mdc`
+6. `docs/05_CHANGE_IMPACT_RULES.mdc`
+7. `docs/11_THIRD_PARTY_API_BOUNDARY.mdc`
+
+### Bước 2 - Đọc theo ngữ cảnh task
+- Nếu có sửa logic nghiệp vụ/luồng chính: đọc thêm `docs/04_TEST_QA_CHECKLIST.mdc`.
+- Nếu có làm việc với module tích hợp ngoài (payment/OA/messaging/notification): đọc bắt buộc `docs/11_THIRD_PARTY_API_BOUNDARY.mdc`.
+- Nếu có sửa DB/Prisma/schema/migration: đọc thêm toàn bộ nhóm dữ liệu:
+  - `docs/06_DATA_MODEL_OVERVIEW.mdc`
+  - `docs/07_PRISMA_MODELS_BLUEPRINT.mdc`
+  - `docs/08_RELATIONSHIP_MAP.mdc`
+  - `docs/09_ENUMS_AND_STATUS_MATRIX.mdc`
+  - `docs/10_PRISMA_MIGRATION_GUIDELINES.mdc`
+
+### Bước 3 - Tự xác nhận trước khi code
+- Đã xác định đúng module nghiệp vụ trong `MAIN_RULES`.
+- Đã xác định rõ phạm vi thay đổi (API/service/DB/job/docs).
+- Đã liệt kê rủi ro ảnh hưởng chéo module.
+- Đã biết checklist test cần chạy cho thay đổi này.
+
+## Cam kết bắt buộc của AI
+- Không code trước khi xác nhận đã hiểu module liên quan trong `MAIN_RULES`.
+- Không tự ý đổi business rule cốt lõi (wallet, VAT, idempotency, template/campaign).
+- Mọi thay đổi phải giữ backward compatibility nếu chưa có yêu cầu breaking change.
+- Mọi thay đổi liên quan tiền/credit/invoice phải có kiểm tra idempotency và audit log.
+- Nếu yêu cầu mơ hồ, phải hỏi rõ trước khi triển khai phần ảnh hưởng dữ liệu thật.
+
+## Quy tắc triển khai an toàn
+- Ưu tiên thay đổi nhỏ, theo từng bước, dễ rollback.
+- Không gộp refactor lớn với thay đổi business logic trong cùng một lần sửa.
+- Có thay đổi logic thì phải cập nhật tài liệu tương ứng trong `docs/`.
+
+## Định dạng phản hồi khi làm việc
+- Nêu rõ: phạm vi, file thay đổi, ảnh hưởng, rủi ro.
+- Nếu chưa test được end-to-end, phải nói rõ phần nào chưa verify.

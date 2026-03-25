@@ -1,0 +1,37 @@
+---
+alwaysApply: false
+---
+
+# Prisma Migration Guidelines
+
+## Mục tiêu
+Đảm bảo migration an toàn, dễ rollback và không phá dữ liệu cũ.
+
+## Quy tắc chung
+- Ưu tiên migration "mở rộng trước, chuyển đổi sau, dọn dẹp cuối".
+- Tránh migration phá hủy dữ liệu khi chưa có backup/plan.
+- Mọi thay đổi schema tài chính phải có đánh giá impact riêng.
+
+## Quy trình đề xuất
+1. Thêm cột/bảng mới ở trạng thái tương thích ngược.
+2. Backfill dữ liệu (nếu cần).
+3. Deploy code đọc được cả cũ và mới (giai đoạn chuyển tiếp).
+4. Chuyển write path sang schema mới.
+5. Dọn field cũ ở migration sau.
+
+## Ràng buộc dữ liệu cần thận trọng
+- Unique constraint trên dữ liệu lớn: kiểm tra trùng trước khi thêm.
+- Foreign key mới: bảo đảm dữ liệu hiện hữu không orphan.
+- Enum mới: cập nhật mapping đầy đủ ở service layer.
+
+## Với bảng tài chính
+- Không sửa/xóa dữ liệu lịch sử tùy tiện.
+- Không cập nhật trực tiếp wallet balance qua migration script.
+- Giữ nguyên khả năng audit/reconciliation.
+
+## Checklist trước khi chạy migration
+- [ ] Có backup DB hoặc kế hoạch rollback.
+- [ ] Có script kiểm tra dữ liệu bất thường trước migration.
+- [ ] Có kiểm tra idempotency cho callback/payment sau thay đổi.
+- [ ] Có kiểm tra các index quan trọng cho truy vấn chính.
+- [ ] Có cập nhật docs data model tương ứng.

@@ -1,0 +1,35 @@
+---
+alwaysApply: false
+---
+
+# Delivery Workflow
+
+## Mục tiêu
+Quy trình chuẩn khi AI thực hiện thay đổi để giảm sai sót.
+
+## Quy trình 7 bước
+1. Đọc `MAIN_RULES` và xác định module liên quan.
+2. Xác định phạm vi thay đổi (API, service, DB, job, docs).
+3. Liệt kê rủi ro hồi quy theo nghiệp vụ.
+4. Triển khai thay đổi nhỏ theo từng cụm logic.
+5. Tự rà soát consistency với business rules cốt lõi.
+6. Chạy kiểm tra phù hợp (lint/test nếu có thể).
+7. Báo cáo kết quả + phần chưa verify.
+
+## Definition of Done (DoD)
+- Đúng business rule gốc.
+- Không phá vỡ workflow cũ.
+- Có cập nhật docs nếu logic thay đổi.
+- Có nêu rõ impact và kế hoạch test.
+
+## Quy tắc khi sửa logic tài chính/gửi tin
+- Mô tả rõ trước/sau cho các điểm:
+  - điều kiện chạy
+  - điều kiện fail
+  - điểm trừ credit
+  - điểm refund
+  - trạng thái cập nhật
+
+## Quy tắc scope
+- Không sửa ngoài phạm vi yêu cầu nếu không bắt buộc.
+- Nếu phát hiện việc cần làm thêm để an toàn, nêu đề xuất riêng.

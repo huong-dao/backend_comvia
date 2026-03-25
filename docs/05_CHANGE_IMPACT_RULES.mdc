@@ -1,0 +1,39 @@
+---
+alwaysApply: false
+---
+
+# Change Impact Rules
+
+## Mục tiêu
+Đánh giá ảnh hưởng trước khi merge để tránh lỗi dây chuyền.
+
+## 1) Impact Map bắt buộc
+Mỗi thay đổi cần tự đối chiếu các vùng:
+- Authentication / Session
+- Workspace context
+- Wallet / Topup / Payment
+- Order / Invoice
+- OA / Template
+- Messaging / Campaign
+- Public API / API key
+- Admin / Jobs / Notification / Audit
+
+## 2) Các câu hỏi bắt buộc
+- Thay đổi này có ảnh hưởng luồng trừ tiền/hoàn tiền không?
+- Có khả năng tạo dữ liệu trùng khi retry/webhook lặp không?
+- Có thay đổi trạng thái nghiệp vụ nào không?
+- Có ảnh hưởng tương thích ngược API/DB không?
+- Có cần migration hoặc backfill dữ liệu không?
+
+## 3) Điều kiện cần dừng và hỏi lại
+- Yêu cầu mâu thuẫn với `MAIN_RULES`.
+- Cần breaking change nhưng chưa có kế hoạch rollout.
+- Chưa rõ rule nghiệp vụ tài chính nhưng phải sửa logic tiền.
+
+## 4) Rule an toàn khi refactor
+- Refactor thuần cấu trúc không đổi hành vi phải tách commit/lần sửa riêng.
+- Nếu vừa refactor vừa đổi logic, phải nêu rõ từng phần và rủi ro.
+
+## 5) Tài liệu đi kèm
+- Mọi thay đổi rule phải cập nhật docs trong cùng phiên.
+- Nếu phát sinh quy ước mới, thêm vào file `.mdc` phù hợp ngay.

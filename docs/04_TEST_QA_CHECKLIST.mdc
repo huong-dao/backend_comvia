@@ -1,0 +1,44 @@
+---
+alwaysApply: false
+---
+
+# Test and QA Checklist
+
+## Mục tiêu
+Checklist kiểm thử tối thiểu để tránh lỗi chéo module.
+
+## A. Auth và Workspace
+- Đăng ký/verify/login hoạt động đúng.
+- User chưa có workspace bị buộc tạo workspace.
+- Switch workspace cập nhật context đúng.
+
+## B. Billing và Topup
+- Breakdown trước VAT/VAT/tổng tiền hiển thị đúng.
+- Webhook lặp không cộng tiền 2 lần.
+- Topup thành công tạo đủ wallet transaction + order + invoice.
+
+## C. Wallet
+- Không có đường cập nhật balance trực tiếp.
+- Mọi biến động đều có transaction log.
+- Member thao tác vẫn trừ ví owner.
+
+## D. OA / Template / Messaging
+- OA disconnected thì chặn gửi tin.
+- Template chưa approved thì chặn test/single/campaign.
+- Campaign preflight check đúng credit/OA/template/workspace.
+
+## E. Campaign Billing
+- Đủ credit mới được chạy.
+- Khi chạy trừ trước toàn bộ.
+- Kết thúc có refund failed rows đúng.
+- Không retry success rows.
+
+## F. Public API
+- Xác định workspace từ API key đúng.
+- Disable key thì request bị từ chối.
+- Gửi API tuân thủ cùng rule như giao diện nội bộ.
+
+## G. Regression và Observability
+- Các log chính có ghi nhận đủ context.
+- Không lộ dữ liệu nhạy cảm trong log.
+- Các trạng thái nghiệp vụ không bị lệch sau thay đổi.

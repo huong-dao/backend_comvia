@@ -1,0 +1,41 @@
+---
+alwaysApply: false
+---
+
+# Coding Conventions
+
+## Mục tiêu
+Chuẩn hóa cách code để maintain dài hạn và giảm bug hồi quy.
+
+## Quy ước đặt tên
+- Tên hàm/biến rõ nghĩa nghiệp vụ, không viết tắt khó hiểu.
+- Trạng thái nghiệp vụ dùng enum/hằng số tập trung, không hard-code rải rác.
+- Event/action name theo mẫu nhất quán (vd: `topup_paid`, `campaign_completed`).
+
+## Quy tắc xử lý lỗi
+- Không swallow error.
+- Lỗi nghiệp vụ trả thông điệp rõ ràng, có mã lỗi ổn định.
+- Lỗi hệ thống phải log đủ context để truy vết.
+
+## Logging bắt buộc
+- Các luồng quan trọng phải log có cấu trúc:
+  - auth/login
+  - wallet/topup
+  - order/invoice
+  - message send
+  - campaign run/refund
+  - API key usage
+- Không log dữ liệu nhạy cảm (secret, token đầy đủ, thông tin cá nhân quá mức).
+
+## Validation
+- Validate đầu vào ở ranh giới API.
+- Validate nghiệp vụ tại service/usecase (không chỉ ở DTO/controller).
+- Validation phải tái sử dụng được giữa UI flow và Public API flow.
+
+## Giao dịch dữ liệu
+- Nghiệp vụ tài chính và trạng thái liên quan phải dùng transaction phù hợp.
+- Tách rõ bước "check điều kiện" và "commit thay đổi" để tránh race condition.
+
+## Tài liệu và comment
+- Chỉ comment cho đoạn khó, tránh comment hiển nhiên.
+- Khi thêm rule nghiệp vụ mới, cập nhật file docs liên quan trong cùng phiên.

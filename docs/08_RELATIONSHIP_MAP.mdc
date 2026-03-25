@@ -1,0 +1,56 @@
+---
+alwaysApply: false
+---
+
+# Relationship Map (Prisma)
+
+## Mục tiêu
+Sơ đồ quan hệ dữ liệu để tránh sai cardinality khi thiết kế schema.
+
+## Quan hệ 1-1
+- `Workspace` 1-1 `WorkspaceBillingProfile`
+- `Workspace` 1-1 `WorkspaceOaConnection` (phase hiện tại)
+- `Order` 1-1 `Invoice` (với topup flow)
+- `WalletAccount` 1-1 `User` (owner wallet)
+
+## Quan hệ 1-n
+- `User` 1-n `Workspace` (as owner)
+- `Workspace` 1-n `Template`
+- `Workspace` 1-n `Campaign`
+- `Campaign` 1-n `CampaignRow`
+- `Workspace` 1-n `TopupRequest`
+- `Workspace` 1-n `Order`
+- `Workspace` 1-n `Invoice`
+- `Workspace` 1-n `MessageLog`
+- `Workspace` 1-n `AuditLog`
+- `Order` 1-n `OrderItem`
+- `Invoice` 1-n `InvoiceItem`
+
+## Quan hệ n-n
+- `User` n-n `Workspace` qua `WorkspaceMember`
+
+## Quan hệ nghiệp vụ đặc biệt
+- `WalletTransaction.sourceType + sourceId` tham chiếu logic tới:
+  - `TopupRequest`
+  - `MessageLog`
+  - `Campaign`
+  - `CampaignRow`
+  - `ManualAdjustment`
+- `CampaignRow.messageLogId` liên kết sang log gửi thực tế.
+- `MessageLog.walletTransactionId` liên kết giao dịch trừ tiền tương ứng.
+
+## Ràng buộc toàn vẹn dữ liệu
+- `WorkspaceMember`: unique `(workspaceId, userId)`.
+- `Template`: unique `(workspaceId, code)`.
+- `ApiKey`: key hash unique toàn hệ thống.
+- `TopupRequest`: `topupCode` và `qrContent` phải unique.
+- `Order` / `Invoice`: mã chứng từ phải unique.
+
+## Quy tắc xóa dữ liệu
+- Ưu tiên soft delete cho dữ liệu nghiệp vụ chính.
+- Không xóa cascade cứng với:
+  - wallet transaction
+  - order/invoice
+  - message logs
+  - audit logs
+- Record lịch sử phải giữ để audit/reconciliation.

@@ -1,0 +1,201 @@
+# Frontend Admin Router -> API Map
+
+Mục tiêu:
+- Bản rút gọn để team frontend code nhanh khu vực `ADMIN`.
+- Chỉ tập trung vào: route nào gọi API nào, action nào dùng endpoint nào.
+
+Phạm vi:
+- Áp dụng cho `UserRole.ADMIN`.
+
+---
+
+## 1) Router map tổng quát
+
+| Router | API load chính | API action chính |
+|-------|-----------------|------------------|
+| `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`, `GET /admin/audit-logs?limit=10`. | Không có |
+| `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
+| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
+| `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
+| `/admin/quick-chat/agents` | `GET /admin/quick-chat/agents` | Điều hướng sang edit |
+| `/admin/quick-chat/agents/:agentId` | Có thể load từ `GET /admin/quick-chat/agents` rồi find theo `agentId` ở FE | `PUT /admin/quick-chat/agents/:agentId` |
+| `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
+| `/admin/dev/payment-webhook` | Không cần load | `POST /topups/webhook` |
+| `/admin/internal-quick-chat` | `POST /internal/quick-chat/sessions` -> `GET /internal/quick-chat/sessions/:sessionId` | `POST /internal/quick-chat/sessions/:sessionId/messages`, `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm` |
+
+---
+
+## 2) `/admin/users`
+
+### Load
+- `GET /admin/users`
+
+### Fields nên render
+- `id`
+- `email`
+- `fullName`
+- `role`
+- `status`
+- `createdAt`
+
+### Row actions
+- Lock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": true }
+```
+- Unlock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": false }
+```
+
+---
+
+## 3) `/admin/workspaces`
+
+### Load
+- `GET /admin/workspaces`
+
+### Fields nên render
+- `id`
+- `name`
+- `slug`
+- `ownerUserId`
+- `status`
+- `createdAt`
+
+### Row actions
+- Disable workspace:
+  - `PATCH /admin/workspaces/:workspaceId/disable`
+
+---
+
+## 4) `/admin/audit-logs`
+
+### Load
+- `GET /admin/audit-logs`
+
+### Query gợi ý
+- `workspaceId`
+- `action`
+- `limit`
+
+### Fields nên render
+- `createdAt`
+- `actorUserId`
+- `workspaceId`
+- `action`
+- `resourceType`
+- `resourceId`
+- `metadataJson`
+
+---
+
+## 5) `/admin/quick-chat/agents`
+
+### Load
+- `GET /admin/quick-chat/agents`
+
+### Fields nên render
+- `id`
+- `name`
+- `provider`
+- `systemPrompt`
+- `allowedTools`
+- `skills`
+- `active`
+- `createdAt`
+- `updatedAt`
+
+---
+
+## 6) `/admin/quick-chat/agents/:agentId`
+
+### Save
+- `PUT /admin/quick-chat/agents/:agentId`
+
+### Body
+```json
+{
+  "name": "John",
+  "provider": "openai",
+  "systemPrompt": "You are a workspace operations assistant.",
+  "allowedTools": ["*"],
+  "skills": ["workspace-ops", "billing-safety"],
+  "active": true
+}
+```
+
+---
+
+## 7) `/admin/quick-chat/tools`
+
+### Load
+- `GET /admin/quick-chat/tools`
+
+### Render
+- Danh sách string tool name
+- copy-to-clipboard
+
+---
+
+## 8) `/admin/dev/payment-webhook`
+
+### Action
+- `POST /topups/webhook`
+
+### Body mẫu success
+```json
+{
+  "provider": "mock_gateway",
+  "eventId": "EVT_1",
+  "topupCode": "TP_123",
+  "status": "success",
+  "amountInclVat": 110000
+}
+```
+
+### Body mẫu failed
+```json
+{
+  "provider": "mock_gateway",
+  "eventId": "EVT_2",
+  "topupCode": "TP_123",
+  "status": "failed"
+}
+```
+
+---
+
+## 9) `/admin/internal-quick-chat`
+
+### Tạo session
+- `POST /internal/quick-chat/sessions`
+
+### Body
+```json
+{
+  "workspaceId": "WS_ID",
+  "title": "Admin ops"
+}
+```
+
+### Lấy session
+- `GET /internal/quick-chat/sessions/:sessionId`
+
+### Gửi message
+- `POST /internal/quick-chat/sessions/:sessionId/messages`
+
+### Confirm action
+- `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
+
+---
+
+## 10) Gợi ý code frontend
+
+- `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
+- `/admin/quick-chat/agents/:agentId` có thể reuse data từ list để giảm thêm 1 request.
+- Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo.

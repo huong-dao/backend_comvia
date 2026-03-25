@@ -1,0 +1,99 @@
+---
+alwaysApply: false
+---
+
+# Enums and Status Matrix
+
+## Mục tiêu
+Chuẩn hóa enum/status cho Prisma để tránh lệch logic giữa các module.
+
+## WorkspaceStatus
+- `active`
+- `disabled`
+- `suspended`
+- `deleted`
+
+## MemberRole
+- `owner`
+- `member`
+
+## InvitationStatus
+- `pending`
+- `accepted`
+- `expired`
+- `revoked`
+- `resent`
+
+## OaConnectionStatus
+- `not_connected`
+- `connected`
+- `token_expired`
+- `connection_error`
+- `reconnect_required`
+- `disconnected`
+
+## TemplateStatus
+- `draft`
+- `submitted`
+- `pending_zalo_approval`
+- `approved`
+- `rejected`
+- `disabled`
+
+## TopupStatus
+- `pending`
+- `paid`
+- `failed`
+- `expired`
+
+## WalletTransactionType
+- `topup_credit`
+- `message_debit`
+- `campaign_hold`
+- `campaign_refund`
+- `manual_adjustment`
+- `reversal`
+
+## OrderStatus
+- `paid`
+- `cancelled`
+
+## InvoiceStatus
+- `posted`
+- `issued`
+- `cancelled`
+
+## SendType
+- `test`
+- `single`
+- `campaign`
+
+## MessageStatus
+- `pending`
+- `success`
+- `failed`
+
+## CampaignStatus
+- `draft`
+- `ready`
+- `running`
+- `paused`
+- `completed`
+- `failed`
+- `cancelled`
+
+## CampaignRowStatus
+- `pending`
+- `success`
+- `failed`
+- `skipped`
+
+## ApiKeyStatus
+- `active`
+- `disabled`
+- `revoked`
+
+## Quy tắc dùng enum
+- Không hard-code string trạng thái trong service/controller.
+- Không đổi tên enum đã dùng production nếu chưa có migration + compatibility plan.
+- Mọi thêm mới trạng thái phải cập nhật docs + test matrix.

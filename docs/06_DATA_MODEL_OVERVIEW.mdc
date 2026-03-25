@@ -1,0 +1,74 @@
+---
+alwaysApply: false
+---
+
+# Data Model Overview (Prisma)
+
+## Mục tiêu
+Tài liệu tổng quan mô hình dữ liệu để AI và dev dùng chung khi thiết kế Prisma schema.
+
+## Nhóm domain chính
+- Identity & Access
+- Workspace & Membership
+- Billing & Wallet
+- Topup / Payment
+- Order & Invoice
+- OA & Template
+- Messaging & Campaign
+- API Key & Public API
+- Admin / Audit / Notification / Jobs
+
+## Danh sách model cốt lõi đề xuất
+
+### A. Identity & Access
+- `User`
+- `UserCredential`
+- `OtpRequest`
+- `UserSession`
+- `LoginLog`
+
+### B. Workspace
+- `Workspace`
+- `WorkspaceBillingProfile`
+- `WorkspaceMember`
+- `WorkspaceInvitation`
+
+### C. Wallet & Billing
+- `WalletAccount`
+- `WalletTransaction`
+- `PricingConfig` (nếu cần)
+
+### D. Topup & Payment
+- `TopupRequest`
+- `PaymentWebhookLog`
+
+### E. Order & Invoice
+- `Order`
+- `OrderItem`
+- `Invoice`
+- `InvoiceItem`
+
+### F. OA & Template
+- `WorkspaceOaConnection`
+- `Template`
+- `TemplateSubmissionLog`
+
+### G. Messaging
+- `MessageLog`
+- `Campaign`
+- `CampaignRow`
+
+### H. API Integration
+- `ApiKey`
+- `ApiRequestLog` (khuyến nghị)
+
+### I. Governance
+- `AuditLog`
+- `NotificationLog`
+- `BackgroundJobLog`
+
+## Nguyên tắc bắt buộc
+- Dữ liệu theo workspace phải có `workspaceId`.
+- Dữ liệu tài chính phải truy vết qua transaction/log.
+- Callback/payment flow bắt buộc idempotent.
+- Status nghiệp vụ phải dùng enum thống nhất.

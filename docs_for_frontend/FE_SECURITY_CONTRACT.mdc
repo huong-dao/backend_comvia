@@ -1,0 +1,124 @@
+# FE Security Contract (Next.js) - comvia
+
+Mục tiêu: FE (Next.js) phải biết chính xác các quy ước security/authorization để:
+- gọi API đúng header/format
+- xử lý lỗi `401/403` nhất quán
+- khi chuyển `DEMO_MODE=false` thì FE không bị “vỡ” luồng
+
+## 1) Base URL & Environment
+
+- FE gọi backend qua: `NEXT_PUBLIC_API_BASE_URL`
+  - Ví dụ: `http://localhost:3000`
+
+## 2) Authentication: JWT (Authorization Bearer)
+
+### 2.1 Khi nào cần JWT
+Các endpoint có guard JWT (phần lớn API nội bộ) yêu cầu header:
+- `Authorization: Bearer <accessToken>`
+
+JWT lấy từ các bước:
+1. `POST /auth/register` (public). Trong `DEMO_MODE=true` có `demoOtpCode`.
+2. `POST /auth/otp/verify` (public). Trả về `accessToken` (JWT).
+3. Dùng `accessToken` cho các request có guard.
+
+### 2.2 User status ảnh hưởng login
+- Backend hiện chặn login nếu `user.status != ACTIVE`
+- Vì vậy FE cần đảm bảo flow OTP verify xong trước khi gọi `POST /auth/login` hoặc gọi các API cần auth.
+
+### 2.3 Không dùng cookie
+Backend đang dùng JWT qua header `Authorization`, không dựa cookie/session.
+
+Ví dụ header:
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR...
+Content-Type: application/json
+```
+
+## 3) Authorization theo workspace: OWNER / MEMBER
+
+Backend áp quyền theo `workspaceId` nằm trong URL và bảng `WorkspaceMember (workspaceId, userId, role)`.
+
+Quy ước FE cần biết:
+- Nếu FE gọi API trong workspace mà user không thuộc -> backend trả lỗi dạng deny (thường `403` hoặc `400` tùy case).
+- Nếu user thuộc workspace nhưng role không đủ cho route -> `403 Forbidden`.
+
+Trong FE:
+- Nếu gặp `401`: token sai/hết hạn/missing.
+- Nếu gặp `403`: token đúng nhưng role/workspace không đủ.
+
+## 4) Public API: API Key (x-api-key + api_key)
+
+### 4.1 Khi nào cần API key
+Endpoint thuộc nhóm public (prefix `/public/...`) được bảo vệ bởi guard `ApiKeyGuard`.
+
+Guard chấp nhận API key theo một trong các cách:
+- Header: `x-api-key: <RAW_API_KEY>`
+- Hoặc gửi trong body/query: `api_key: <RAW_API_KEY>`
+
+### 4.2 Khuyến nghị cho FE (để tránh lỗi DTO)
+Với endpoint `POST /public/messages/send`, FE nên gửi **cả hai**:
+- `x-api-key` header
+- field `api_key` trong body
+
+Ví dụ:
+```http
+x-api-key: PUB_RAW_KEY_ONCE_123
+Content-Type: application/json
+```
+
+Body:
+```json
+{
+  "api_key": "PUB_RAW_KEY_ONCE_123",
+  "templateId": "TEMPLATE_ID",
+  "phoneNumber": "84901234567",
+  "data": { "name": "Minh" }
+}
+```
+
+### 4.3 API key lifecycle
+- Khi tạo API key, backend chỉ nên trả `apiKey` raw đúng 1 lần.
+- FE phải lưu raw key an toàn (local secure storage / encrypted storage).
+- Nếu cần key mới: dùng endpoint regenerate.
+- Disable key sẽ làm public requests bị từ chối.
+
+## 5) OTP (DEMO_MODE)
+
+OTP endpoints:
+- `POST /auth/otp/verify` (public)
+- `POST /auth/otp/resend` (public)
+
+### 5.1 Demo mode trả code
+Khi `DEMO_MODE=true`, backend trả thêm `demoOtpCode` trong response `POST /auth/register` (và resend có thể trả thêm).
+
+FE chỉ dùng `demoOtpCode` để demo tự động nhập OTP.
+
+### 5.2 Production mode không trả code
+Khi `DEMO_MODE=false`:
+- `demoOtpCode` sẽ không xuất hiện
+- FE không được phụ thuộc vào code trả về từ API
+
+## 6) Chuẩn parse lỗi FE nên dùng
+
+FE nên hiển thị thông điệp lỗi theo nguyên tắc:
+- `401`: “Bạn chưa đăng nhập / token không hợp lệ / hết hạn”
+- `403`: “Bạn không đủ quyền (role/workspace)”
+- `400`: “Input sai hoặc resource không tồn tại”
+
+Backend NestJS có thể trả lỗi dạng JSON như:
+```json
+{
+  "statusCode": 403,
+  "message": "You do not have permission to access this resource",
+  "error": "Forbidden"
+}
+```
+
+FE chỉ cần hiển thị `message` (ưu tiên string), và fallback sang `error`.
+
+## 7) Checklist bảo mật FE
+- Không log raw JWT/accessToken và raw API key vào console/log.
+- Không hard-code `JWT_SECRET` hoặc API key vào FE repo.
+- Luôn lấy token bằng OTP flow trước khi gọi workspace APIs.
+- Với public API: ưu tiên gửi `x-api-key` + `api_key` trong body.
+

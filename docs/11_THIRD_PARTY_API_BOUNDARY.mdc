@@ -1,0 +1,93 @@
+---
+alwaysApply: false
+---
+
+# Third-Party API Boundary (Mock-First)
+
+## Mục tiêu
+Định nghĩa rõ những tích hợp API bên thứ 3 mà AI **không code thật** ở giai đoạn hiện tại.  
+Trong các phiên làm việc NestJS, chỉ tạo interface/adapter/mock để hệ thống chạy nội bộ.
+
+## Nguyên tắc bắt buộc cho AI
+- Không gọi API thật của bên thứ 3 trong code production phase hiện tại.
+- Chỉ implement theo mô hình:
+  - `Provider Interface` (contract)
+  - `Mock Adapter` (dữ liệu giả lập)
+  - `Stub Webhook Handler` (giả lập callback)
+- Code phải dễ thay thế sang adapter thật sau này mà không đổi business service.
+
+## Danh sách API bên thứ 3 cần mock
+
+### 1) Payment Gateway (Topup QR)
+Phạm vi:
+- Sinh QR code thanh toán theo `amount_incl_vat`
+- Nhận callback/webhook thanh toán
+
+Tạm thời triển khai:
+- Mock API tạo QR:
+  - trả `qr_content`, `payment_ref`, `expired_at`
+- Mock webhook:
+  - success/failed
+  - idempotency key giả lập
+
+Không làm ở giai đoạn này:
+- Tích hợp cổng thanh toán thật
+- Ký số/chứng thực đặc thù provider thật
+
+### 2) Zalo OA OAuth và Token API
+Phạm vi:
+- Redirect OAuth
+- Exchange code -> token
+- Refresh token
+- Lấy thông tin OA
+
+Tạm thời triển khai:
+- Mock OAuth callback data
+- Mock token lifecycle (valid/expired/refresh_fail)
+- Mock OA info (`oa_id`, `oa_name`, `status`)
+
+Không làm ở giai đoạn này:
+- Kết nối thật tới hệ sinh thái OAuth của Zalo
+
+### 3) Zalo ZNS/ZBS Messaging API
+Phạm vi:
+- Send test
+- Send single
+- Send campaign row
+
+Tạm thời triển khai:
+- Mock send result:
+  - success/failed
+  - `provider_message_id`
+  - `error_code/error_message`
+- Hỗ trợ chế độ fail ngẫu nhiên có kiểm soát để test refund/retry
+
+Không làm ở giai đoạn này:
+- Gửi tin thật qua Zalo production
+
+### 4) Notification Provider (Email/SMS) - nếu cần ở phase code hiện tại
+Phạm vi:
+- Gửi email/sms event
+
+Tạm thời triển khai:
+- Mock notifier ghi log nội bộ
+
+Không làm ở giai đoạn này:
+- Kết nối SMTP/SMS gateway thật
+
+## Gợi ý cấu trúc code (NestJS)
+- `src/integrations/payment/*`
+- `src/integrations/zalo-oauth/*`
+- `src/integrations/zalo-messaging/*`
+- `src/integrations/notification/*`
+
+Mỗi integration gồm:
+- `*.provider.interface.ts`
+- `*.mock.adapter.ts`
+- `*.module.ts`
+
+## Điều kiện chuyển từ mock sang real
+- Có tài khoản/khoá chính thức từ nhà cung cấp
+- Có tài liệu API chi tiết + môi trường sandbox
+- Có test contract cho adapter thật
+- Có kế hoạch rollout an toàn

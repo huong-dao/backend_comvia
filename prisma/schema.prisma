@@ -1,0 +1,728 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  LOCKED
+}
+
+enum OtpTargetType {
+  EMAIL
+  PHONE
+}
+
+enum OtpPurpose {
+  REGISTER
+  FORGOT_PASSWORD
+}
+
+enum OtpStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  LOCKED
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  DISABLED
+  SUSPENDED
+  DELETED
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+}
+
+enum WorkspaceMemberStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id                    String            @id @default(cuid())
+  email                 String            @unique
+  fullName              String?
+  role                  UserRole          @default(USER)
+  status                UserStatus        @default(PENDING_VERIFICATION)
+  lastActiveWorkspaceId String?
+  credential            UserCredential?
+  ownedWorkspaces       Workspace[]       @relation("WorkspaceOwner")
+  workspaceMemberships  WorkspaceMember[]
+  walletAccount        WalletAccount?
+  walletTransactions   WalletTransaction[]
+  topupRequests        TopupRequest[]
+  orders                Order[]
+  auditLogs            AuditLog[]
+  quickChatSessions    QuickChatSession[]      @relation("QuickChatSessionUser")
+  quickChatMessages    QuickChatMessage[]      @relation("QuickChatMessageUser")
+  quickChatActions     QuickChatAction[]       @relation("QuickChatActionUser")
+  quickChatExecutions  QuickChatExecutionLog[] @relation("QuickChatExecutionUser")
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+}
+
+model UserCredential {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  passwordHash String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model OtpRequest {
+  id           String      @id @default(cuid())
+  targetType   OtpTargetType
+  targetValue  String
+  purpose      OtpPurpose
+  otpCodeHash String
+  expiredAt    DateTime
+  usedAt       DateTime?
+  attemptCount Int         @default(0)
+  status       OtpStatus   @default(ACTIVE)
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([targetType, targetValue, purpose, status])
+  @@index([targetValue])
+}
+
+model Workspace {
+  id         String           @id @default(cuid())
+  name       String
+  slug       String?          @unique
+  ownerUserId String
+  status     WorkspaceStatus  @default(ACTIVE)
+  owner      User             @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  members    WorkspaceMember[]
+  billingProfile       WorkspaceBillingProfile?
+  invitations          WorkspaceInvitation[]
+  oaConnection         WorkspaceOaConnection?
+  walletTransactions   WalletTransaction[]
+  topupRequests        TopupRequest[]
+  orders               Order[]
+  invoices             Invoice[]
+  templates            Template[]
+  messageLogs          MessageLog[]
+  campaigns            Campaign[]
+  apiKeys              ApiKey[]
+  auditLogs            AuditLog[]
+  quickChatSessions    QuickChatSession[]
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+}
+
+enum QuickChatMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum QuickChatActionStatus {
+  PENDING_CONFIRMATION
+  EXECUTED
+  CANCELLED
+  REJECTED
+}
+
+model QuickChatAgentProfile {
+  id           String   @id
+  name         String
+  provider     String
+  systemPrompt String
+  allowedTools Json
+  skills       Json
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     QuickChatSession[]
+}
+
+model QuickChatSession {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  userId      String
+  title       String?
+  agentId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user        User                   @relation("QuickChatSessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  agent       QuickChatAgentProfile  @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  messages    QuickChatMessage[]
+  actions     QuickChatAction[]
+  executions  QuickChatExecutionLog[]
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model QuickChatMessage {
+  id         String               @id @default(cuid())
+  sessionId  String
+  userId     String
+  role       QuickChatMessageRole
+  content    String
+  createdAt  DateTime             @default(now())
+
+  session    QuickChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User                 @relation("QuickChatMessageUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model QuickChatAction {
+  id          String                @id @default(cuid())
+  sessionId   String
+  userId      String
+  toolName    String
+  argsJson    Json
+  summary     String
+  status      QuickChatActionStatus @default(PENDING_CONFIRMATION)
+  createdAt   DateTime              @default(now())
+  executedAt  DateTime?
+
+  session     QuickChatSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user        User                  @relation("QuickChatActionUser", fields: [userId], references: [id], onDelete: Cascade)
+  executions  QuickChatExecutionLog[]
+
+  @@index([sessionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model QuickChatExecutionLog {
+  id             String   @id @default(cuid())
+  sessionId      String
+  actionId       String?
+  userId         String
+  toolName       String
+  inputJson      Json
+  outputJson     Json?
+  errorMessage   String?
+  durationMs     Int?
+  idempotencyKey String?
+  createdAt      DateTime @default(now())
+
+  session        QuickChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  action         QuickChatAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  user           User             @relation("QuickChatExecutionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([actionId, createdAt])
+  @@unique([idempotencyKey])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        MemberRole @default(MEMBER)
+  status      WorkspaceMemberStatus @default(ACTIVE)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+  RESENT
+}
+
+enum BillingType {
+  ORGANIZATION
+  INDIVIDUAL
+}
+
+model WorkspaceBillingProfile {
+  id           String      @id @default(cuid())
+  workspaceId String      @unique
+  billingType BillingType
+
+  // organization
+  companyName         String?
+  taxCode             String?
+  address             String?
+  invoiceEmail        String?
+  representativeName  String?
+  phone               String?
+
+  // individual
+  fullName   String?
+  citizenId  String?
+  invoicePdfAddress String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model WorkspaceInvitation {
+  id          String             @id @default(cuid())
+  workspaceId String
+  inviteType  String
+  inviteValue String
+  role        MemberRole
+  status      InvitationStatus  @default(PENDING)
+  token       String            @unique
+  expiredAt   DateTime
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+enum WalletTransactionType {
+  TOPUP_CREDIT
+  MESSAGE_DEBIT
+  CAMPAIGN_HOLD
+  CAMPAIGN_REFUND
+  MANUAL_ADJUSTMENT
+  REVERSAL
+}
+
+model WalletAccount {
+  id           String   @id @default(cuid())
+  ownerUserId String   @unique
+  balance      Decimal  @default(0)
+  totalTopup   Decimal  @default(0)
+  totalSpent   Decimal  @default(0)
+  totalRefund  Decimal  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relation is optional navigation only
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+}
+
+model WalletTransaction {
+  id              String               @id @default(cuid())
+  transactionCode String              @unique
+  ownerUserId    String
+  workspaceId    String
+  type            WalletTransactionType
+  amount          Decimal
+  balanceBefore   Decimal
+  balanceAfter    Decimal
+  sourceType      String
+  sourceId        String
+  createdBy       String?
+  note            String?
+  createdAt       DateTime            @default(now())
+
+  owner      User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([sourceType, sourceId])
+}
+
+enum TopupStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+model TopupRequest {
+  id              String   @id @default(cuid())
+  topupCode       String   @unique
+  ownerUserId     String
+  workspaceId     String
+  amountExclVat   Decimal
+  vatAmount       Decimal
+  amountInclVat   Decimal
+  paymentProvider String
+  paymentRef      String
+  qrContent       String   @unique
+  qrExpiredAt     DateTime
+  status          TopupStatus @default(PENDING)
+  rawCallbackLog  Json?
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  owner      User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  webhookLogs PaymentWebhookLog[]
+
+  @@index([workspaceId, createdAt])
+  @@index([paymentProvider, paymentRef])
+}
+
+model PaymentWebhookLog {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String?
+  topupRequestId String?
+  rawPayload Json
+  status     String
+  processedAt DateTime @default(now())
+
+  topup TopupRequest? @relation(fields: [topupRequestId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+}
+
+enum OrderStatus {
+  PAID
+  CANCELLED
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  orderCode        String      @unique
+  workspaceId      String
+  ownerUserId      String
+  orderType        String
+  currency         String      @default("VND")
+  totalAmountExclVat Decimal
+  totalVatAmount   Decimal
+  totalAmountInclVat Decimal
+  paymentMethod    String?
+  paymentRef       String?
+  status           OrderStatus @default(PAID)
+  paidAt           DateTime?
+  createdAt        DateTime    @default(now())
+
+  owner     User       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  items     OrderItem[]
+  invoice   Invoice?
+}
+
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  name            String
+  quantity        Int      @default(1)
+  unitPrice       Decimal
+  vatRate         Decimal  @default(10)
+  vatAmount       Decimal
+  totalAmountInclVat Decimal
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+enum InvoiceStatus {
+  POSTED
+  ISSUED
+  CANCELLED
+}
+
+model Invoice {
+  id               String         @id @default(cuid())
+  invoiceCode     String         @unique
+  invoiceNumber   String?
+  invoicePdfUrl   String?
+  workspaceId     String
+  orderId         String         @unique
+  billingType     BillingType
+  billingSnapshotJson Json
+  status          InvoiceStatus  @default(POSTED)
+  issueDate       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  items     InvoiceItem[]
+}
+
+model InvoiceItem {
+  id                String   @id @default(cuid())
+  invoiceId         String
+  name              String
+  quantity          Int      @default(1)
+  unitPrice         Decimal
+  vatRate           Decimal  @default(10)
+  vatAmount         Decimal
+  totalAmountInclVat Decimal
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+enum OaConnectionStatus {
+  NOT_CONNECTED
+  CONNECTED
+  TOKEN_EXPIRED
+  CONNECTION_ERROR
+  RECONNECT_REQUIRED
+  DISCONNECTED
+}
+
+model WorkspaceOaConnection {
+  id              String @id @default(cuid())
+  workspaceId     String @unique
+  oaId            String
+  oaName          String?
+  oaAvatarLight   String?
+  oaAvatarDark    String?
+  accessToken     String
+  refreshToken    String
+  tokenExpiredAt  DateTime
+  status          OaConnectionStatus @default(NOT_CONNECTED)
+  connectedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  templates Template[]
+  messageLogs MessageLog[]
+  campaigns Campaign[]
+}
+
+enum TemplateStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_ZALO_APPROVAL
+  APPROVED
+  REJECTED
+  DISABLED
+}
+
+model Template {
+  id                String        @id @default(cuid())
+  workspaceId       String
+  oaConnectionId    String
+  name              String
+  code              String
+  content           String
+  placeholdersJson  Json
+  providerTemplateId String?
+  status            TemplateStatus @default(DRAFT)
+  rejectedReason    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+
+  submissions TemplateSubmissionLog[]
+  messageLogs MessageLog[]
+  campaigns   Campaign[]
+
+  @@unique([workspaceId, code])
+  @@index([workspaceId, status])
+}
+
+model TemplateSubmissionLog {
+  id          String   @id @default(cuid())
+  templateId  String
+  status      TemplateStatus
+  providerResponse Json?
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+enum SendType {
+  TEST
+  SINGLE
+  CAMPAIGN
+}
+
+enum MessageStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model MessageLog {
+  id                String        @id @default(cuid())
+  workspaceId       String
+  oaConnectionId    String
+  templateId        String
+  sendType          SendType
+  phoneNumber       String
+  payloadSnapshot   Json
+  status            MessageStatus @default(PENDING)
+  errorCode         String?
+  providerMessageId String?
+  costAtTime        Decimal?
+  walletTransactionId String?
+  operatorUserId    String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  campaignRows CampaignRow[]
+
+  @@index([workspaceId, sentAt])
+  @@index([templateId, sentAt])
+  @@index([phoneNumber, sentAt])
+}
+
+enum CampaignStatus {
+  DRAFT
+  READY
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Campaign {
+  id              String @id @default(cuid())
+  workspaceId     String
+  oaConnectionId  String
+  templateId      String
+  name            String
+  status          CampaignStatus @default(DRAFT)
+  totalData       Int @default(0)
+  totalValid      Int @default(0)
+  totalInvalid    Int @default(0)
+  totalPending    Int @default(0)
+  totalSuccess    Int @default(0)
+  totalFailed     Int @default(0)
+  unitPriceAtCreate Decimal @default(0)
+  estimatedTotalAmount Decimal @default(0)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  lastRunAt       DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  rows CampaignRow[]
+}
+
+enum CampaignRowStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model CampaignRow {
+  id                String @id @default(cuid())
+  campaignId        String
+  phoneNumber       String
+  payloadData       Json
+  status            CampaignRowStatus @default(PENDING)
+  failureReason    String?
+  providerMessageId String?
+  retryCount        Int @default(0)
+  walletTransactionId String?
+  messageLogId     String?
+  rawImportRow     Json?
+  updatedAt         DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  messageLog MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([campaignId, phoneNumber])
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  DISABLED
+  REVOKED
+}
+
+model ApiKey {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String
+  keyPrefix   String?
+  keyHash     String      @unique
+  status      ApiKeyStatus @default(ACTIVE)
+  lastUsedAt  DateTime?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  logs ApiRequestLog[]
+
+  @@index([workspaceId, status])
+}
+
+model ApiRequestLog {
+  id          String   @id @default(cuid())
+  apiKeyId    String?
+  workspaceId String?
+  method      String
+  path        String
+  statusCode  Int?
+  rawBody     Json?
+  createdAt   DateTime @default(now())
+
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  actorUserId     String?
+  workspaceId     String?
+  action          String
+  resourceType    String
+  resourceId      String?
+  metadataJson    Json?
+  createdAt       DateTime @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([action, createdAt])
+}
+
+model NotificationLog {
+  id           String   @id @default(cuid())
+  channel      String
+  recipient    String
+  eventType    String
+  status       String
+  payloadJson  Json?
+  sentAt       DateTime?
+  createdAt    DateTime @default(now())
+}
+
+model BackgroundJobLog {
+  id           String   @id @default(cuid())
+  name         String
+  status       String
+  error        String?
+  createdAt    DateTime @default(now())
+}
