@@ -124,20 +124,6 @@ export class MoneyAccountsService {
       throw new NotFoundException('Money account not found');
     }
 
-    // Check if account is being used in collection requests
-    const activeRequests = await this.prisma.collectionRequest.findFirst({
-      where: {
-        moneyAccountId: id,
-        status: 'PENDING',
-      },
-    });
-
-    if (activeRequests) {
-      throw new BadRequestException(
-        'Cannot delete account with pending collection requests',
-      );
-    }
-
     // Soft delete by setting isActive to false
     return this.prisma.moneyAccount.update({
       where: { id },

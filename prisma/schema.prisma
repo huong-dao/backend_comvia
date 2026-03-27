@@ -76,8 +76,7 @@ model User {
   quickChatMessages    QuickChatMessage[]      @relation("QuickChatMessageUser")
   quickChatActions     QuickChatAction[]       @relation("QuickChatActionUser")
   quickChatExecutions  QuickChatExecutionLog[] @relation("QuickChatExecutionUser")
-  collectionRequests   CollectionRequest[]
-  payments             Payment[]
+
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 }
@@ -130,7 +129,7 @@ model Workspace {
   apiKeys              ApiKey[]
   auditLogs            AuditLog[]
   quickChatSessions    QuickChatSession[]
-  collectionRequests   CollectionRequest[]
+
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 }
@@ -360,72 +359,32 @@ enum TopupStatus {
 }
 
 model TopupRequest {
-  id              String   @id @default(cuid())
-  topupCode       String   @unique
-  ownerUserId     String
-  workspaceId     String
-  amountExclVat   Decimal
-  vatAmount       Decimal
-  amountInclVat   Decimal
-  paymentProvider String
-  paymentRef      String
-  qrContent       String
-  qrExpiredAt     DateTime
-  status          TopupStatus @default(PENDING)
-  rawCallbackLog  Json?
-  paidAt          DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String      @id @default(cuid())
+  topupCode        String      @unique
+  ownerUserId      String
+  workspaceId      String
+  amountExclVat    Decimal
+  vatAmount        Decimal
+  amountInclVat    Decimal
+  
+  // Thông tin từ Pay2s
+  paymentProvider  String      // "PAY2S"
+  paymentRef       String?     // Mã giao dịch bên Pay2s trả về
+  qrCodeUrl        String?      // Nội dung chuỗi QR để bạn convert ra ảnh
+  
+  status           TopupStatus @default(PENDING)
+  paidAt           DateTime?
+  
+  // Quan hệ 1-1 với Order (Khi nạp thành công thì sinh ra đơn hàng này)
+  order            Order?      
+  
+  owner            User        @relation(fields: [ownerUserId], references: [id])
+  workspace        Workspace   @relation(fields: [workspaceId], references: [id])
 
-  owner      User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  webhookLogs PaymentWebhookLog[]
-  collectionRequest CollectionRequest?
-
-  @@index([workspaceId, createdAt])
-  @@index([paymentProvider, paymentRef])
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 }
 
-model PaymentWebhookLog {
-  id         String   @id @default(cuid())
-  provider   String
-  eventId    String?
-  topupRequestId String?
-  rawPayload Json
-  status     String
-  processedAt DateTime @default(now())
-
-  topup TopupRequest? @relation(fields: [topupRequestId], references: [id], onDelete: SetNull)
-
-  @@unique([provider, eventId])
-}
-
-enum PaymentMethod {
-  CASH
-  BANK
-  CREDIT_CARD
-}
-
-model Payment {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  amount        Decimal
-  method        PaymentMethod
-  referenceNo   String?
-  note          String?
-  paidAt        DateTime
-  customerId    String
-  invoiceId     String?
-  orderId       String?
-  moneyAccountId String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  customer      User       @relation(fields: [customerId], references: [id])
-  invoice       Invoice?   @relation(fields: [invoiceId], references: [id])
-  order         Order?     @relation(fields: [orderId], references: [id])
-  moneyAccount  MoneyAccount @relation(fields: [moneyAccountId], references: [id])
-}
 
 enum OrderStatus {
   PAID
@@ -433,28 +392,28 @@ enum OrderStatus {
 }
 
 model Order {
-  id               String      @id @default(cuid())
-  orderCode        String      @unique
-  workspaceId      String
-  ownerUserId      String
-  orderType        String
-  currency         String      @default("VND")
-  totalAmountExclVat Decimal
-  totalVatAmount   Decimal
-  totalAmountInclVat Decimal
-  paymentMethod    String?
-  paymentRef       String?
-  status           OrderStatus @default(PAID)
-  paidAt           DateTime?
-  createdAt        DateTime    @default(now())
+  id                  String      @id @default(cuid())
+  orderCode           String      @unique
+  workspaceId         String
+  ownerUserId         String
+  
+  totalAmountExclVat  Decimal
+  totalVatAmount      Decimal
+  totalAmountInclVat  Decimal
+  status              OrderStatus @default(PAID) // Vì khi tạo từ Webhook là đã xong rồi
+  paidAt              DateTime?
+  
+  // Liên kết ngược lại Topup
+  topupRequestId      String?     @unique
+  topupRequest        TopupRequest? @relation(fields: [topupRequestId], references: [id])
 
-  owner     User       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
-  items              OrderItem[]
-  invoice            Invoice?
-  collectionRequests CollectionRequest[]
-  payments           Payment[]
+  owner               User        @relation(fields: [ownerUserId], references: [id])
+  workspace           Workspace   @relation(fields: [workspaceId], references: [id])
+  
+  items               OrderItem[]
+  invoice             Invoice?
+  
+  createdAt           DateTime    @default(now())
 }
 
 model OrderItem {
@@ -494,8 +453,6 @@ model Invoice {
   order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   items               InvoiceItem[]
-  collectionMappings  CollectionRequestMapping[]
-  payments            Payment[]
 }
 
 model InvoiceItem {
@@ -767,53 +724,6 @@ enum CollectionRequestType {
   INVOICE
 }
 
-enum CollectionRequestStatus {
-  PENDING
-  PAID
-  CANCELED
-  FAILED
-}
-
-model CollectionRequest {
-  id                String                  @id @default(cuid())
-  code              String                  @unique
-  type              CollectionRequestType
-  status            CollectionRequestStatus @default(PENDING)
-  amount            Decimal
-  qrCodeUrl         String?
-  transId           String?
-  paidAt            DateTime?
-  moneyAccountId    String
-  workspaceId       String
-  orderId           String?
-  topupRequestId    String?                 @unique
-  creatorId         String
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-
-  moneyAccount      MoneyAccount            @relation(fields: [moneyAccountId], references: [id])
-  workspace         Workspace               @relation(fields: [workspaceId], references: [id])
-  order             Order?                  @relation(fields: [orderId], references: [id])
-  topupRequest      TopupRequest?           @relation(fields: [topupRequestId], references: [id])
-  creator           User                    @relation(fields: [creatorId], references: [id])
-  mappings          CollectionRequestMapping[]
-
-  @@index([workspaceId, createdAt])
-  @@index([status, createdAt])
-}
-
-model CollectionRequestMapping {
-  id                   String   @id @default(cuid())
-  collectionRequestId String
-  invoiceId            String?
-  amount               Decimal
-
-  collectionRequest    CollectionRequest @relation(fields: [collectionRequestId], references: [id], onDelete: Cascade)
-  invoice              Invoice?          @relation(fields: [invoiceId], references: [id])
-
-  @@unique([collectionRequestId, invoiceId])
-}
-
 model MoneyAccount {
   id            String  @id @default(cuid())
   accountNumber String  @unique
@@ -823,7 +733,4 @@ model MoneyAccount {
   isActive      Boolean @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
-  collectionRequests CollectionRequest[]
-  payments           Payment[]
 }

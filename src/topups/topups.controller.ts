@@ -15,7 +15,7 @@ import { WorkspaceRolesGuard } from '../common/guards/workspace-roles.guard';
 import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
 import { TopupsService } from './topups.service';
 
-@Controller('api/v1/topups')
+@Controller('topups')
 export class TopupsController {
   constructor(private readonly topupsService: TopupsService) {}
 

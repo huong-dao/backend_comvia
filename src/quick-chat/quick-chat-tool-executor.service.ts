@@ -49,17 +49,6 @@ export class QuickChatToolExecutorService {
           throw new BadRequestException('workspaceId is required');
         return this.membersService.listMembers(input.workspaceId);
 
-      case 'topups.createQr':
-        if (!input.workspaceId)
-          throw new BadRequestException('workspaceId is required');
-        return this.topupsService.createTopupQr(
-          input.workspaceId,
-          input.userId,
-          {
-            amountExclVat: Number(input.args.amountExclVat),
-          },
-        );
-
       case 'templates.create':
         if (!input.workspaceId)
           throw new BadRequestException('workspaceId is required');

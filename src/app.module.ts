@@ -20,8 +20,6 @@ import { MessagingModule } from './messaging/messaging.module';
 import { AdminModule } from './admin/admin.module';
 import { QuickChatModule } from './quick-chat/quick-chat.module';
 import { MoneyAccountsModule } from './modules/money-accounts/money-accounts.module';
-import { CollectionRequestsModule } from './modules/collection-requests/collection-requests.module';
-import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import pay2sConfig from './config/pay2s.config';
 
 @Module({
@@ -46,8 +44,6 @@ import pay2sConfig from './config/pay2s.config';
     AdminModule,
     QuickChatModule,
     MoneyAccountsModule,
-    CollectionRequestsModule,
-    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [

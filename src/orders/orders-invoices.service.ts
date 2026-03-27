@@ -12,8 +12,6 @@ export class OrdersInvoicesService {
       select: {
         id: true,
         orderCode: true,
-        orderType: true,
-        currency: true,
         totalAmountExclVat: true,
         totalVatAmount: true,
         totalAmountInclVat: true,

@@ -70,14 +70,14 @@ export async function createPay2sCollectionLink({
   try {
     // Validate orderInfo according to Pay2S requirements
     if (!orderInfo || orderInfo.length < 10 || orderInfo.length > 32) {
-      throw new Error('orderInfo must be between 10-32 characters');
+      throw new Error('orderInfo phải từ 10-32 ký tự');
     }
 
     // Check for invalid characters (only letters and numbers allowed)
     const validOrderInfo = /^[a-zA-Z0-9]+$/.test(orderInfo);
     if (!validOrderInfo) {
       throw new Error(
-        'orderInfo can only contain letters and numbers (no special characters)',
+        'orderInfo chỉ được chứa chữ cái và số (không có ký tự đặc biệt)',
       );
     }
 
@@ -121,7 +121,6 @@ export async function createPay2sCollectionLink({
       amount: amount.toString(),
       orderId: orderId.toString(),
       orderInfo,
-      orderType: requestType,
       bankAccounts: bankList,
       redirectUrl,
       ipnUrl,
@@ -133,13 +132,6 @@ export async function createPay2sCollectionLink({
     const timeout = setTimeout(() => controller.abort(), 30000);
 
     try {
-      console.log('Pay2S API Request:', {
-        url: apiUrl,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData, null, 2),
-      });
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -147,12 +139,6 @@ export async function createPay2sCollectionLink({
         },
         body: JSON.stringify(requestData),
         signal: controller.signal,
-      });
-
-      console.log('Pay2S API Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
       });
 
       if (!response.ok) {
@@ -164,18 +150,11 @@ export async function createPay2sCollectionLink({
       }
 
       const data = await response.json();
-      console.log('Pay2S API Response Data:', data);
       return data;
     } finally {
       clearTimeout(timeout);
     }
   } catch (error) {
-    console.error('createPay2sCollectionLink error', {
-      orderId,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-
     return null;
   }
 }
