@@ -190,9 +190,21 @@ export class TemplatesService {
               OR: [
                 { name: { contains: query.keyword, mode: 'insensitive' } },
                 { code: { contains: query.keyword, mode: 'insensitive' } },
-                { workspace: { name: { contains: query.keyword, mode: 'insensitive' } } },
-                { oaConnection: { oaName: { contains: query.keyword, mode: 'insensitive' } } },
-                { oaConnection: { oaId: { contains: query.keyword, mode: 'insensitive' } } },
+                {
+                  workspace: {
+                    name: { contains: query.keyword, mode: 'insensitive' },
+                  },
+                },
+                {
+                  oaConnection: {
+                    oaName: { contains: query.keyword, mode: 'insensitive' },
+                  },
+                },
+                {
+                  oaConnection: {
+                    oaId: { contains: query.keyword, mode: 'insensitive' },
+                  },
+                },
               ],
             }
           : {}),

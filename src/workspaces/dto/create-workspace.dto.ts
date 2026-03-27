@@ -1,5 +1,10 @@
 import { Type } from 'class-transformer';
-import { IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { WorkspaceBillingFieldsDto } from './workspace-billing-fields.dto';
 
 export class CreateWorkspaceDto {

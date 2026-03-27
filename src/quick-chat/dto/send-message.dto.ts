@@ -1,4 +1,10 @@
-import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class SendQuickChatMessageDto {
   @IsString()

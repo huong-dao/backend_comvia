@@ -2,92 +2,174 @@
 alwaysApply: false
 ---
 
-# Third-Party API Boundary (Mock-First)
+# Third-Party API Boundary
 
-## Mục tiêu
-Định nghĩa rõ những tích hợp API bên thứ 3 mà AI **không code thật** ở giai đoạn hiện tại.  
-Trong các phiên làm việc NestJS, chỉ tạo interface/adapter/mock để hệ thống chạy nội bộ.
+## Overview
+This document defines the boundary for third-party API integrations in the Comvia system. **All third-party integrations MUST follow the mock-first approach** during development and testing phases.
 
-## Nguyên tắc bắt buộc cho AI
-- Không gọi API thật của bên thứ 3 trong code production phase hiện tại.
-- Chỉ implement theo mô hình:
-  - `Provider Interface` (contract)
-  - `Mock Adapter` (dữ liệu giả lập)
-  - `Stub Webhook Handler` (giả lập callback)
-- Code phải dễ thay thế sang adapter thật sau này mà không đổi business service.
+## Mock-First Implementation Model
 
-## Danh sách API bên thứ 3 cần mock
+### 1. Provider Interface
+```typescript
+// Define interface for third-party provider
+interface PaymentProvider {
+  createPaymentLink(params: PaymentParams): Promise<PaymentLink>;
+  verifyWebhook(payload: any, signature: string): boolean;
+  // ... other methods
+}
+```
 
-### 1) Payment Gateway (Topup QR)
-Phạm vi:
-- Sinh QR code thanh toán theo `amount_incl_vat`
-- Nhận callback/webhook thanh toán
+### 2. Mock Adapter
+```typescript
+// Mock implementation for development
+@Injectable()
+export class MockPaymentProvider implements PaymentProvider {
+  async createPaymentLink(params: PaymentParams) {
+    return {
+      paymentUrl: `https://mock-payment.example.com/pay/${params.orderId}`,
+      qrCode: `data:image/png;base64,mock_qr_data`,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    };
+  }
+}
+```
 
-Tạm thời triển khai:
-- Mock API tạo QR:
-  - trả `qr_content`, `payment_ref`, `expired_at`
-- Mock webhook:
-  - success/failed
-  - idempotency key giả lập
+### 3. Stub Webhook Handler
+```typescript
+// Stub handler for testing
+@Controller('webhooks/mock')
+export class MockWebhookController {
+  @Post('payment')
+  async handlePayment(@Body() payload: any) {
+    // Mock processing logic
+    return { status: 'success' };
+  }
+}
+```
 
-Không làm ở giai đoạn này:
-- Tích hợp cổng thanh toán thật
-- Ký số/chứng thực đặc thù provider thật
+## Third-Party APIs to Implement
 
-### 2) Zalo OA OAuth và Token API
-Phạm vi:
-- Redirect OAuth
-- Exchange code -> token
-- Refresh token
-- Lấy thông tin OA
+### 1. Payment Gateway - Pay2S 
+**Status**: Implemented with real Pay2S integration
+**Files**: 
+- `src/integrations/pay2s/pay2s.util.ts`
+- `src/modules/collection-requests/`
+- `src/modules/webhooks/webhooks.controller.ts`
 
-Tạm thời triển khai:
-- Mock OAuth callback data
-- Mock token lifecycle (valid/expired/refresh_fail)
-- Mock OA info (`oa_id`, `oa_name`, `status`)
+**Implementation**:
+- Real Pay2S API calls for QR code generation
+- HMAC-SHA256 signature verification
+- Webhook processing for payment confirmations
+- Collection request management
 
-Không làm ở giai đoạn này:
-- Kết nối thật tới hệ sinh thái OAuth của Zalo
+**Configuration**:
+```typescript
+// src/config/pay2s.config.ts
+export default registerAs('pay2s', () => ({
+  partnerCode: process.env.PAY2S_PARTNER_CODE,
+  apiKey: process.env.PAY2S_API_KEY,
+  apiSecret: process.env.PAY2S_API_SECRET,
+  apiUrl: process.env.PAY2S_API_URL,
+}));
+```
 
-### 3) Zalo ZNS/ZBS Messaging API
-Phạm vi:
-- Send test
-- Send single
-- Send campaign row
+**API Endpoints**:
+- `POST /collection-requests` - Create Pay2S collection request
+- `POST /webhooks/pay2s/ipn` - Pay2S webhook handler
 
-Tạm thời triển khai:
-- Mock send result:
-  - success/failed
-  - `provider_message_id`
-  - `error_code/error_message`
-- Hỗ trợ chế độ fail ngẫu nhiên có kiểm soát để test refund/retry
+### 2. Zalo OA OAuth 
+**Status**: Mock implementation required
+**Purpose**: OAuth flow for Zalo Official Account connection
 
-Không làm ở giai đoạn này:
-- Gửi tin thật qua Zalo production
+### 3. Zalo ZNS/ZBS Messaging API 
+**Status**: Mock implementation required
+**Purpose**: Send ZNS messages and track delivery status
 
-### 4) Notification Provider (Email/SMS) - nếu cần ở phase code hiện tại
-Phạm vi:
-- Gửi email/sms event
+### 4. Notification Provider 
+**Status**: Mock implementation required
+**Purpose**: Send email/SMS notifications
 
-Tạm thời triển khai:
-- Mock notifier ghi log nội bộ
+## Implementation Guidelines
 
-Không làm ở giai đoạn này:
-- Kết nối SMTP/SMS gateway thật
+### What to Implement (Mock Phase)
+- Interface definitions
+- Mock adapters with realistic responses
+- Stub webhook endpoints
+- Error simulation capabilities
+- Response time simulation
 
-## Gợi ý cấu trúc code (NestJS)
-- `src/integrations/payment/*`
-- `src/integrations/zalo-oauth/*`
-- `src/integrations/zalo-messaging/*`
-- `src/integrations/notification/*`
+### What NOT to Implement (Mock Phase)
+- Real API credentials
+- Production API calls
+- Real webhook processing
+- Actual payment transactions
 
-Mỗi integration gồm:
-- `*.provider.interface.ts`
-- `*.mock.adapter.ts`
-- `*.module.ts`
+### Transition to Real Implementation
+When transitioning from mock to real:
 
-## Điều kiện chuyển từ mock sang real
-- Có tài khoản/khoá chính thức từ nhà cung cấp
-- Có tài liệu API chi tiết + môi trường sandbox
-- Có test contract cho adapter thật
-- Có kế hoạch rollout an toàn
+1. **Keep the interface**: Don't change the provider interface
+2. **Replace the adapter**: Swap mock adapter with real implementation
+3. **Update configuration**: Add real credentials and endpoints
+4. **Enhance webhook handlers**: Add real signature verification and processing
+5. **Add monitoring**: Add logging and error tracking
+
+## Code Structure
+
+```
+src/
+├── integrations/
+│   ├── pay2s/
+│   │   ├── pay2s.util.ts          # Real Pay2S utilities
+│   │   └── types.ts               # Pay2S types
+│   ├── zalo/
+│   │   ├── oa.interface.ts        # Mock only
+│   │   ├── oa.mock.adapter.ts     # Mock only
+│   │   └── types.ts               # Mock only
+│   └── notification/
+│       ├── interface.ts           # Mock only
+│       ├── mock.adapter.ts       # Mock only
+│       └── types.ts               # Mock only
+├── modules/
+│   ├── collection-requests/       # Pay2S collection requests
+│   ├── webhooks/                  # Webhook handlers
+│   └── ...
+```
+
+## Environment Variables
+
+```bash
+# Pay2S Configuration (REAL)
+PAY2S_PARTNER_CODE=PAY2SLNASDTFCHN7JVB3
+PAY2S_API_KEY=bd60c4368cce7b5e33f52de59b27649eb96ee85919ec804734a0f8a722bbcc9c
+PAY2S_API_SECRET=19daf7c211804cee4434fc8c1bbe9f4cffc442e7e7c5f72b82fb04bc42606a5c
+PAY2S_API_URL=https://sandbox-payment.pay2s.vn/v1/gateway/api/create
+
+# Mock Configuration (for other providers)
+MOCK_PAYMENT_ENABLED=true
+MOCK_ZALO_OA_ENABLED=true
+```
+
+## Testing Strategy
+
+### Mock Testing
+- Test with mock adapters during development
+- Simulate various response scenarios (success, failure, timeout)
+- Test webhook handling with mock payloads
+
+### Real Testing
+- Use sandbox/test environments for real providers
+- Test with small amounts for payment gateways
+- Monitor webhook delivery and processing
+
+## Security Considerations
+
+### Mock Phase
+- Use test data only
+- No real credentials in code
+- Mock signatures and verification
+
+### Real Phase
+- Secure credential management
+- Signature verification for webhooks
+- Rate limiting and monitoring
+- Error handling and retry logic

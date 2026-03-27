@@ -1,5 +1,11 @@
 import { BillingType } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class WorkspaceBillingFieldsDto {
   @IsEnum(BillingType)

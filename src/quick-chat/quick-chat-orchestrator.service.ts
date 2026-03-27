@@ -85,7 +85,8 @@ export class QuickChatOrchestratorService {
         }
 
         const amountExclVat = this.getNumber(
-          input.toolInput?.amountExclVat ?? this.extractFirstNumber(input.message),
+          input.toolInput?.amountExclVat ??
+            this.extractFirstNumber(input.message),
         );
         if (!amountExclVat) {
           return {

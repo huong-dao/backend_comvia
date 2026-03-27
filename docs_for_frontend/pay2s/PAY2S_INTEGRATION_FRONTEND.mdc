@@ -1,0 +1,687 @@
+# Pay2S Integration Guide for Frontend
+
+## Overview
+Hướng dẫn chi tiết tích hợp Pay2S payment gateway vào frontend application.
+
+## Pay2S Flow Overview
+
+```
+Frontend → Backend → Pay2S API → QR Code → User Payment → Pay2S Webhook → Backend → Frontend Update
+```
+
+## 1. Topup Flow Implementation
+
+### 1.1 Step-by-Step Flow
+
+1. **User selects amount** → Frontend validates amount
+2. **Get money accounts** → Frontend fetches available bank accounts
+3. **Create topup request** → Frontend calls backend API
+4. **Display QR code** → Frontend shows QR for user to scan
+5. **Monitor payment status** → Frontend polls or listens for webhook
+6. **Update UI** → Frontend shows payment result
+
+### 1.2 Component Implementation
+
+#### TopupForm Component
+```typescript
+import React, { useState, useEffect } from 'react';
+import { createTopupWithPay2S, getMoneyAccounts, getCollectionRequest } from '../api/topup';
+
+interface TopupFormProps {
+  workspaceId: string;
+  onSuccess: (topup: TopupRequest) => void;
+  onError: (error: string) => void;
+}
+
+const TopupForm: React.FC<TopupFormProps> = ({ workspaceId, onSuccess, onError }) => {
+  const [amount, setAmount] = useState<number>(0);
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [qrCode, setQrCode] = useState<string>('');
+  const [topup, setTopup] = useState<TopupRequest | null>(null);
+  const [status, setStatus] = useState<'idle' | 'pending' | 'paid' | 'failed'>('idle');
+
+  // Load money accounts on mount
+  useEffect(() => {
+    loadMoneyAccounts();
+  }, []);
+
+  const loadMoneyAccounts = async () => {
+    try {
+      const accounts = await getMoneyAccounts(workspaceId);
+      setMoneyAccounts(accounts.data);
+      if (accounts.data.length > 0) {
+        setSelectedAccount(accounts.data[0].id);
+      }
+    } catch (error) {
+      onError('Failed to load money accounts');
+    }
+  };
+
+  const handleAmountChange = (value: number) => {
+    // Validate amount (minimum 10,000 VND)
+    if (value >= 10000) {
+      setAmount(value);
+    }
+  };
+
+  const handleCreateTopup = async () => {
+    if (!selectedAccount) {
+      onError('Please select a money account');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await createTopupWithPay2S({
+        amountExclVat: amount,
+        moneyAccountId: selectedAccount
+      });
+
+      setTopup(response);
+      setQrCode(response.qrContent);
+      setStatus('pending');
+      
+      // Start monitoring payment status
+      startStatusMonitoring(response.collectionRequestCode);
+    } catch (error) {
+      onError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startStatusMonitoring = (collectionRequestCode: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const collectionRequest = await getCollectionRequest(collectionRequestCode);
+        
+        if (collectionRequest.status === 'PAID') {
+          setStatus('paid');
+          onSuccess(topup!);
+          clearInterval(interval);
+        } else if (collectionRequest.status === 'FAILED') {
+          setStatus('failed');
+          onError('Payment failed');
+          clearInterval(interval);
+        }
+      } catch (error) {
+        console.error('Status check failed:', error);
+      }
+    }, 3000); // Check every 3 seconds
+
+    // Cleanup after 5 minutes (QR expiry)
+    setTimeout(() => {
+      clearInterval(interval);
+      if (status === 'pending') {
+        setStatus('failed');
+        onError('Payment expired');
+      }
+    }, 5 * 60 * 1000);
+  };
+
+  const calculateVAT = (amount: number) => {
+    const vatRate = 0.1; // 10%
+    const vatAmount = amount * vatRate;
+    const totalAmount = amount + vatAmount;
+    return { vatAmount, totalAmount };
+  };
+
+  const { vatAmount, totalAmount } = calculateVAT(amount);
+
+  return (
+    <div className="topup-form">
+      {status === 'idle' && (
+        <div className="topup-input">
+          <h3>Nạp tiền vào ví</h3>
+          
+          <div className="amount-section">
+            <label>Số tiền muốn nạp (VND)</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => handleAmountChange(Number(e.target.value))}
+              placeholder="Nhập số tiền tối thiểu 10,000 VNĐ"
+              min="10000"
+              step="1000"
+            />
+          </div>
+
+          {amount > 0 && (
+            <div className="vat-breakdown">
+              <div className="breakdown-item">
+                <span>Số tiền nạp:</span>
+                <span>{amount.toLocaleString()} VNĐ</span>
+              </div>
+              <div className="breakdown-item">
+                <span>VAT (10%):</span>
+                <span>{vatAmount.toLocaleString()} VNĐ</span>
+              </div>
+              <div className="breakdown-item total">
+                <span>Tổng thanh toán:</span>
+                <span>{totalAmount.toLocaleString()} VNĐ</span>
+              </div>
+            </div>
+          )}
+
+          <div className="account-section">
+            <label>Tài khoản ngân hàng</label>
+            <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+            >
+              {moneyAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.bankName} - {account.accountNumber}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleCreateTopup}
+            disabled={loading || amount < 10000 || !selectedAccount}
+            className="topup-button"
+          >
+            {loading ? 'Đang tạo QR...' : 'Tạo QR thanh toán'}
+          </button>
+        </div>
+      )}
+
+      {status === 'pending' && qrCode && (
+        <div className="qr-payment">
+          <h3>Quét mã QR để thanh toán</h3>
+          <div className="qr-code">
+            <img src={qrCode} alt="Payment QR Code" />
+          </div>
+          <div className="payment-info">
+            <p><strong>Mã giao dịch:</strong> {topup?.collectionRequestCode}</p>
+            <p><strong>Số tiền:</strong> {totalAmount.toLocaleString()} VNĐ</p>
+            <p><strong>Hạn thanh toán:</strong> 5 phút</p>
+          </div>
+          <div className="status-indicator">
+            <div className="spinner"></div>
+            <p>Đang chờ thanh toán...</p>
+          </div>
+        </div>
+      )}
+
+      {status === 'paid' && (
+        <div className="payment-success">
+          <h3>Thanh toán thành công!</h3>
+          <p>Số tiền {amount.toLocaleString()} VNĐ đã được nạp vào ví.</p>
+          <button onClick={() => window.location.reload()}>
+            Nạp tiền thêm
+          </button>
+        </div>
+      )}
+
+      {status === 'failed' && (
+        <div className="payment-failed">
+          <h3>Thanh toán thất bại</h3>
+          <p>Vui lòng thử lại.</p>
+          <button onClick={() => setStatus('idle')}>
+            Thử lại
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default TopupForm;
+```
+
+#### API Functions
+```typescript
+// src/api/topup.ts
+import { fetchWithAuth } from './base';
+
+export interface CreateTopupRequest {
+  amountExclVat: number;
+  moneyAccountId: string;
+}
+
+export interface TopupRequest {
+  id: string;
+  topupCode: string;
+  amountExclVat: number;
+  vatAmount: number;
+  amountInclVat: number;
+  qrContent: string;
+  qrExpiredAt: string;
+  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
+  collectionRequestCode: string;
+  createdAt: string;
+}
+
+export interface MoneyAccount {
+  id: string;
+  accountNumber: string;
+  bankName: string | null;
+  bankCode: string | null;
+  pay2sBankId: string | null;
+  isActive: boolean;
+}
+
+export interface CollectionRequest {
+  id: string;
+  code: string;
+  type: 'TOPUP' | 'INVOICE';
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
+  amount: number;
+  qrCodeUrl: string | null;
+  transId: string | null;
+  paidAt: string | null;
+}
+
+export const createTopupWithPay2S = async (data: CreateTopupRequest): Promise<TopupRequest> => {
+  const response = await fetchWithAuth('/api/v1/topups/create-with-pay2s', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return response.json();
+};
+
+export const getMoneyAccounts = async (workspaceId: string): Promise<{ data: MoneyAccount[] }> => {
+  const response = await fetchWithAuth(`/api/v1/money-accounts/workspace?workspaceId=${workspaceId}`);
+  return response.json();
+};
+
+export const getCollectionRequest = async (code: string): Promise<CollectionRequest> => {
+  const response = await fetchWithAuth(`/api/v1/collection-requests/code/${code}`);
+  return response.json();
+};
+
+export const getTopupStatus = async (topupCode: string): Promise<TopupRequest> => {
+  const response = await fetchWithAuth(`/api/v1/topups/${topupCode}/status`);
+  return response.json();
+};
+```
+
+## 2. Real-time Updates (Optional)
+
+### 2.1 WebSocket Implementation
+```typescript
+// src/services/websocket.ts
+class WebSocketService {
+  private ws: WebSocket | null = null;
+  private listeners: Map<string, ((data: any) => void)[]> = new Map();
+
+  connect(token: string) {
+    this.ws = new WebSocket(`${process.env.REACT_APP_WS_URL}/ws?token=${token}`);
+
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+    };
+
+    this.ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      this.handleMessage(message);
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      // Implement reconnection logic
+      setTimeout(() => this.connect(token), 5000);
+    };
+  }
+
+  private handleMessage(message: any) {
+    const { type, data } = message;
+    const listeners = this.listeners.get(type) || [];
+    listeners.forEach(listener => listener(data));
+  }
+
+  subscribe(event: string, callback: (data: any) => void) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event)!.push(callback);
+  }
+
+  unsubscribe(event: string, callback: (data: any) => void) {
+    const listeners = this.listeners.get(event);
+    if (listeners) {
+      const index = listeners.indexOf(callback);
+      if (index > -1) {
+        listeners.splice(index, 1);
+      }
+    }
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+}
+
+export const wsService = new WebSocketService();
+```
+
+### 2.2 Using WebSocket for Payment Updates
+```typescript
+// In your component
+useEffect(() => {
+  const handlePaymentUpdate = (data: any) => {
+    if (data.collectionRequestCode === topup?.collectionRequestCode) {
+      if (data.status === 'PAID') {
+        setStatus('paid');
+        onSuccess(topup!);
+      } else if (data.status === 'FAILED') {
+        setStatus('failed');
+        onError('Payment failed');
+      }
+    }
+  };
+
+  wsService.subscribe('payment_update', handlePaymentUpdate);
+  wsService.subscribe('topup_update', handlePaymentUpdate);
+
+  return () => {
+    wsService.unsubscribe('payment_update', handlePaymentUpdate);
+    wsService.unsubscribe('topup_update', handlePaymentUpdate);
+  };
+}, [topup]);
+```
+
+## 3. Error Handling
+
+### 3.1 Error Types
+```typescript
+export enum TopupErrorType {
+  INVALID_AMOUNT = 'INVALID_AMOUNT',
+  NO_MONEY_ACCOUNT = 'NO_MONEY_ACCOUNT',
+  PAY2S_ERROR = 'PAY2S_ERROR',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  PAYMENT_EXPIRED = 'PAYMENT_EXPIRED',
+  PAYMENT_FAILED = 'PAYMENT_FAILED'
+}
+
+export class TopupError extends Error {
+  constructor(
+    public type: TopupErrorType,
+    message: string,
+    public details?: any
+  ) {
+    super(message);
+    this.name = 'TopupError';
+  }
+}
+```
+
+### 3.2 Error Handler
+```typescript
+// src/utils/errorHandler.ts
+export const handleTopupError = (error: any): string => {
+  if (error instanceof TopupError) {
+    switch (error.type) {
+      case TopupErrorType.INVALID_AMOUNT:
+        return 'Số tiền không hợp lệ. Vui lòng nhập số tiền tối thiểu 10,000 VNĐ.';
+      case TopupErrorType.NO_MONEY_ACCOUNT:
+        return 'Không tìm thấy tài khoản ngân hàng. Vui lòng liên hệ quản trị viên.';
+      case TopupErrorType.PAY2S_ERROR:
+        return 'Lỗi từ cổng thanh toán. Vui lòng thử lại sau.';
+      case TopupErrorType.NETWORK_ERROR:
+        return 'Lỗi kết nối. Vui lòng kiểm tra mạng và thử lại.';
+      case TopupErrorType.PAYMENT_EXPIRED:
+        return 'QR code đã hết hạn. Vui lòng tạo lại yêu cầu thanh toán.';
+      case TopupErrorType.PAYMENT_FAILED:
+        return 'Thanh toán thất bại. Vui lòng thử lại.';
+      default:
+        return 'Đã xảy ra lỗi. Vui lòng thử lại.';
+    }
+  } else {
+    return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.';
+  }
+};
+```
+
+## 4. UI Components
+
+### 4.1 QR Code Display
+```typescript
+// src/components/QRCodeDisplay.tsx
+interface QRCodeDisplayProps {
+  qrData: string;
+  title?: string;
+  size?: number;
+}
+
+const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({ 
+  qrData, 
+  title = "Quét mã QR để thanh toán", 
+  size = 256 
+}) => {
+  return (
+    <div className="qr-code-display">
+      <h3>{title}</h3>
+      <div className="qr-container">
+        <img 
+          src={qrData} 
+          alt="Payment QR Code" 
+          style={{ width: size, height: size }}
+        />
+      </div>
+      <div className="qr-instructions">
+        <p>1. Mở ứng dụng ngân hàng</p>
+        <p>2. Chọn "Quét mã QR"</p>
+        <p>3. Quét mã bên trên</p>
+        <p>4. Xác nhận thanh toán</p>
+      </div>
+    </div>
+  );
+};
+
+export default QRCodeDisplay;
+```
+
+### 4.2 Payment Status Indicator
+```typescript
+// src/components/PaymentStatus.tsx
+interface PaymentStatusProps {
+  status: 'pending' | 'paid' | 'failed' | 'expired';
+  message?: string;
+}
+
+const PaymentStatus: React.FC<PaymentStatusProps> = ({ status, message }) => {
+  const getStatusConfig = () => {
+    switch (status) {
+      case 'pending':
+        return {
+          icon: '⏳',
+          color: '#ff9500',
+          title: 'Đang chờ thanh toán',
+          description: message || 'Vui lòng quét mã QR để thanh toán'
+        };
+      case 'paid':
+        return {
+          icon: '✅',
+          color: '#34c759',
+          title: 'Thanh toán thành công',
+          description: message || 'Thanh toán đã được xác nhận'
+        };
+      case 'failed':
+        return {
+          icon: '❌',
+          color: '#ff3b30',
+          title: 'Thanh toán thất bại',
+          description: message || 'Thanh toán không thành công'
+        };
+      case 'expired':
+        return {
+          icon: '⏰',
+          color: '#8e8e93',
+          title: 'Hết hạn',
+          description: message || 'QR code đã hết hạn'
+        };
+      default:
+        return {
+          icon: '❓',
+          color: '#8e8e93',
+          title: 'Không xác định',
+          description: 'Trạng thái không xác định'
+        };
+    }
+  };
+
+  const config = getStatusConfig();
+
+  return (
+    <div className="payment-status" style={{ color: config.color }}>
+      <div className="status-icon">{config.icon}</div>
+      <div className="status-content">
+        <h4>{config.title}</h4>
+        <p>{config.description}</p>
+      </div>
+    </div>
+  );
+};
+
+export default PaymentStatus;
+```
+
+## 5. Testing
+
+### 5.1 Mock API for Development
+```typescript
+// src/mocks/topupMock.ts
+export const mockTopupAPI = {
+  createTopupWithPay2S: async (data: CreateTopupRequest): Promise<TopupRequest> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    return {
+      id: 'mock_topup_id',
+      topupCode: 'TP_MOCK_' + Date.now(),
+      amountExclVat: data.amountExclVat,
+      vatAmount: data.amountExclVat * 0.1,
+      amountInclVat: data.amountExclVat * 1.1,
+      qrContent: 'data:image/png;base64,mock_qr_data',
+      qrExpiredAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      status: 'PENDING',
+      collectionRequestCode: 'MOCK_' + Date.now(),
+      createdAt: new Date().toISOString()
+    };
+  },
+
+  getCollectionRequest: async (code: string): Promise<CollectionRequest> => {
+    // Simulate status change after 10 seconds
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    
+    return {
+      id: 'mock_collection_id',
+      code,
+      type: 'TOPUP',
+      status: 'PAID',
+      amount: 1100000,
+      qrCodeUrl: null,
+      transId: 'MOCK_TRANS_ID',
+      paidAt: new Date().toISOString()
+    };
+  }
+};
+```
+
+### 5.2 Test Cases
+```typescript
+// src/tests/topup.test.ts
+describe('Topup Flow', () => {
+  test('should create topup request successfully', async () => {
+    const mockData = {
+      amountExclVat: 1000000,
+      moneyAccountId: 'mock_account_id'
+    };
+
+    const result = await mockTopupAPI.createTopupWithPay2S(mockData);
+    
+    expect(result.status).toBe('PENDING');
+    expect(result.qrContent).toBeTruthy();
+    expect(result.collectionRequestCode).toBeTruthy();
+  });
+
+  test('should handle payment status change', async () => {
+    const code = 'MOCK_CODE';
+    const result = await mockTopupAPI.getCollectionRequest(code);
+    
+    expect(result.status).toBe('PAID');
+    expect(result.paidAt).toBeTruthy();
+  });
+
+  test('should validate minimum amount', () => {
+    const invalidAmount = 5000; // Less than minimum 10,000
+    
+    expect(() => handleAmountChange(invalidAmount)).toThrow();
+  });
+});
+```
+
+## 6. Best Practices
+
+### 6.1 Security
+- Never expose API keys in frontend
+- Use HTTPS for all API calls
+- Validate all user inputs
+- Implement proper error handling
+- Use JWT tokens with proper expiration
+
+### 6.2 Performance
+- Implement loading states
+- Cache API responses where appropriate
+- Use debouncing for amount inputs
+- Implement retry logic for failed requests
+
+### 6.3 User Experience
+- Show clear payment instructions
+- Provide real-time status updates
+- Handle network failures gracefully
+- Show helpful error messages
+- Implement proper loading indicators
+
+### 6.4 Monitoring
+- Log all payment attempts
+- Track conversion rates
+- Monitor API response times
+- Set up alerts for failures
+
+## 7. Troubleshooting
+
+### 7.1 Common Issues
+1. **QR code not displaying**: Check if qrData is valid base64
+2. **Payment status not updating**: Verify polling interval and webhook setup
+3. **Amount validation failing**: Check minimum amount requirements
+4. **Money accounts not loading**: Verify workspace permissions
+
+### 7.2 Debug Tips
+```typescript
+// Enable debug logging
+const DEBUG = process.env.NODE_ENV === 'development';
+
+const debugLog = (message: string, data?: any) => {
+  if (DEBUG) {
+    console.log(`[Topup Debug] ${message}`, data);
+  }
+};
+
+// Usage
+debugLog('Creating topup request', { amount, moneyAccountId });
+debugLog('QR code generated', { qrLength: qrContent.length });
+```
+
+## 8. Environment Configuration
+
+```typescript
+// src/config/environment.ts
+export const config = {
+  API_BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:3000',
+  WS_URL: process.env.REACT_APP_WS_URL || 'ws://localhost:3000',
+  MIN_TOPUP_AMOUNT: 10000,
+  VAT_RATE: 0.1,
+  POLLING_INTERVAL: 3000,
+  QR_EXPIRY_TIME: 5 * 60 * 1000, // 5 minutes
+  MAX_RETRY_ATTEMPTS: 3
+};
+```

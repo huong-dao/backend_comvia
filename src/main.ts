@@ -17,7 +17,12 @@ async function bootstrap() {
       'http://localhost:3002', // FE Next hiện tại
     ],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-api-key',
+      'x-workspace-id',
+    ],
     credentials: false, // bạn dùng JWT bearer, không dùng cookie
   });
 

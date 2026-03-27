@@ -1,0 +1,702 @@
+# Migration Guide: Mock API to Real Pay2S API
+
+## Overview
+Hướng dẫn chuyển đổi từ Mock API sang Real Pay2S API cho frontend team.
+
+## Migration Checklist
+
+### ✅ Pre-Migration
+- [ ] Backup current frontend code
+- [ ] Review existing mock API usage
+- [ ] Set up Pay2S sandbox credentials
+- [ ] Test backend Pay2S integration
+- [ ] Update environment variables
+
+### ✅ Migration Steps
+- [ ] Update API endpoint URLs
+- [ ] Update request/response data structures
+- [ ] Implement real QR code handling
+- [ ] Update status monitoring logic
+- [ ] Add error handling for real API failures
+- [ ] Update UI components
+
+### ✅ Post-Migration
+- [ ] Test end-to-end flow
+- [ ] Verify payment processing
+- [ ] Test error scenarios
+- [ ] Update documentation
+- [ ] Deploy to staging environment
+
+## 1. API Endpoint Changes
+
+### Before (Mock API)
+```typescript
+// Mock endpoints
+POST /api/v1/topups/create-mock-qr
+GET /api/v1/topups/:code/mock-status
+POST /api/v1/topups/:code/mock-webhook
+```
+
+### After (Real Pay2S API)
+```typescript
+// Real endpoints
+POST /api/v1/topups/create-with-pay2s
+GET /api/v1/topups/:topupCode/status
+GET /api/v1/collection-requests/code/:code
+POST /webhooks/pay2s/ipn (backend only)
+```
+
+## 2. Request/Response Data Structure Changes
+
+### 2.1 Create Topup Request
+
+#### Before (Mock)
+```typescript
+// Request
+{
+  "amount": 1100000,  // Total amount including VAT
+  "workspaceId": "workspace_id"
+}
+
+// Response
+{
+  "qrCode": "base64_qr_data",
+  "topupCode": "MOCK_123456",
+  "amount": 1100000,
+  "expiresAt": "2024-03-26T17:00:00Z"
+}
+```
+
+#### After (Real)
+```typescript
+// Request
+{
+  "amountExclVat": 1000000,  // Amount before VAT
+  "moneyAccountId": "account_id"  // Required for Pay2S
+}
+
+// Response
+{
+  "id": "topup_id",
+  "topupCode": "TP_1234567890_abcdef",
+  "amountExclVat": 1000000,
+  "vatAmount": 1000000,
+  "amountInclVat": 1100000,
+  "qrContent": "data:image/png;base64,...",
+  "qrExpiredAt": "2024-03-26T17:00:00Z",
+  "status": "PENDING",
+  "collectionRequestCode": "COMVIA123456",
+  "paymentProvider": "pay2s"
+}
+```
+
+### 2.2 Status Check
+
+#### Before (Mock)
+```typescript
+GET /api/v1/topups/:code/mock-status
+
+Response:
+{
+  "status": "PAID",
+  "paidAt": "2024-03-26T16:50:00Z",
+  "amount": 1100000
+}
+```
+
+#### After (Real)
+```typescript
+GET /api/v1/topups/:topupCode/status
+
+Response:
+{
+  "topupCode": "TP_1234567890_abcdef",
+  "status": "PAID",
+  "paidAt": "2024-03-26T16:50:00Z",
+  "amountExclVat": 1000000,
+  "vatAmount": 100000,
+  "amountInclVat": 1100000,
+  "collectionRequestCode": "COMVIA123456"
+}
+
+// Alternative: Collection Request endpoint
+GET /api/v1/collection-requests/code/:code
+
+Response:
+{
+  "id": "collection_request_id",
+  "code": "COMVIA123456",
+  "type": "TOPUP",
+  "status": "PAID",
+  "amount": 1100000,
+  "transId": "PAY2S123456789",
+  "paidAt": "2024-03-26T16:50:00Z"
+}
+```
+
+## 3. Code Migration Steps
+
+### 3.1 Update API Service
+
+#### Before (Mock API Service)
+```typescript
+// src/services/mockTopupService.ts
+export const createMockTopup = async (amount: number, workspaceId: string) => {
+  const response = await fetch('/api/v1/topups/create-mock-qr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, workspaceId })
+  });
+  
+  return response.json();
+};
+
+export const checkMockStatus = async (code: string) => {
+  const response = await fetch(`/api/v1/topups/${code}/mock-status`);
+  return response.json();
+};
+```
+
+#### After (Real API Service)
+```typescript
+// src/services/topupService.ts
+export interface CreateTopupRequest {
+  amountExclVat: number;
+  moneyAccountId: string;
+}
+
+export const createTopupWithPay2S = async (data: CreateTopupRequest) => {
+  const response = await fetchWithAuth('/api/v1/topups/create-with-pay2s', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  
+  return response.json();
+};
+
+export const getTopupStatus = async (topupCode: string) => {
+  const response = await fetchWithAuth(`/api/v1/topups/${topupCode}/status`);
+  return response.json();
+};
+
+export const getCollectionRequest = async (code: string) => {
+  const response = await fetchWithAuth(`/api/v1/collection-requests/code/${code}`);
+  return response.json();
+};
+```
+
+### 3.2 Update Component Logic
+
+#### Before (Mock Component)
+```typescript
+const handleTopup = async (amount: number) => {
+  try {
+    const result = await createMockTopup(amount, workspaceId);
+    setQrCode(result.qrCode);
+    setTopupCode(result.topupCode);
+    
+    // Start polling mock status
+    startStatusPolling(result.topupCode);
+  } catch (error) {
+    setError('Failed to create topup');
+  }
+};
+
+const startStatusPolling = (code: string) => {
+  const interval = setInterval(async () => {
+    const status = await checkMockStatus(code);
+    if (status.status === 'PAID') {
+      handleSuccess();
+      clearInterval(interval);
+    }
+  }, 3000);
+};
+```
+
+#### After (Real Component)
+```typescript
+const handleTopup = async (amount: number, moneyAccountId: string) => {
+  try {
+    // Calculate amount before VAT
+    const amountExclVat = Math.round(amount / 1.1);
+    
+    const result = await createTopupWithPay2S({
+      amountExclVat,
+      moneyAccountId
+    });
+    
+    setQrCode(result.qrContent);
+    setTopupCode(result.topupCode);
+    setCollectionRequestCode(result.collectionRequestCode);
+    
+    // Start polling real status
+    startStatusPolling(result.collectionRequestCode);
+  } catch (error) {
+    setError(handleTopupError(error));
+  }
+};
+
+const startStatusPolling = (collectionRequestCode: string) => {
+  const interval = setInterval(async () => {
+    try {
+      const collectionRequest = await getCollectionRequest(collectionRequestCode);
+      
+      if (collectionRequest.status === 'PAID') {
+        handleSuccess(collectionRequest);
+        clearInterval(interval);
+      } else if (collectionRequest.status === 'FAILED') {
+        handleFailure();
+        clearInterval(interval);
+      }
+    } catch (error) {
+      console.error('Status check failed:', error);
+    }
+  }, 3000);
+  
+  // Set timeout for QR expiry
+  setTimeout(() => {
+    clearInterval(interval);
+    handleExpiry();
+  }, 5 * 60 * 1000); // 5 minutes
+};
+```
+
+### 3.3 Update UI Components
+
+#### Before (Mock UI)
+```typescript
+// Amount input (total amount)
+<input
+  type="number"
+  value={totalAmount}
+  onChange={(e) => setTotalAmount(Number(e.target.value))}
+  placeholder="Nhập số tiền thanh toán"
+/>
+
+// QR display
+<img src={qrCode} alt="QR Code" />
+<p>Mã giao dịch: {topupCode}</p>
+```
+
+#### After (Real UI)
+```typescript
+// Amount input (before VAT)
+<input
+  type="number"
+  value={amountExclVat}
+  onChange={(e) => setAmountExclVat(Number(e.target.value))}
+  placeholder="Nhập số tiền muốn nạp"
+/>
+
+// VAT breakdown display
+<div className="vat-breakdown">
+  <div>Số tiền nạp: {amountExclVat.toLocaleString()} VNĐ</div>
+  <div>VAT (10%): {vatAmount.toLocaleString()} VNĐ</div>
+  <div><strong>Tổng thanh toán: {totalAmount.toLocaleString()} VNĐ</strong></div>
+</div>
+
+// Money account selection
+<select value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
+  {moneyAccounts.map(account => (
+    <option key={account.id} value={account.id}>
+      {account.bankName} - {account.accountNumber}
+    </option>
+  ))}
+</select>
+
+// QR display with more info
+<div className="qr-section">
+  <img src={qrContent} alt="Payment QR Code" />
+  <div className="payment-info">
+    <p><strong>Mã giao dịch:</strong> {collectionRequestCode}</p>
+    <p><strong>Số tiền:</strong> {totalAmount.toLocaleString()} VNĐ</p>
+    <p><strong>Hạn thanh toán:</strong> 5 phút</p>
+    <p><strong>Ngân hàng:</strong> {selectedBankName}</p>
+  </div>
+</div>
+```
+
+## 4. Error Handling Updates
+
+### 4.1 New Error Types
+
+#### Before (Mock Errors)
+```typescript
+const errors = {
+  INVALID_AMOUNT: 'Amount must be positive',
+  NETWORK_ERROR: 'Network error occurred',
+  TIMEOUT: 'Request timeout'
+};
+```
+
+#### After (Real Errors)
+```typescript
+const errors = {
+  INVALID_AMOUNT: 'Amount must be at least 10,000 VND',
+  NO_MONEY_ACCOUNT: 'No money account found',
+  PAY2S_ERROR: 'Pay2S API error',
+  INVALID_BILLING_INFO: 'Invalid billing information',
+  PAYMENT_EXPIRED: 'Payment QR expired',
+  PAYMENT_FAILED: 'Payment failed',
+  NETWORK_ERROR: 'Network error occurred',
+  TIMEOUT: 'Request timeout'
+};
+
+export const handleTopupError = (error: any): string => {
+  if (error.response?.status === 400) {
+    return errors.INVALID_AMOUNT;
+  } else if (error.response?.status === 404) {
+    return errors.NO_MONEY_ACCOUNT;
+  } else if (error.response?.status === 502) {
+    return errors.PAY2S_ERROR;
+  } else {
+    return errors.NETWORK_ERROR;
+  }
+};
+```
+
+### 4.2 Retry Logic
+
+#### Before (Mock)
+```typescript
+// No retry needed for mock
+```
+
+#### After (Real)
+```typescript
+export const createTopupWithRetry = async (
+  data: CreateTopupRequest,
+  maxRetries = 3
+): Promise<TopupRequest> => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await createTopupWithPay2S(data);
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
+};
+```
+
+## 5. Testing Migration
+
+### 5.1 Unit Tests
+
+#### Before (Mock Tests)
+```typescript
+describe('Mock Topup', () => {
+  test('should create mock topup', async () => {
+    const result = await createMockTopup(1100000, 'workspace_id');
+    expect(result.qrCode).toBeTruthy();
+    expect(result.amount).toBe(1100000);
+  });
+});
+```
+
+#### After (Real Tests)
+```typescript
+describe('Real Topup', () => {
+  test('should create topup with Pay2S', async () => {
+    const result = await createTopupWithPay2S({
+      amountExclVat: 1000000,
+      moneyAccountId: 'account_id'
+    });
+    
+    expect(result.qrContent).toBeTruthy();
+    expect(result.amountExclVat).toBe(1000000);
+    expect(result.vatAmount).toBe(100000);
+    expect(result.amountInclVat).toBe(1100000);
+    expect(result.collectionRequestCode).toBeTruthy();
+  });
+
+  test('should handle insufficient amount', async () => {
+    await expect(
+      createTopupWithPay2S({ amountExclVat: 5000, moneyAccountId: 'account_id' })
+    ).rejects.toThrow('Amount must be at least 10,000 VND');
+  });
+});
+```
+
+### 5.2 Integration Tests
+
+```typescript
+describe('Topup Flow Integration', () => {
+  test('should complete full topup flow', async () => {
+    // 1. Get money accounts
+    const accounts = await getMoneyAccounts(workspaceId);
+    expect(accounts.data.length).toBeGreaterThan(0);
+
+    // 2. Create topup
+    const topup = await createTopupWithPay2S({
+      amountExclVat: 1000000,
+      moneyAccountId: accounts.data[0].id
+    });
+
+    // 3. Check initial status
+    expect(topup.status).toBe('PENDING');
+    expect(topup.qrContent).toBeTruthy();
+
+    // 4. Simulate payment (in test environment)
+    await simulatePayment(topup.collectionRequestCode);
+
+    // 5. Check final status
+    const finalStatus = await getCollectionRequest(topup.collectionRequestCode);
+    expect(finalStatus.status).toBe('PAID');
+  });
+});
+```
+
+## 6. Environment Configuration
+
+### 6.1 Environment Variables
+
+#### Before (Mock)
+```bash
+REACT_APP_API_URL=http://localhost:3000
+REACT_APP_USE_MOCK_API=true
+```
+
+#### After (Real)
+```bash
+# Production
+REACT_APP_API_URL=https://api.yourdomain.com
+REACT_APP_PAY2S_ENABLED=true
+REACT_APP_MIN_TOPUP_AMOUNT=10000
+REACT_APP_VAT_RATE=0.1
+
+# Development
+REACT_APP_API_URL=http://localhost:3000
+REACT_APP_PAY2S_ENABLED=true
+REACT_APP_USE_MOCK_API=false
+```
+
+### 6.2 Configuration Update
+
+```typescript
+// src/config/index.ts
+export const config = {
+  apiUrl: process.env.REACT_APP_API_URL,
+  useMockAPI: process.env.REACT_APP_USE_MOCK_API === 'true',
+  pay2sEnabled: process.env.REACT_APP_PAY2S_ENABLED === 'true',
+  minTopupAmount: Number(process.env.REACT_APP_MIN_TOPUP_AMOUNT) || 10000,
+  vatRate: Number(process.env.REACT_APP_VAT_RATE) || 0.1
+};
+
+// Conditional API service
+export const topupService = config.useMockAPI ? mockTopupService : realTopupService;
+```
+
+## 7. Rollback Plan
+
+### 7.1 Quick Rollback
+```typescript
+// Environment variable switch
+REACT_APP_USE_MOCK_API=true
+
+// Code switch
+const topupService = process.env.REACT_APP_USE_MOCK_API === 'true' 
+  ? mockTopupService 
+  : realTopupService;
+```
+
+### 7.2 Feature Flags
+```typescript
+// Feature flag implementation
+export const FEATURE_FLAGS = {
+  PAY2S_INTEGRATION: process.env.REACT_APP_ENABLE_PAY2S === 'true',
+  REAL_PAYMENT: process.env.REACT_APP_USE_REAL_PAYMENT === 'true'
+};
+
+export const createTopup = FEATURE_FLAGS.REAL_PAYMENT 
+  ? createTopupWithPay2S 
+  : createMockTopup;
+```
+
+## 8. Monitoring and Analytics
+
+### 8.1 Add Tracking
+```typescript
+// Track migration metrics
+export const trackMigration = {
+  topupAttempt: (amount: number, provider: string) => {
+    // Analytics tracking
+    window.gtag?.('event', 'topup_attempt', {
+      amount,
+      provider,
+      timestamp: Date.now()
+    });
+  },
+  
+  topupSuccess: (amount: number, provider: string, duration: number) => {
+    window.gtag?.('event', 'topup_success', {
+      amount,
+      provider,
+      duration,
+      timestamp: Date.now()
+    });
+  },
+  
+  topupFailure: (amount: number, provider: string, error: string) => {
+    window.gtag?.('event', 'topup_failure', {
+      amount,
+      provider,
+      error,
+      timestamp: Date.now()
+    });
+  }
+};
+```
+
+### 8.2 Performance Monitoring
+```typescript
+// Monitor API performance
+export const monitorAPIPerformance = async (apiCall: () => Promise<any>, name: string) => {
+  const start = performance.now();
+  try {
+    const result = await apiCall();
+    const duration = performance.now() - start;
+    
+    // Log performance metrics
+    console.log(`[Performance] ${name}: ${duration}ms`);
+    
+    // Send to monitoring service
+    if (duration > 5000) {
+      window.gtag?.('event', 'slow_api_call', {
+        name,
+        duration
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    const duration = performance.now() - start;
+    console.error(`[Error] ${name} failed after ${duration}ms:`, error);
+    throw error;
+  }
+};
+```
+
+## 9. Deployment Strategy
+
+### 9.1 Staged Rollout
+1. **Internal Testing**: Deploy to internal environment first
+2. **Beta Testing**: Enable for small group of users
+3. **Partial Rollout**: Enable for 10% of users
+4. **Full Rollout**: Enable for all users
+
+### 9.2 Feature Toggle Implementation
+```typescript
+// User-based rollout
+export const shouldUseRealAPI = (userId: string): boolean => {
+  const rolloutPercentage = 0.1; // 10%
+  const hash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return (hash % 100) < (rolloutPercentage * 100);
+};
+
+// Usage in component
+const TopupComponent = ({ userId }: { userId: string }) => {
+  const useRealAPI = shouldUseRealAPI(userId);
+  const topupService = useRealAPI ? realTopupService : mockTopupService;
+  
+  // Rest of component logic
+};
+```
+
+## 10. Post-Migration Checklist
+
+### 10.1 Verification
+- [ ] All topup flows work correctly
+- [ ] QR codes display properly
+- [ ] Payment status updates work
+- [ ] Error handling covers all scenarios
+- [ ] UI shows correct information
+- [ ] Analytics tracking works
+- [ ] Performance is acceptable
+
+### 10.2 Documentation Updates
+- [ ] Update API documentation
+- [ ] Update user guides
+- [ ] Update troubleshooting guides
+- [ ] Update developer documentation
+
+### 10.3 Communication
+- [ ] Notify frontend team of changes
+- [ ] Update project documentation
+- [ ] Schedule training sessions if needed
+- [ ] Update release notes
+
+## 11. Common Issues and Solutions
+
+### 11.1 Issue: QR Code Not Displaying
+**Cause**: Invalid base64 data or wrong image format
+**Solution**: 
+```typescript
+// Validate QR data
+const isValidBase64 = (str: string) => {
+  try {
+    return btoa(atob(str)) === str;
+  } catch (err) {
+    return false;
+  }
+};
+
+// Usage
+if (isValidBase64(qrContent)) {
+  // Display QR code
+} else {
+  // Show error message
+}
+```
+
+### 11.2 Issue: Status Not Updating
+**Cause**: Wrong polling endpoint or interval
+**Solution**:
+```typescript
+// Use correct endpoint
+const checkStatus = async (code: string) => {
+  // Use collection request endpoint instead of topup status
+  return await getCollectionRequest(code);
+};
+
+// Optimize polling interval
+const POLLING_INTERVAL = 3000; // 3 seconds
+const MAX_POLLING_TIME = 5 * 60 * 1000; // 5 minutes
+```
+
+### 11.3 Issue: Amount Calculation Error
+**Cause**: Wrong VAT calculation
+**Solution**:
+```typescript
+// Correct VAT calculation
+const calculateAmounts = (totalAmount: number) => {
+  const vatRate = 0.1;
+  const amountExclVat = Math.round(totalAmount / (1 + vatRate));
+  const vatAmount = totalAmount - amountExclVat;
+  
+  return { amountExclVat, vatAmount, totalAmount };
+};
+```
+
+## 12. Timeline Estimate
+
+### Development: 2-3 days
+- API service updates: 1 day
+- Component updates: 1 day
+- Testing and debugging: 1 day
+
+### Testing: 1-2 days
+- Unit tests: 0.5 day
+- Integration tests: 0.5 day
+- End-to-end testing: 1 day
+
+### Deployment: 1 day
+- Staging deployment: 0.5 day
+- Production deployment: 0.5 day
+
+**Total Estimated Time: 4-6 days**

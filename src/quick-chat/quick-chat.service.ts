@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CreateQuickChatSessionDto } from './dto/create-session.dto';
 import { SendQuickChatMessageDto } from './dto/send-message.dto';
@@ -59,7 +63,11 @@ export class QuickChatService {
     return this.mapSession(created);
   }
 
-  async getSession(workspaceId: string | undefined, userId: string, sessionId: string) {
+  async getSession(
+    workspaceId: string | undefined,
+    userId: string,
+    sessionId: string,
+  ) {
     const session = await this.getScopedSession(workspaceId, userId, sessionId);
     return this.mapSession(session);
   }
@@ -123,7 +131,8 @@ export class QuickChatService {
         });
         return { sessionId: session.id, plan: orchestration.plan, result };
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Execution failed';
+        const message =
+          error instanceof Error ? error.message : 'Execution failed';
         await this.prismaService.quickChatExecutionLog.create({
           data: {
             sessionId: session.id,
@@ -223,7 +232,8 @@ export class QuickChatService {
 
       return { sessionId: session.id, actionId: action.id, result };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Execution failed';
+      const message =
+        error instanceof Error ? error.message : 'Execution failed';
       await this.prismaService.quickChatExecutionLog.create({
         data: {
           sessionId: session.id,
@@ -308,11 +318,9 @@ export class QuickChatService {
   }
 
   private ensureToolAllowed(
-    agent:
-      | {
-          allowedTools: Prisma.JsonValue;
-        }
-      | null,
+    agent: {
+      allowedTools: Prisma.JsonValue;
+    } | null,
     toolName: QuickChatToolName,
   ) {
     const allowedTools = this.readStringArray(agent?.allowedTools);
@@ -320,7 +328,9 @@ export class QuickChatService {
       !agent ||
       (!allowedTools.includes('*') && !allowedTools.includes(toolName))
     ) {
-      throw new BadRequestException('Tool is not allowed by current agent policy');
+      throw new BadRequestException(
+        'Tool is not allowed by current agent policy',
+      );
     }
   }
 
@@ -341,36 +351,30 @@ export class QuickChatService {
     });
   }
 
-  private mapSession(
-    session: {
+  private mapSession(session: {
+    id: string;
+    workspaceId: string | null;
+    userId: string;
+    title: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    agentId: string;
+    messages: Array<{
       id: string;
-      workspaceId: string | null;
-      userId: string;
-      title: string | null;
+      role: 'USER' | 'ASSISTANT';
+      content: string;
       createdAt: Date;
-      updatedAt: Date;
-      agentId: string;
-      messages: Array<{
-        id: string;
-        role: 'USER' | 'ASSISTANT';
-        content: string;
-        createdAt: Date;
-      }>;
-      actions: Array<{
-        id: string;
-        toolName: string;
-        argsJson: Prisma.JsonValue;
-        summary: string;
-        status:
-          | 'PENDING_CONFIRMATION'
-          | 'EXECUTED'
-          | 'CANCELLED'
-          | 'REJECTED';
-        createdAt: Date;
-        executedAt: Date | null;
-      }>;
-    },
-  ): QuickChatSession {
+    }>;
+    actions: Array<{
+      id: string;
+      toolName: string;
+      argsJson: Prisma.JsonValue;
+      summary: string;
+      status: 'PENDING_CONFIRMATION' | 'EXECUTED' | 'CANCELLED' | 'REJECTED';
+      createdAt: Date;
+      executedAt: Date | null;
+    }>;
+  }): QuickChatSession {
     return {
       id: session.id,
       workspaceId: session.workspaceId ?? undefined,

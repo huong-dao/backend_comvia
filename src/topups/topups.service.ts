@@ -1,18 +1,27 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
 import {
-  Prisma,
-  OrderStatus,
-  TopupStatus,
-  WalletTransactionType,
-} from '@prisma/client';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Prisma, TopupStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTopupQrDto } from './dto/create-topup-qr.dto';
-import { MockPaymentWebhookDto } from './dto/mock-payment-webhook.dto';
+import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
+import {
+  createPay2sCollectionLink,
+  Pay2sBankAccount,
+} from '../integrations/pay2s/pay2s.util';
+import { CollectionRequestsService } from '../modules/collection-requests/collection-requests.service';
+import { CollectionRequestType } from '../modules/collection-requests/dto/collection-request.dto';
 
 @Injectable()
 export class TopupsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly configService: ConfigService,
+    private readonly collectionRequestsService: CollectionRequestsService,
+  ) {}
 
   private generateCode(prefix: string) {
     return `${prefix}_${Date.now()}_${randomBytes(8).toString('hex')}`;
@@ -20,18 +29,56 @@ export class TopupsService {
 
   async createTopupQr(
     workspaceId: string,
+    userId: string,
+    dto: { amountExclVat: number },
+  ) {
+    // Get the owner user for this workspace
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { ownerUserId: true },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
+    }
+
+    // Get any active money account with Pay2S configured
+    const moneyAccount = await this.prismaService.moneyAccount.findFirst({
+      where: {
+        isActive: true,
+        pay2sBankId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!moneyAccount) {
+      throw new BadRequestException('No active money account with Pay2S configured');
+    }
+
+    const createDto: CreateTopupPay2sDto = {
+      amountExclVat: dto.amountExclVat,
+      moneyAccountId: moneyAccount.id,
+      vatRate: 10,
+    };
+
+    return this.createTopupWithPay2S(
+      workspaceId,
+      userId,
+      createDto,
+      moneyAccount.id,
+    );
+  }
+
+  async createTopupWithPay2S(
+    workspaceId: string,
     ownerUserId: string,
-    dto: CreateTopupQrDto,
+    dto: CreateTopupPay2sDto,
+    moneyAccountId: string,
   ) {
     const vatRate = dto.vatRate ?? 10;
     const amountExcl = dto.amountExclVat;
     const amountIncl = amountExcl * (1 + vatRate / 100);
     const vatAmount = amountIncl - amountExcl;
-
-    const topupCode = this.generateCode('TP');
-    const qrContent = `qr_${topupCode}`;
-    const paymentRef = this.generateCode('PR');
-    const qrExpiredAt = new Date(Date.now() + 15 * 60 * 1000);
 
     // Ensure wallet exists
     await this.prismaService.walletAccount.upsert({
@@ -46,238 +93,268 @@ export class TopupsService {
       },
     });
 
-    return this.prismaService.topupRequest.create({
+    // Create topup request first
+    const topupQrContent = `pending_${Date.now()}_${randomBytes(8).toString('hex')}`;
+    const topup = await this.prismaService.topupRequest.create({
       data: {
-        topupCode,
+        topupCode: this.generateCode('TP'),
         ownerUserId,
         workspaceId,
         amountExclVat: amountExcl,
         vatAmount,
         amountInclVat: amountIncl,
-        paymentProvider: 'mock_gateway',
-        paymentRef,
-        qrContent,
-        qrExpiredAt,
+        paymentProvider: 'pay2s',
+        paymentRef: this.generateCode('PR'),
+        qrContent: topupQrContent,
+        qrExpiredAt: new Date(Date.now() + 15 * 60 * 1000),
         status: 'PENDING' satisfies TopupStatus,
       },
-      select: {
-        id: true,
-        topupCode: true,
-        paymentProvider: true,
-        paymentRef: true,
-        qrContent: true,
-        qrExpiredAt: true,
-        amountExclVat: true,
-        vatAmount: true,
-        amountInclVat: true,
-        status: true,
-      },
     });
-  }
 
-  async handleWebhook(dto: MockPaymentWebhookDto) {
-    const rawPayload: Prisma.InputJsonValue = (dto.rawPayload ??
-      {}) as Prisma.InputJsonValue;
-
-    // idempotency by (provider, eventId)
-    const existingWebhook =
-      await this.prismaService.paymentWebhookLog.findUnique({
-        where: {
-          provider_eventId: { provider: dto.provider, eventId: dto.eventId },
+    // Create collection request for Pay2S
+    try {
+      // Get money account details
+      const moneyAccount = await this.prismaService.moneyAccount.findUnique({
+        where: { id: moneyAccountId },
+        select: {
+          id: true,
+          accountNumber: true,
+          bankName: true,
+          bankCode: true,
+          pay2sBankId: true,
+          isActive: true,
         },
-        select: { id: true, status: true, processedAt: true },
       });
 
-    if (existingWebhook) {
-      return {
-        ok: true,
-        status: existingWebhook.status,
-        processedAt: existingWebhook.processedAt,
-      };
-    }
+      if (!moneyAccount || !moneyAccount.isActive) {
+        throw new BadRequestException('Invalid or inactive money account');
+      }
 
-    const topup = await this.prismaService.topupRequest.findUnique({
-      where: { topupCode: dto.topupCode },
+      if (!moneyAccount.pay2sBankId) {
+        throw new BadRequestException(
+          'Money account does not have Pay2S bank ID configured',
+        );
+      }
+
+      // Get Pay2S configuration
+      const pay2sConfig = this.configService.get('pay2s');
+      if (!pay2sConfig) {
+        throw new BadRequestException('Pay2S configuration not found');
+      }
+
+      // Prepare bank account for Pay2S
+      const bankAccounts: Pay2sBankAccount[] = [
+        {
+          account_number: moneyAccount.accountNumber,
+          bank_id: moneyAccount.pay2sBankId,
+        },
+      ];
+
+      // Create Pay2S collection link
+      const pay2sResponse = await createPay2sCollectionLink({
+        amount: Math.round(amountIncl), // Pay2S expects integer amount
+        orderId: topup.id,
+        orderInfo:
+          `TOPUP${topup.topupCode.replace(/[^a-zA-Z0-9]/g, '')}`.substring(
+            0,
+            32,
+          ), // Must be 10-32 chars, alphanumeric only
+        bankAccounts,
+        redirectUrl: `${process.env.FRONTEND_URL || 'https://localhost:3000'}/topup/success`,
+        ipnUrl: `${process.env.BACKEND_URL || 'https://localhost:3001'}/api/v1/webhooks/pay2s`,
+        requestType: 'pay2s',
+        pay2sConfigData: {
+          partner_code: pay2sConfig.partnerCode,
+          partner_name: pay2sConfig.partnerName,
+          api_key: pay2sConfig.apiKey,
+          api_secret: pay2sConfig.apiSecret,
+          api_url: pay2sConfig.apiUrl,
+        },
+      });
+
+      console.log('Pay2S Response received:', JSON.stringify(pay2sResponse, null, 2));
+
+      // Handle Pay2S response format - could be { status: false, message: ... } or { resultCode: ..., ... }
+      const responseStatus = pay2sResponse?.status ?? pay2sResponse?.resultCode;
+      
+      if (!pay2sResponse) {
+        console.error('Pay2S API returned null - check API endpoint and network');
+        throw new BadRequestException(
+          'Pay2S API error: No response from Pay2S service',
+        );
+      }
+
+      // Check for error response (status: false or resultCode !== 0)
+      if (responseStatus === false || (typeof responseStatus === 'number' && responseStatus !== 0)) {
+        console.error('Pay2S API Error:', {
+          response: pay2sResponse,
+          status: pay2sResponse.status,
+          resultCode: pay2sResponse.resultCode,
+          message: pay2sResponse.message || pay2sResponse.resultMessage,
+        });
+        const errorMessage = pay2sResponse.message || pay2sResponse.resultMessage || 'Unknown error';
+        throw new BadRequestException(
+          `Pay2S API error: ${errorMessage}`,
+        );
+      }
+
+      // Extract QR code from response
+      const qrCode = pay2sResponse.qrList?.[0]?.qrCode;
+      if (!qrCode) {
+        throw new BadRequestException('No QR code received from Pay2S');
+      }
+
+      // Make QR content unique to avoid database constraint violation
+      const uniqueQrContent = `${qrCode}_${Date.now()}`;
+
+      // Update topup with QR code
+      await this.prismaService.topupRequest.update({
+        where: { id: topup.id },
+        data: {
+          qrContent: uniqueQrContent,
+        },
+      });
+
+      // Create collection request for tracking
+      try {
+        console.log(moneyAccountId);
+        await this.collectionRequestsService.create(ownerUserId, {
+          type: CollectionRequestType.TOPUP,
+          topupRequestId: topup.id,
+          moneyAccountId: moneyAccountId,
+          amount: Math.round(amountIncl),
+        });
+      } catch (collectionError) {
+        console.error('Failed to create collection request:', collectionError);
+        // Don't fail the topup creation if collection request fails
+      }
+
+      return {
+        ...topup,
+        qrContent: uniqueQrContent,
+        collectionRequestCode: pay2sResponse.orderId,
+        amountExclVat: amountExcl,
+        vatAmount: vatAmount,
+        amountInclVat: amountIncl,
+      };
+    } catch (error) {
+      // If Pay2S integration fails, update topup status to FAILED
+      console.error('Pay2S integration error details:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        topupId: topup.id,
+      });
+
+      try {
+        await this.prismaService.topupRequest.update({
+          where: { id: topup.id },
+          data: {
+            status: 'FAILED' satisfies TopupStatus,
+          },
+        });
+      } catch (updateError) {
+        console.error('Failed to update topup status to FAILED:', updateError);
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `Failed to create Pay2S collection request: ${errorMessage}`,
+      );
+    }
+  }
+
+  async getTopupStatus(workspaceId: string, topupCode: string) {
+    const topup = await this.prismaService.topupRequest.findFirst({
+      where: {
+        topupCode,
+        workspaceId,
+      },
       select: {
         id: true,
         topupCode: true,
-        paymentRef: true,
-        ownerUserId: true,
-        workspaceId: true,
+        status: true,
+        paidAt: true,
         amountExclVat: true,
         vatAmount: true,
         amountInclVat: true,
-        status: true,
+        collectionRequest: {
+          select: {
+            code: true,
+          },
+        },
       },
     });
 
     if (!topup) {
-      throw new BadRequestException('Topup not found');
+      throw new BadRequestException('Topup request not found');
     }
 
-    if (dto.status === 'failed') {
-      await this.prismaService.$transaction(async (tx) => {
-        await tx.paymentWebhookLog.create({
-          data: {
-            provider: dto.provider,
-            eventId: dto.eventId,
-            topupRequestId: topup.id,
-            rawPayload,
-            status: 'FAILED',
-          },
-        });
+    return {
+      id: topup.id,
+      topupCode: topup.topupCode,
+      status: topup.status,
+      paidAt: topup.paidAt,
+      amountExclVat: topup.amountExclVat,
+      vatAmount: topup.vatAmount,
+      amountInclVat: topup.amountInclVat,
+      collectionRequestCode: topup.collectionRequest?.code,
+    };
+  }
 
-        await tx.topupRequest.update({
-          where: { id: topup.id },
-          data: { status: 'FAILED' satisfies TopupStatus },
-        });
-      });
+  async getTopupHistory(workspaceId: string, query: any) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 20;
+    const status = query.status;
 
-      return { ok: true, status: 'FAILED' };
+    const where: any = {
+      workspaceId,
+    };
+
+    if (status) {
+      where.status = status;
     }
 
-    // success
-    if (dto.amountInclVat != null) {
-      const expected = Number(topup.amountInclVat);
-      if (Math.abs(expected - dto.amountInclVat) > 0.0001) {
-        throw new BadRequestException('Callback amount mismatch');
-      }
-    }
-
-    await this.prismaService.$transaction(async (tx) => {
-      // prevent double-processing if topup already paid
-      const freshTopup = await tx.topupRequest.findUnique({
-        where: { id: topup.id },
-        select: { id: true, status: true, amountExclVat: true },
-      });
-      if (!freshTopup || freshTopup.status === 'PAID') {
-        await tx.paymentWebhookLog.create({
-          data: {
-            provider: dto.provider,
-            eventId: dto.eventId,
-            topupRequestId: topup.id,
-            rawPayload,
-            status: 'ALREADY_PROCESSED',
-          },
-        });
-        return;
-      }
-
-      const wallet = await tx.walletAccount.findUnique({
-        where: { ownerUserId: topup.ownerUserId },
-        select: { balance: true, totalTopup: true },
-      });
-      if (!wallet) {
-        throw new BadRequestException('Wallet not initialized');
-      }
-
-      const amountExcl = Number(topup.amountExclVat);
-      const vatAmount = Number(topup.vatAmount);
-      const amountIncl = Number(topup.amountInclVat);
-
-      const walletBefore = Number(wallet.balance);
-      const walletAfter = walletBefore + amountExcl;
-
-      const transactionCode = this.generateCode('WT');
-      const orderCode = this.generateCode('ORD');
-      const invoiceCode = this.generateCode('INV');
-      const paymentRef = topup.paymentRef;
-
-      await tx.paymentWebhookLog.create({
-        data: {
-          provider: dto.provider,
-          eventId: dto.eventId,
-          topupRequestId: topup.id,
-          rawPayload,
-          status: 'SUCCESS',
-        },
-      });
-
-      await tx.topupRequest.update({
-        where: { id: topup.id },
-        data: { status: 'PAID' satisfies TopupStatus, paidAt: new Date() },
-      });
-
-      await tx.walletAccount.update({
-        where: { ownerUserId: topup.ownerUserId },
-        data: {
-          balance: { increment: amountExcl },
-          totalTopup: { increment: amountExcl },
-        },
-      });
-
-      await tx.walletTransaction.create({
-        data: {
-          transactionCode,
-          ownerUserId: topup.ownerUserId,
-          workspaceId: topup.workspaceId,
-          type: 'TOPUP_CREDIT' satisfies WalletTransactionType,
-          amount: amountExcl,
-          balanceBefore: walletBefore,
-          balanceAfter: walletAfter,
-          sourceType: 'TOPUP',
-          sourceId: topup.topupCode,
-          createdBy: null,
-          note: 'Mock topup success',
-        },
-      });
-
-      await tx.order.create({
-        data: {
-          orderCode,
-          workspaceId: topup.workspaceId,
-          ownerUserId: topup.ownerUserId,
-          orderType: 'topup',
-          currency: 'VND',
-          totalAmountExclVat: amountExcl,
-          totalVatAmount: vatAmount,
-          totalAmountInclVat: amountIncl,
-          paymentMethod: dto.provider,
-          paymentRef,
-          status: 'PAID' satisfies OrderStatus,
-          paidAt: new Date(),
-          items: {
-            create: [
-              {
-                name: 'Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS',
-                quantity: 1,
-                unitPrice: amountExcl,
-                vatRate: 10,
-                vatAmount: vatAmount,
-                totalAmountInclVat: amountIncl,
-              },
-            ],
-          },
-          invoice: {
-            create: {
-              invoiceCode,
-              workspaceId: topup.workspaceId,
-              billingType: 'ORGANIZATION',
-              billingSnapshotJson: {
-                mock: true,
-                topupCode: topup.topupCode,
-              } as Prisma.InputJsonValue,
-              status: 'POSTED',
-              issueDate: null,
-              items: {
-                create: [
-                  {
-                    name: 'Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS',
-                    quantity: 1,
-                    unitPrice: amountExcl,
-                    vatRate: 10,
-                    vatAmount: vatAmount,
-                    totalAmountInclVat: amountIncl,
-                  },
-                ],
-              },
+    const [topups, total] = await Promise.all([
+      this.prismaService.topupRequest.findMany({
+        where,
+        select: {
+          id: true,
+          topupCode: true,
+          status: true,
+          paidAt: true,
+          amountExclVat: true,
+          vatAmount: true,
+          amountInclVat: true,
+          createdAt: true,
+          collectionRequest: {
+            select: {
+              code: true,
             },
           },
         },
-        select: { id: true },
-      });
-    });
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prismaService.topupRequest.count({ where }),
+    ]);
 
-    return { ok: true };
+    return {
+      data: topups.map((topup) => ({
+        id: topup.id,
+        topupCode: topup.topupCode,
+        amountExclVat: topup.amountExclVat,
+        amountInclVat: topup.amountInclVat,
+        status: topup.status,
+        paidAt: topup.paidAt,
+        createdAt: topup.createdAt,
+      })),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 }

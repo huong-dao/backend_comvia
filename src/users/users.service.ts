@@ -24,7 +24,9 @@ export class UsersService {
 
   updateMe(userId: string, dto: UpdateMyProfileDto) {
     if (!dto.fullName) {
-      throw new BadRequestException('At least one profile field must be provided');
+      throw new BadRequestException(
+        'At least one profile field must be provided',
+      );
     }
 
     return this.prismaService.user.update({

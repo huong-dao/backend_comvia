@@ -1,42 +1,56 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { MemberRole, UserRole } from '@prisma/client';
-import { Roles } from '../common/decorators/roles.decorator';
-import { WorkspaceContextGuard } from '../common/guards/workspace-context.guard';
+import { MemberRole } from '@prisma/client';
+import { WorkspaceHeaderGuard } from '../common/guards/workspace-header.guard';
 import { WorkspaceRoles } from '../common/decorators/workspace-roles.decorator';
 import { WorkspaceRolesGuard } from '../common/guards/workspace-roles.guard';
-import { CreateTopupQrDto } from './dto/create-topup-qr.dto';
-import { MockPaymentWebhookDto } from './dto/mock-payment-webhook.dto';
+import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
 import { TopupsService } from './topups.service';
 
-@Controller('topups')
+@Controller('api/v1/topups')
 export class TopupsController {
   constructor(private readonly topupsService: TopupsService) {}
 
-  @Post('workspaces/:workspaceId/qr')
-  @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
+  @Post('create-with-pay2s')
+  @UseGuards(WorkspaceHeaderGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
-  createQr(
-    @Request() req: { workspace: { ownerUserId: string } },
-    @Param('workspaceId') workspaceId: string,
-    @Body() dto: CreateTopupQrDto,
+  createWithPay2s(
+    @Request() req: { workspace: { ownerUserId: string; id: string } },
+    @Body() dto: CreateTopupPay2sDto,
   ) {
-    return this.topupsService.createTopupQr(
-      workspaceId,
+    return this.topupsService.createTopupWithPay2S(
+      req.workspace.id,
       req.workspace.ownerUserId,
       dto,
+      dto.moneyAccountId,
     );
   }
 
-  @Post('webhook')
-  @Roles(UserRole.ADMIN)
-  handleWebhook(@Body() dto: MockPaymentWebhookDto) {
-    return this.topupsService.handleWebhook(dto);
+  @Get(':topupCode/status')
+  @UseGuards(WorkspaceHeaderGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(MemberRole.OWNER)
+  getTopupStatus(
+    @Request() req: { workspace: { id: string } },
+    @Param('topupCode') topupCode: string,
+  ) {
+    return this.topupsService.getTopupStatus(req.workspace.id, topupCode);
+  }
+
+  @Get('history')
+  @UseGuards(WorkspaceHeaderGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(MemberRole.OWNER)
+  getTopupHistory(
+    @Request() req: { workspace: { id: string } },
+    @Query() query: any,
+  ) {
+    return this.topupsService.getTopupHistory(req.workspace.id, query);
   }
 }

@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { MembersService } from '../members/members.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,25 +35,34 @@ export class QuickChatToolExecutorService {
   async execute(input: ExecuteInput) {
     switch (input.toolName) {
       case 'wallet.getBalance':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
         return this.walletService.getBalance(input.workspaceId);
 
       case 'templates.list':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
         return this.templatesService.list(input.workspaceId);
 
       case 'members.list':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
         return this.membersService.listMembers(input.workspaceId);
 
       case 'topups.createQr':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
-        return this.topupsService.createTopupQr(input.workspaceId, input.userId, {
-          amountExclVat: Number(input.args.amountExclVat),
-        });
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
+        return this.topupsService.createTopupQr(
+          input.workspaceId,
+          input.userId,
+          {
+            amountExclVat: Number(input.args.amountExclVat),
+          },
+        );
 
       case 'templates.create':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
         return this.templatesService.create(input.workspaceId, input.userId, {
           name: String(input.args.name ?? ''),
           content: String(input.args.content ?? ''),
@@ -58,12 +71,17 @@ export class QuickChatToolExecutorService {
         });
 
       case 'messaging.sendSingle':
-        if (!input.workspaceId) throw new BadRequestException('workspaceId is required');
-        return this.messagingService.sendSingle(input.workspaceId, input.userId, {
-          templateId: String(input.args.templateId ?? ''),
-          phoneNumber: String(input.args.phoneNumber ?? ''),
-          data: (input.args.data as Record<string, unknown>) ?? {},
-        });
+        if (!input.workspaceId)
+          throw new BadRequestException('workspaceId is required');
+        return this.messagingService.sendSingle(
+          input.workspaceId,
+          input.userId,
+          {
+            templateId: String(input.args.templateId ?? ''),
+            phoneNumber: String(input.args.phoneNumber ?? ''),
+            data: (input.args.data as Record<string, unknown>) ?? {},
+          },
+        );
 
       default:
         return this.executeGenericEntityTool(input);
@@ -85,16 +103,26 @@ export class QuickChatToolExecutorService {
       );
     }
 
-    const delegate = (this.prismaService as Record<string, any>)[config.delegate];
+    const delegate = (this.prismaService as Record<string, any>)[
+      config.delegate
+    ];
     if (!delegate) {
-      throw new BadRequestException(`Entity delegate not found: ${config.delegate}`);
+      throw new BadRequestException(
+        `Entity delegate not found: ${config.delegate}`,
+      );
     }
 
-    const whereFromArgs = (input.args.where as Record<string, unknown> | undefined) ?? {};
-    const dataFromArgs = (input.args.data as Record<string, unknown> | undefined) ?? {};
+    const whereFromArgs =
+      (input.args.where as Record<string, unknown> | undefined) ?? {};
+    const dataFromArgs =
+      (input.args.data as Record<string, unknown> | undefined) ?? {};
     const take =
-      typeof input.args.take === 'number' ? Math.min(Math.max(input.args.take, 1), 200) : 50;
-    const orderBy = (input.args.orderBy as Record<string, 'asc' | 'desc'> | undefined) ?? {
+      typeof input.args.take === 'number'
+        ? Math.min(Math.max(input.args.take, 1), 200)
+        : 50;
+    const orderBy = (input.args.orderBy as
+      | Record<string, 'asc' | 'desc'>
+      | undefined) ?? {
       createdAt: 'desc',
     };
 
