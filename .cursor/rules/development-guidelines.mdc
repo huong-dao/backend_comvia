@@ -1,0 +1,77 @@
+---
+alwaysApply: true
+---
+# 🛠️ Development Guidelines - Comvia Backend
+
+Tài liệu này quy định các tiêu chuẩn kỹ thuật và quy trình phát triển để đảm bảo tính nhất quán và chất lượng của hệ thống.
+
+---
+
+## 🔄 1. Quy trình thêm Resource mới
+Khi thêm một tính năng hoặc thực thể (resource) mới, hãy tuân thủ các bước sau:
+1.  **Prisma Schema**: Định nghĩa Model trong `prisma/schema.prisma`.
+2.  **Generate Client**: Chạy `npx prisma generate` để cập nhật type-safe client.
+3.  **Module & Service**: Tạo `module`, `service` bằng Nest CLI (hoặc thủ công). Logic nghiệp vụ đặt hoàn toàn trong `Service`.
+4.  **DTOs**: Tạo `dto/create-x.dto.ts` và `dto/update-x.dto.ts` sử dụng `class-validator`.
+5.  **Controller**: Định nghĩa các endpoint, áp dụng Guards và Decorators phù hợp.
+6.  **Export/Import**: Khai báo Module mới vào `app.module.ts`.
+
+---
+
+## 🗄️ 2. Prisma & Database Rules
+- **Naming Convention**:
+    - **Model**: `PascalCase` (ví dụ: `WorkspaceMember`).
+    - **Fields**: `camelCase` (ví dụ: `ownerUserId`).
+    - **ID**: Luôn sử dụng `@id @default(cuid())`.
+    - **Audit**: Luôn có `createdAt DateTime @default(now())` và `updatedAt DateTime @updatedAt`.
+- **Migration**:
+    - Luôn sử dụng `npx prisma migrate dev --name <description>` để thay đổi schema.
+    - Không sửa đổi trực tiếp DB mà không qua migration.
+- **Optimization**:
+    - Hạn chế sử dụng `include` quá sâu (nhiều hơn 2 cấp). Ưu tiên tách query hoặc sử dụng `select` để lấy đúng trường cần thiết.
+
+---
+
+## 🌐 3. API Standards & Security
+- **URL Structure**: Theo format `/api/v1/<resource>`. Các controller được prefix trong `main.ts` hoặc trực tiếp tại decorator `@Controller('topups')`.
+- **Validation**: `ValidationPipe` được bật toàn cục. BẮT BUỘC sử dụng DTO với `class-validator` (@IsString, @IsNotEmpty, @IsNumber...).
+- **Response Format**:
+    - Thành công: Trả về Object hoặc Array trực tiếp. NestJS sẽ tự wrap thành JSON 200/201.
+    - Thất bại: Sử dụng `HttpException` (e.g., `BadRequestException`, `ForbiddenException`).
+- **Authorization**:
+    - **Global**: Mặc định mọi API đều yêu cầu JWT. Sử dụng `@Public()` cho các route công khai.
+    - **Workspace Level**: Sử dụng `@UseGuards(WorkspaceHeaderGuard, WorkspaceRolesGuard)` cho các API thao tác trong workspace. 
+    - **Required Headers**: `x-workspace-id` (để `WorkspaceHeaderGuard` lấy thông tin workspace).
+
+---
+
+## 🏗️ 4. Coding Patterns
+Dự án sử dụng **Service-heavy Pattern**:
+- **Controller**: Chỉ làm nhiệm vụ điều hướng, parse params/body, và gọi Service. Không viết logic nghiệp vụ tại đây.
+- **Service**: Nơi tập trung toàn bộ logic xử lý, tính toán và tương tác database qua `PrismaService`.
+- **Transaction**: Mọi thao tác thay đổi dữ liệu liên quan đến nhiều bảng (đặc biệt là Tiền/Ví) phải nằm trong `this.prismaService.$transaction`.
+- **Dependency Injection**: Luôn inject dependencies qua `constructor`. Không sử dụng `new` cho các class có decorator `@Injectable()`.
+
+---
+
+## 🔌 5. Tích hợp Bên thứ ba (Integrations)
+- Toàn bộ logic kết nối SDK/API bên thứ 3 (Pay2S, Zalo, AWS) phải đặt trong thư mục `src/integrations/`.
+- Tạo các hàm tiện ích (utils) hoặc Service riêng cho từng tích hợp để dễ dàng bảo trì và mock khi testing.
+- Cấu hình API Keys/Secrets phải được khai báo trong `src/config/` và truy cập qua `ConfigService`.
+
+---
+
+## 📝 6. Logging & Error Handling
+- **Logging**: Sử dụng `console.log` hoặc `console.error` có prefix để dễ track (ví dụ: `[Pay2S Webhook] Error: ...`). Ưu tiên sử dụng NestJS `Logger` cho các module quan trọng.
+- **Error Handling**: 
+    - Bắt lỗi tại tầng Service nếu cần xử lý logic fallback.
+    - Để lỗi bubble lên Controller để `GlobalExceptionFilter` xử lý trả về cho Client.
+    - **Tuyệt đối không** nuốt lỗi (catch mà không làm gì hoặc không throw lại).
+
+---
+
+## 🧪 7. Best Practices
+- **Strict Typing**: Luôn khai báo kiểu dữ liệu cho biến và giá trị trả về của hàm. Tránh sử dụng `any`.
+- **Async/Await**: Luôn sử dụng `async/await` khi làm việc với database hoặc API call. Tránh dùng `.then().catch()`.
+- **Environment**: Luôn check sự tồn tại của biến môi trường trong `ConfigService` trước khi sử dụng.
+- **Dry**: Tách các logic lặp lại (ví dụ: tính toán số dư, verify signature) thành các helper functions trong `common/` hoặc `utils`.

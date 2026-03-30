@@ -1,0 +1,135 @@
+---
+description: Tài liệu tổng quan dự án (Project Overview) và Quy tắc chính (Main Rules) dành cho lập trình viên.
+globs: 
+---
+
+# 🏗️ Dự Án Comvia Backend - Project Overview & Main Rules
+
+Chào mừng bạn đến với hệ thống backend của **Comvia**. Tài liệu này cung cấp cái nhìn toàn diện về kiến trúc, tính năng cốt lõi và các quy tắc phát triển trong dự án.
+
+---
+
+## 🚀 1. Project Mission (Mục tiêu Dự án)
+Dự án **Comvia Backend** được xây dựng như một nền tảng quản lý giao tiếp đa kênh (trọng tâm là **Zalo Official Account - OA**) kết hợp hệ thống ví điện tử (**Wallet**) và trợ lý AI (**Quick Chat**).
+
+Mục đích chính:
+- **Quản lý kết nối Zalo OA**: Kết nối, duy trì token và gửi tin nhắn (ZNS, Broadcast, Single Message).
+- **Hệ thống Ví & Tài chính**: Quản lý số dư, nạp tiền tự động qua Pay2S, xuất hóa đơn và đơn hàng.
+- **Tự động hóa & AI**: Cung cấp các agent AI hỗ trợ trả lời khách hàng qua Quick Chat.
+- **Multi-workspace**: Hỗ trợ mô hình đa không gian làm việc (Tenancy), mỗi người dùng có thể thuộc nhiều workspace khác nhau.
+
+---
+
+## 🛠️ 2. Tech Stack (Công nghệ sử dụng)
+Hệ thống sử dụng các công nghệ hiện đại, đảm bảo tính ổn định và khả năng mở rộng:
+
+| Thành phần | Công nghệ | Phiên bản (Ước tính) |
+| :--- | :--- | :--- |
+| **Framework** | NestJS | v11.x |
+| **Language** | TypeScript | v5.x |
+| **ORM** | Prisma | v7.x |
+| **Database** | PostgreSQL | - |
+| **Auth** | Passport.js, JWT, OTP | - |
+| **Payments** | Pay2S Integration | - |
+| **Messaging** | Zalo OA API | - |
+| **Cloud Storage** | AWS S3 (cho assets/invoices) | - |
+| **Tools** | Class-validator, Bcrypt, QRcode | - |
+
+---
+
+## 💎 3. Core Features (Chi tiết Tính năng)
+
+### 3.1. Authentication & Authorization (Xác thực & Phân quyền)
+- **Luồng đăng ký**: Sử dụng OTP qua email/số điện thoại để xác thực người dùng trước khi tạo tài khoản.
+- **Xác thực**: Sử dụng **JWT (JSON Web Token)**. Guard mặc định là `JwtAuthGuard` (áp dụng toàn bộ hệ thống trừ các route đánh dấu `@Public()`).
+- **Phân quyền (RBAC)**: Sử dụng `RolesGuard` với các role: `ADMIN`, `USER`, `STAFF`.
+- **Phân quyền Workspace**: Kiểm tra quyền `OWNER` hoặc `MEMBER` trong phạm vi từng workspace.
+
+### 3.2. Wallet & Financial Flow (Ví & Tài chính)
+Đây là module quan trọng nhất về mặt nghiệp vụ:
+- **Topup (Nạp tiền)**:
+    1. Người dùng yêu cầu nạp tiền (`TopupRequest`).
+    2. Hệ thống gọi API **Pay2S** tạo link thanh toán/QR code.
+    3. Lưu QR code vào server (`public/qrcodes/`) và trả về cho khách.
+- **Webhook Pay2S**:
+    1. Nhận thông báo thanh toán thành công.
+    2. **Transaction atomic**: Cập nhật số dư ví (`WalletAccount`), trạng thái nạp (`TopupRequest`), tạo lịch sử giao dịch (`WalletTransaction`), tạo đơn hàng (`Order`) và hóa đơn (`Invoice`).
+- **Billing**: Tự động snapshot thông tin `WorkspaceBillingProfile` khi xuất hóa đơn để đảm bảo tính lịch sử.
+
+### 3.3. Zalo OA Messaging (Tin nhắn Zalo)
+- **OA Connection**: Quản lý kết nối, lưu trữ và tự động làm mới Access Token/Refresh Token của Zalo OA.
+- **Templates**: Quản lý các mẫu tin nhắn, đồng bộ trạng thái duyệt (`APPROVED`, `REJECTED`) từ Zalo.
+- **Messaging Logic**:
+    - Khi gửi tin nhắn: Hệ thống kiểm tra số dư ví (Ví dụ: khấu trừ 1,000đ mỗi tin nhắn thành công).
+    - Lưu logs chi tiết trong `MessageLog` kèm link đến `WalletTransaction`.
+
+### 3.4. AI Quick Chat (Trợ lý AI)
+- **Agent Profiles**: Quản lý các profile AI khác nhau cho từng workspace.
+- **Sessions & Messages**: Lưu trữ lịch sử trò chuyện giữa khách hàng và AI.
+- **Tools**: Khả năng tích hợp các công cụ (tools) để AI thực hiện các hành động cụ thể.
+
+---
+
+## 📊 4. Database Schema (Mô hình Dữ liệu)
+Dựa trên `schema.prisma`, cấu trúc dữ liệu được chia thành các nhóm chính:
+
+| Nhóm | Các Bảng Chính (Models) | Mô tả |
+| :--- | :--- | :--- |
+| **Danh tính (Identity)** | `User`, `UserCredential`, `OtpRequest` | Thông tin người dùng, mật khẩu, mã OTP. |
+| **Tổ chức (Org)** | `Workspace`, `WorkspaceMember`, `WorkspaceBillingProfile` | Quản lý không gian làm việc, thành viên và thông tin xuất hóa đơn. |
+| **Tài chính (Finance)** | `WalletAccount`, `WalletTransaction`, `TopupRequest`, `Order`, `Invoice` | Ví, lịch sử biến động, yêu cầu nạp, đơn hàng và hóa đơn. |
+| **Giao tiếp (Messaging)** | `WorkspaceOaConnection`, `Template`, `MessageLog`, `Campaign` | Kết nối Zalo, mẫu tin nhắn, lịch sử gửi và chiến dịch. |
+| **AI / Chat** | `QuickChatAgentProfile`, `QuickChatSession`, `QuickChatMessage` | Cấu hình Agent và dữ liệu hội thoại AI. |
+
+---
+
+## 🔌 5. API & Integrations (Tích hợp Hệ thống)
+
+### 5.1. Pay2S (Payment Gateway)
+- **Endpoint**: `/api/v1/webhooks/pay2s`
+- **Logic**: Xử lý nạp tiền tự động. Sử dụng `pay2s.util.ts` để ký request và verify chữ ký.
+
+### 5.2. Zalo Official Account
+- Tích hợp sâu với API của Zalo để gửi tin nhắn CSKH và tin nhắn thông báo.
+- Quản lý Webhook từ Zalo để nhận phản hồi từ người dùng (nếu có).
+
+### 5.3. AWS S3
+- Lưu trữ các file hóa đơn (PDF/Images) và các file media phục vụ gửi tin nhắn.
+
+---
+
+## 📐 6. Development Guidelines (Quy tắc Phát triển)
+
+### 6.1. Cấu trúc thư mục (Folder Structure)
+Dự án tuân thủ cấu trúc NestJS Modular:
+```text
+src/
+├── auth/            # Authentication (JWT, OTP)
+├── topups/          # Logic nạp tiền Pay2S
+├── messaging/       # Logic gửi tin nhắn chung
+├── oa/              # Quản lý kết nối Zalo OA
+├── wallet/          # Quản lý số dư và giao dịch
+├── modules/         # Các module mở rộng (MoneyAccounts, ...)
+├── prisma/          # PrismaService và DB client
+├── integrations/    # SDK/Util kết nối bên thứ 3 (Pay2S, ...)
+└── common/          # Guards, Interceptors, Decorators dùng chung
+```
+
+### 6.2. Quy tắc đặt tên (Naming Convention)
+- **Files**: `kebab-case.module.ts`, `kebab-case.service.ts`.
+- **Classes**: `PascalCase` (ví dụ: `TopupsService`).
+- **Variables/Functions**: `camelCase`.
+- **Database**:
+    - Primary Key: Sử dụng `cuid()`.
+    - Fields: `camelCase` (trong Prisma) nhưng map sang `snake_case` trong Postgres nếu cần (check `@map`).
+    - Bảng: `PascalCase` (Prisma model).
+
+### 6.3. Quy trình xử lý lỗi (Error Handling)
+- Luôn sử dụng các Exception built-in của NestJS (ví dụ: `BadRequestException`, `NotFoundException`).
+- Không bao giờ trả về lỗi raw từ Database; luôn catch và wrap lại thành lỗi nghiệp vụ rõ ràng.
+
+### 6.4. Database Transaction
+- Các thao tác liên quan đến Tiền bạc (**Wallet**, **Topup**, **Order**) BẮT BUỘC phải bọc trong `this.prismaService.$transaction` để đảm bảo tính toàn vẹn dữ liệu.
+
+---
+*Tài liệu này được cập nhật lần cuối vào tháng 03/2026. Mọi thay đổi lớn về kiến trúc cần được cập nhật tại đây.*
