@@ -13,9 +13,9 @@ import {
 import { MoneyAccountsService } from './money-accounts.service';
 import { CreateMoneyAccountDto } from './dto/create-money-account.dto';
 import { UpdateMoneyAccountDto } from './dto/update-money-account.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('money-accounts')
 @UseGuards(JwtAuthGuard, RolesGuard)

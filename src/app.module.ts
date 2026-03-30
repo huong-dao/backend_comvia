@@ -19,7 +19,7 @@ import { TemplatesModule } from './templates/templates.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { AdminModule } from './admin/admin.module';
 import { QuickChatModule } from './quick-chat/quick-chat.module';
-import { MoneyAccountsModule } from './modules/money-accounts/money-accounts.module';
+import { MoneyAccountsModule } from './money-accounts/money-accounts.module';
 import pay2sConfig from './config/pay2s.config';
 
 @Module({
