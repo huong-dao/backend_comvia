@@ -1,8 +1,10 @@
 import { Body, Controller, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { Public } from '../common/decorators/public.decorator';
 import { TopupsService } from '../topups/topups.service';
 import { Pay2SWebhookDto } from '../topups/dto/pay2s-webhook.dto';
 
-@Controller('webhooks') // Đường dẫn sẽ là /api/v1/webhooks
+@Public()
+@Controller('webhooks') // Đường dẫn sẽ là /api/v1/webhooks (nếu có set global prefix)
 export class WebhooksController {
   constructor(private readonly topupsService: TopupsService) {}
 

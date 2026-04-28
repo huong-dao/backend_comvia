@@ -5,13 +5,19 @@ Tài liệu này hướng dẫn FE Next.js gọi backend NestJS theo các API hi
 ## 1) Base URL & Environments
 
 ### 1.1 Biến môi trường gợi ý
-- `NEXT_PUBLIC_API_BASE_URL` (vd: `http://localhost:3000`)
+- `NEXT_PUBLIC_API_BASE_URL`: **gốc API đầy đủ, gồm cả global prefix** `api/v1` (backend gọi `app.setGlobalPrefix('api/v1')` trong `main.ts`).
 - `NEXT_PUBLIC_DEMO_MODE` (tùy bạn; backend đọc `DEMO_MODE` ở server)
 
 Ví dụ `.env.local` (Next.js):
 ```env
-NEXT_PUBLIC_API_BASE_URL="http://localhost:3000"
+# Local Nest (port mặc định 3000)
+NEXT_PUBLIC_API_BASE_URL="http://localhost:3000/api/v1"
+
+# Deploy (ví dụ server của bạn — đổi host/port nếu khác)
+NEXT_PUBLIC_API_BASE_URL="http://103.200.20.197:3000/api/v1"
 ```
+
+Các đoạn `comviaFetch("/auth/login", …)` bên dưới nối `path` vào **sau** base URL trên (tức thành `…/api/v1/auth/login`).
 
 ## 2) Chuẩn hóa cách gọi API bằng fetch
 

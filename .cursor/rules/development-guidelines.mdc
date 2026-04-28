@@ -33,7 +33,7 @@ Khi thêm một tính năng hoặc thực thể (resource) mới, hãy tuân th�
 ---
 
 ## 🌐 3. API Standards & Security
-- **URL Structure**: Theo format `/api/v1/<resource>`. Các controller được prefix trong `main.ts` hoặc trực tiếp tại decorator `@Controller('topups')`.
+- **URL Structure**: Theo format `/api/v1/<resource>`. Global prefix `api/v1` được set trong `main.ts` (`setGlobalPrefix`); path trong `@Controller('topups')` là phần sau prefix.
 - **Validation**: `ValidationPipe` được bật toàn cục. BẮT BUỘC sử dụng DTO với `class-validator` (@IsString, @IsNotEmpty, @IsNumber...).
 - **Response Format**:
     - Thành công: Trả về Object hoặc Array trực tiếp. NestJS sẽ tự wrap thành JSON 200/201.

@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   // const app = await NestFactory.create(AppModule);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.setGlobalPrefix('api/v1');
   // --- THÊM DÒNG NÀY ĐỂ PUBLIC THƯ MỤC ẢNH ---
   app.useStaticAssets(join(process.cwd(), 'public'), {
     prefix: '/public/', // URL sẽ là http://localhost:3000/public/qrcodes/file.png
