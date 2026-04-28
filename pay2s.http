@@ -1,15 +1,15 @@
 @url=http://103.200.20.197:3000/api/v1/webhooks
-@orderId=COMVIA_TOPUP_BB3C5FCF
-@tranId=1777368461
+@orderId=COMVIA_TOPUP_490081D2
+@tranId=1777372961
 @tranDate=2026-04-28
-@amount=1100000
+@amount=550000
 
 ### Test IPN
 POST {{url}}/pay2s
 Content-Type: application/json
 
 {
-  "partnerCode": "PAY2SJSC69F07D8D2C0AE",
+  "partnerCode": "PAY2SJSC69F08F21257CD",
   "orderId": "{{orderId}}",
   "requestId": "{{tranId}}",
   "amount": "{{amount}}",
@@ -19,7 +19,7 @@ Content-Type: application/json
   "resultCode": 0,
   "message": "Giao dịch thành công",
   "payType": "qr",
-  "responseTime": "{{tranDate}} 10:22:42",
+  "responseTime": "{{tranDate}} 17:42:41",
   "extraData": "",
   "signature": ""
 }
