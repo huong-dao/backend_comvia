@@ -348,9 +348,9 @@ export class TopupsService {
       return { status: 'error', message: 'Transaction failed from provider' };
     }
 
-    // 2. Tìm topup request trong DB
+    // 2. Tìm topup request trong DB (orderId từ Pay2S = topupCode đã gửi khi tạo link)
     const topup = await this.prismaService.topupRequest.findUnique({
-      where: { id: dto.orderId },
+      where: { topupCode: dto.orderId },
     });
 
     if (!topup) throw new NotFoundException('Topup request không tồn tại');

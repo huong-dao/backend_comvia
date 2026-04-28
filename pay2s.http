@@ -1,11 +1,11 @@
-@url=http://103.200.20.197:3000/api/v1/webhooks/pay2s
+@url=http://103.200.20.197:3000/api/v1/webhooks
 @orderId=COMVIA_TOPUP_BB3C5FCF
 @tranId=1777368461
 @tranDate=2026-04-28
 @amount=1100000
 
 ### Test IPN
-POST {{url}}/ipn
+POST {{url}}/pay2s
 Content-Type: application/json
 
 {

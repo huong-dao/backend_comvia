@@ -1,18 +1,48 @@
-import { IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class Pay2SWebhookDto {
-    @IsString()
-    partnerCode: string;
-    orderId: string;    // Đây chính là topupRequest.id mà bạn đã gửi sang Pay2S
-    requestId: string;
-    amount: string;     // Pay2S gửi dạng string
-    orderInfo: string;
-    orderType: string;
-    transId: string;    // Mã giao dịch phía Pay2S
-    resultCode: number; // 0 là thành công
-    message: string;
-    payType: string;
-    responseTime: string;
-    extraData: string;
-    signature: string;
+  @IsString()
+  partnerCode: string;
+
+  /** Giá trị gửi sang Pay2S là `topupCode` (vd. `COMVIA_TOPUP_...`), Pay2S echo lại ở đây */
+  @IsString()
+  orderId: string;
+
+  @IsString()
+  requestId: string;
+
+  /** Pay2S thường gửi dạng string */
+  @IsString()
+  amount: string;
+
+  @IsString()
+  orderInfo: string;
+
+  @IsString()
+  orderType: string;
+
+  @IsString()
+  transId: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  resultCode: number;
+
+  @IsString()
+  message: string;
+
+  @IsString()
+  payType: string;
+
+  @IsString()
+  responseTime: string;
+
+  @IsOptional()
+  @IsString()
+  extraData?: string;
+
+  @IsOptional()
+  @IsString()
+  signature?: string;
 }
