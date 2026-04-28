@@ -358,19 +358,18 @@ export class TopupsService {
 
     const amountPaid = new Prisma.Decimal(dto.amount);
 
-    // 3. Thực hiện Transaction
+    // 3. Thực hiện Transaction (chỉ cộng ví một lần — trước đây có 2 lần update → nhân đôi số dư)
     return await this.prismaService.$transaction(async (tx) => {
-      // 2. Cập nhật wallet account trực tiếp qua ownerUserId
-      // Prisma cho phép update dựa trên trường có @unique (ownerUserId trong WalletAccount là @unique)
-      await tx.walletAccount.update({
+      const walletBefore = await tx.walletAccount.findUnique({
         where: { ownerUserId: topup.ownerUserId },
-        data: {
-          balance: { increment: new Prisma.Decimal(dto.amount) },
-          totalTopup: { increment: new Prisma.Decimal(dto.amount) },
-        },
       });
+      if (!walletBefore) {
+        throw new NotFoundException('Không tìm thấy ví của người dùng');
+      }
 
-      // A. Cập nhật trạng thái TopupRequest
+      const balanceBefore = walletBefore.balance;
+      const balanceAfter = balanceBefore.add(amountPaid);
+
       await tx.topupRequest.update({
         where: { id: topup.id },
         data: {
@@ -380,18 +379,6 @@ export class TopupsService {
         },
       });
 
-      // B. Cập nhật số dư ví (WalletAccount)
-      const wallet = await tx.walletAccount.findUnique({
-        where: { ownerUserId: topup.ownerUserId },
-      });
-      
-      if (!wallet) {
-        throw new NotFoundException('Không tìm thấy ví của người dùng');
-      }
-
-      const balanceBefore = wallet.balance; // Số dư hiện tại trước khi nạp
-      const balanceAfter = balanceBefore.add(amountPaid); // Số dư mới sau khi nạp
-
       await tx.walletAccount.update({
         where: { ownerUserId: topup.ownerUserId },
         data: {
@@ -400,7 +387,6 @@ export class TopupsService {
         },
       });
 
-      // C. Tạo WalletTransaction (Lịch sử biến động số dư)
       await tx.walletTransaction.create({
         data: {
           transactionCode: `TX_${topup.topupCode}`,
@@ -408,8 +394,8 @@ export class TopupsService {
           workspaceId: topup.workspaceId,
           type: 'TOPUP_CREDIT',
           amount: amountPaid,
-          balanceBefore: 0, // Bạn có thể tính toán chính xác hơn nếu cần
-          balanceAfter: 0, 
+          balanceBefore,
+          balanceAfter,
           sourceType: 'TOPUP_REQUEST',
           sourceId: topup.id,
           note: `Nạp tiền từ Pay2S: ${topup.topupCode}`,
