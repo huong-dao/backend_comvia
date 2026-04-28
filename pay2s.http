@@ -1,0 +1,25 @@
+@url=http://103.200.20.197:3000/api/v1/webhooks/pay2s
+@orderId=COMVIA_TOPUP_BB3C5FCF
+@tranId=1777368461
+@tranDate=2026-04-28
+@amount=1100000
+
+### Test IPN
+POST {{url}}/ipn
+Content-Type: application/json
+
+{
+  "partnerCode": "PAY2SJSC69F07D8D2C0AE",
+  "orderId": "{{orderId}}",
+  "requestId": "{{tranId}}",
+  "amount": "{{amount}}",
+  "orderInfo": "{{orderId}}",
+  "orderType": "Pay2S_wallet",
+  "transId": "{{tranId}}",
+  "resultCode": 0,
+  "message": "Giao dịch thành công",
+  "payType": "qr",
+  "responseTime": "{{tranDate}} 10:22:42",
+  "extraData": "",
+  "signature": ""
+}
