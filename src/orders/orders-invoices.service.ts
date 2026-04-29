@@ -158,6 +158,12 @@ export class OrdersInvoicesService {
       include: {
         items: true,
         invoice: true,
+        topupRequest: {
+          select: {
+            id: true,
+            topupCode: true,
+          },
+        },
         workspace: {
           select: {
             id: true,

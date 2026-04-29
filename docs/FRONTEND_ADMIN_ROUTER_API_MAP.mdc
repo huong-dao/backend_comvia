@@ -283,6 +283,7 @@ Sắp xếp: `createdAt` giảm dần.
 - Các trường gốc (`id`, `orderCode`, `workspaceId`, `ownerUserId`, số tiền, `status`, `paidAt`, `topupRequestId`, `createdAt`, …).
 - `items`: mảng `OrderItem` (dòng sản phẩm/dịch vụ trên đơn).
 - `invoice`: một `Invoice` liên kết 1-1, hoặc `null` nếu chưa có hóa đơn.
+- `topupRequest`: nếu đơn sinh từ nạp tiền — object `{ id, topupCode }`; nếu không có liên kết topup thì `null`.
 - `workspace`: Workspace (`id`, `name`, `slug`, `status`, `ownerUserId`, `createdAt`).
 - `owner`: User sở hữu đơn (`id`, `email`, `fullName`, `role`, `status`, `createdAt`).
 
