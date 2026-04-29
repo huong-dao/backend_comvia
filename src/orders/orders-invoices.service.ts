@@ -1,59 +1,195 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminInvoicesQueryDto } from './dto/admin-invoices-query.dto';
+import { AdminOrdersQueryDto } from './dto/admin-orders-query.dto';
 
 @Injectable()
 export class OrdersInvoicesService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  listOrders(workspaceId: string) {
-    return this.prismaService.order.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        orderCode: true,
-        totalAmountExclVat: true,
-        totalVatAmount: true,
-        totalAmountInclVat: true,
-        status: true,
-        paidAt: true,
-        createdAt: true,
-      },
-    });
+  private buildOrderWhere(query: AdminOrdersQueryDto): Prisma.OrderWhereInput {
+    const where: Prisma.OrderWhereInput = {};
+
+    if (query.workspaceId) {
+      where.workspaceId = query.workspaceId;
+    }
+    if (query.ownerUserId) {
+      where.ownerUserId = query.ownerUserId;
+    }
+    if (query.status !== undefined) {
+      where.status = query.status;
+    }
+    if (query.orderCode) {
+      where.orderCode = query.orderCode;
+    }
+    if (query.topupRequestId) {
+      where.topupRequestId = query.topupRequestId;
+    }
+    if (query.paidAtFrom !== undefined || query.paidAtTo !== undefined) {
+      where.paidAt = {};
+      if (query.paidAtFrom) {
+        where.paidAt.gte = new Date(query.paidAtFrom);
+      }
+      if (query.paidAtTo) {
+        where.paidAt.lte = new Date(query.paidAtTo);
+      }
+    }
+    if (query.createdAtFrom !== undefined || query.createdAtTo !== undefined) {
+      where.createdAt = {};
+      if (query.createdAtFrom) {
+        where.createdAt.gte = new Date(query.createdAtFrom);
+      }
+      if (query.createdAtTo) {
+        where.createdAt.lte = new Date(query.createdAtTo);
+      }
+    }
+
+    return where;
   }
 
-  getOrder(workspaceId: string, orderId: string) {
-    return this.prismaService.order.findFirst({
-      where: { id: orderId, workspaceId },
+  private buildInvoiceWhere(
+    query: AdminInvoicesQueryDto,
+  ): Prisma.InvoiceWhereInput {
+    const where: Prisma.InvoiceWhereInput = {};
+
+    if (query.workspaceId) {
+      where.workspaceId = query.workspaceId;
+    }
+    if (query.orderId) {
+      where.orderId = query.orderId;
+    }
+    if (query.status !== undefined) {
+      where.status = query.status;
+    }
+    if (query.billingType !== undefined) {
+      where.billingType = query.billingType;
+    }
+    if (query.invoiceCode) {
+      where.invoiceCode = query.invoiceCode;
+    }
+    if (query.issueDateFrom !== undefined || query.issueDateTo !== undefined) {
+      where.issueDate = {};
+      if (query.issueDateFrom) {
+        where.issueDate.gte = new Date(query.issueDateFrom);
+      }
+      if (query.issueDateTo) {
+        where.issueDate.lte = new Date(query.issueDateTo);
+      }
+    }
+    if (query.createdAtFrom !== undefined || query.createdAtTo !== undefined) {
+      where.createdAt = {};
+      if (query.createdAtFrom) {
+        where.createdAt.gte = new Date(query.createdAtFrom);
+      }
+      if (query.createdAtTo) {
+        where.createdAt.lte = new Date(query.createdAtTo);
+      }
+    }
+
+    return where;
+  }
+
+  async listOrdersForAdmin(query: AdminOrdersQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const where = this.buildOrderWhere(query);
+
+    const [data, total] = await Promise.all([
+      this.prismaService.order.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          orderCode: true,
+          workspaceId: true,
+          ownerUserId: true,
+          totalAmountExclVat: true,
+          totalVatAmount: true,
+          totalAmountInclVat: true,
+          status: true,
+          paidAt: true,
+          topupRequestId: true,
+          createdAt: true,
+        },
+      }),
+      this.prismaService.order.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getOrderForAdmin(orderId: string) {
+    const order = await this.prismaService.order.findUnique({
+      where: { id: orderId },
       include: {
         items: true,
         invoice: true,
       },
     });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return order;
   }
 
-  listInvoices(workspaceId: string) {
-    return this.prismaService.invoice.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        invoiceCode: true,
-        invoiceNumber: true,
-        status: true,
-        issueDate: true,
-        invoicePdfUrl: true,
-        billingType: true,
-        billingSnapshotJson: true,
-        createdAt: true,
+  async listInvoicesForAdmin(query: AdminInvoicesQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const where = this.buildInvoiceWhere(query);
+
+    const [data, total] = await Promise.all([
+      this.prismaService.invoice.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          invoiceCode: true,
+          invoiceNumber: true,
+          workspaceId: true,
+          orderId: true,
+          status: true,
+          issueDate: true,
+          invoicePdfUrl: true,
+          billingType: true,
+          billingSnapshotJson: true,
+          createdAt: true,
+        },
+      }),
+      this.prismaService.invoice.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
-    });
+    };
   }
 
-  getInvoice(workspaceId: string, invoiceId: string) {
-    return this.prismaService.invoice.findFirst({
-      where: { id: invoiceId, workspaceId },
+  async getInvoiceForAdmin(invoiceId: string) {
+    const invoice = await this.prismaService.invoice.findUnique({
+      where: { id: invoiceId },
       include: { items: true, order: true },
     });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    return invoice;
   }
 }

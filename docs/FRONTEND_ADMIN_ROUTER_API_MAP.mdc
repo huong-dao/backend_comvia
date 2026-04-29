@@ -1,0 +1,322 @@
+# Frontend Admin Router -> API Map
+
+Mục tiêu:
+- Bản rút gọn để team frontend code nhanh khu vực `ADMIN`.
+- Chỉ tập trung vào: route nào gọi API nào, action nào dùng endpoint nào.
+
+Phạm vi:
+- Áp dụng cho `UserRole.ADMIN`.
+
+---
+
+## 1) Router map tổng quát
+
+| Router | API load chính | API action chính |
+|-------|-----------------|------------------|
+| `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`, `GET /admin/audit-logs?limit=10`. | Không có |
+| `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
+| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
+| `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
+| `/admin/quick-chat/agents` | `GET /admin/quick-chat/agents` | Điều hướng sang edit |
+| `/admin/quick-chat/agents/:agentId` | Có thể load từ `GET /admin/quick-chat/agents` rồi find theo `agentId` ở FE | `PUT /admin/quick-chat/agents/:agentId` |
+| `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
+| `/admin/dev/payment-webhook` | Không cần load | `POST /topups/webhook` |
+| `/admin/internal-quick-chat` | `POST /internal/quick-chat/sessions` -> `GET /internal/quick-chat/sessions/:sessionId` | `POST /internal/quick-chat/sessions/:sessionId/messages`, `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm` |
+| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` (phân trang + lọc query), `GET /admin/invoices` (phân trang + lọc) | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId` |
+
+---
+
+## 2) `/admin/users`
+
+### Load
+- `GET /admin/users`
+
+### Fields nên render
+- `id`
+- `email`
+- `fullName`
+- `role`
+- `status`
+- `createdAt`
+
+### Row actions
+- Lock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": true }
+```
+- Unlock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": false }
+```
+
+---
+
+## 3) `/admin/workspaces`
+
+### Load
+- `GET /admin/workspaces`
+
+### Fields nên render
+- `id`
+- `name`
+- `slug`
+- `ownerUserId`
+- `status`
+- `createdAt`
+
+### Row actions
+- Disable workspace:
+  - `PATCH /admin/workspaces/:workspaceId/disable`
+
+---
+
+## 4) `/admin/audit-logs`
+
+### Load
+- `GET /admin/audit-logs`
+
+### Query gợi ý
+- `workspaceId`
+- `action`
+- `limit`
+
+### Fields nên render
+- `createdAt`
+- `actorUserId`
+- `workspaceId`
+- `action`
+- `resourceType`
+- `resourceId`
+- `metadataJson`
+
+---
+
+## 5) `/admin/quick-chat/agents`
+
+### Load
+- `GET /admin/quick-chat/agents`
+
+### Fields nên render
+- `id`
+- `name`
+- `provider`
+- `systemPrompt`
+- `allowedTools`
+- `skills`
+- `active`
+- `createdAt`
+- `updatedAt`
+
+---
+
+## 6) `/admin/quick-chat/agents/:agentId`
+
+### Save
+- `PUT /admin/quick-chat/agents/:agentId`
+
+### Body
+```json
+{
+  "name": "John",
+  "provider": "openai",
+  "systemPrompt": "You are a workspace operations assistant.",
+  "allowedTools": ["*"],
+  "skills": ["workspace-ops", "billing-safety"],
+  "active": true
+}
+```
+
+---
+
+## 7) `/admin/quick-chat/tools`
+
+### Load
+- `GET /admin/quick-chat/tools`
+
+### Render
+- Danh sách string tool name
+- copy-to-clipboard
+
+---
+
+## 8) `/admin/dev/payment-webhook`
+
+### Action
+- `POST /topups/webhook`
+
+### Body mẫu success
+```json
+{
+  "provider": "mock_gateway",
+  "eventId": "EVT_1",
+  "topupCode": "TP_123",
+  "status": "success",
+  "amountInclVat": 110000
+}
+```
+
+### Body mẫu failed
+```json
+{
+  "provider": "mock_gateway",
+  "eventId": "EVT_2",
+  "topupCode": "TP_123",
+  "status": "failed"
+}
+```
+
+---
+
+## 9) `/admin/internal-quick-chat`
+
+### Tạo session
+- `POST /internal/quick-chat/sessions`
+
+### Body
+```json
+{
+  "workspaceId": "WS_ID",
+  "title": "Admin ops"
+}
+```
+
+### Lấy session
+- `GET /internal/quick-chat/sessions/:sessionId`
+
+### Gửi message
+- `POST /internal/quick-chat/sessions/:sessionId/messages`
+
+### Confirm action
+- `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
+
+---
+
+## 10) Admin: đơn hàng & hóa đơn (toàn hệ thống)
+
+Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
+
+**Auth / quyền:** JWT + `UserRole.ADMIN` (`@Roles(ADMIN)` trên controller). Không cần `workspaceId` trên URL; có thể lọc theo workspace bằng query nếu cần.
+
+### Danh sách đơn hàng (phân trang + lọc tùy chọn)
+- `GET /admin/orders`
+
+**Query phân trang:**
+| Param | Bắt buộc | Mặc định | Ghi chú |
+|-------|----------|----------|---------|
+| `page` | Không | `1` | Trang từ 1 |
+| `limit` | Không | `30` | Tối đa `100` mỗi trang |
+
+**Query lọc (tất cả tùy chọn, khớp model `Order` trong Prisma):**
+| Param | Kiểu | Ghi chú |
+|-------|------|---------|
+| `workspaceId` | string | Lọc theo workspace |
+| `ownerUserId` | string | User sở hữu đơn |
+| `status` | enum | `PAID` \| `CANCELLED` |
+| `orderCode` | string | Khớp chính xác mã đơn (`orderCode` unique) |
+| `topupRequestId` | string | Liên kết topup (nếu có) |
+| `paidAtFrom`, `paidAtTo` | ISO date string | Khoảng `paidAt` (gte / lte) |
+| `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |
+
+**Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "",
+      "orderCode": "",
+      "workspaceId": "",
+      "ownerUserId": "",
+      "totalAmountExclVat": 0,
+      "totalVatAmount": 0,
+      "totalAmountInclVat": 0,
+      "status": "PAID",
+      "paidAt": null,
+      "topupRequestId": null,
+      "createdAt": ""
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 30,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+Sắp xếp: `createdAt` giảm dần.
+
+**Ví dụ gọi (list → mở detail):**
+- Chỉ phân trang: `GET /api/v1/admin/orders?page=1&limit=30`
+- Lọc theo workspace + trạng thái: `GET /api/v1/admin/orders?workspaceId=cuId&status=PAID`
+- Lấy `orderId` từ `data[].id` rồi gọi chi tiết bên dưới.
+
+### Chi tiết đơn hàng
+- `GET /admin/orders/:orderId`
+
+**Cách dùng:** `orderId` là giá trị `id` (cuid) của đơn, thường lấy từ cột `id` trong `GET /admin/orders` hoặc từ `order.id` khi đã có object chi tiết hóa đơn.
+
+**Ví dụ:** `GET /api/v1/admin/orders/clxxxxxxxxxxxxxxxx`
+
+**Response (200):** Một object `Order` đầy đủ với:
+- Các trường gốc (`id`, `orderCode`, `workspaceId`, `ownerUserId`, số tiền, `status`, `paidAt`, `topupRequestId`, `createdAt`, …).
+- `items`: mảng `OrderItem` (dòng sản phẩm/dịch vụ trên đơn).
+- `invoice`: một `Invoice` rút gọn liên kết 1-1, hoặc `null` nếu chưa có hóa đơn.
+
+**Lỗi:** `404` nếu không tồn tại `orderId`.
+
+### Danh sách hóa đơn (phân trang + lọc tùy chọn)
+- `GET /admin/invoices`
+
+**Query phân trang:** giống `orders` (`page`, `limit`).
+
+**Query lọc (model `Invoice`):**
+| Param | Kiểu | Ghi chú |
+|-------|------|---------|
+| `workspaceId` | string | |
+| `orderId` | string | **Lọc theo đơn hàng:** chỉ trả hóa đơn gắn với đơn có `id` này (quan hệ 1-1 `Invoice.orderId` ↔ `Order.id`). FE truyền khi đang xem một đơn và cần danh sách hóa đơn của đơn đó (thường 0 hoặc 1 bản ghi). |
+| `status` | enum | `POSTED` \| `ISSUED` \| `CANCELLED` |
+| `billingType` | enum | `ORGANIZATION` \| `INDIVIDUAL` |
+| `invoiceCode` | string | Khớp chính xác |
+| `issueDateFrom`, `issueDateTo` | ISO date string | Khoảng `issueDate` |
+| `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |
+
+**Ví dụ lọc theo đơn (FE có `orderId` sau khi load đơn hoặc từ URL):**  
+`GET /api/v1/admin/invoices?orderId=clxxxxxxxxxxxxxxxx`
+
+Kết hợp phân trang + lọc đơn:  
+`GET /api/v1/admin/invoices?orderId=clxxxxxxxxxxxxxxxx&page=1&limit=30`
+
+**Response (200):** Cùng dạng `{ data, meta }` như list orders; mỗi phần tử `data[]` có `workspaceId`, `orderId`, `invoiceCode`, `invoiceNumber`, `status`, `issueDate`, `invoicePdfUrl`, `billingType`, `billingSnapshotJson`, `createdAt`, …
+
+Sắp xếp: `createdAt` giảm dần.
+
+**Luồng gợi ý:** Từ `GET /admin/orders/:orderId` có thể đọc `invoice.id` (nếu có) để mở thẳng chi tiết hóa đơn; hoặc gọi `GET /admin/invoices?orderId=<orderId>` để lấy hóa đơn theo đơn.
+
+### Chi tiết hóa đơn
+- `GET /admin/invoices/:invoiceId`
+
+**Cách dùng:** `invoiceId` là `id` (cuid) của hóa đơn, lấy từ `GET /admin/invoices` (`data[].id`), từ `invoice.id` trong response chi tiết đơn, hoặc từ màn hình tra cứu.
+
+**Ví dụ:** `GET /api/v1/admin/invoices/clxxxxxxxxxxxxxxxx`
+
+**Response (200):** Một object `Invoice` đầy đủ với:
+- Các trường gốc (`id`, `invoiceCode`, `invoiceNumber`, `workspaceId`, `orderId`, `billingType`, `billingSnapshotJson`, `status`, `issueDate`, `invoicePdfUrl`, `createdAt`, `updatedAt`, …).
+- `items`: mảng `InvoiceItem`.
+- `order`: đơn hàng liên kết (`Order` đầy đủ theo include Prisma).
+
+**Lỗi:** `404` nếu không tồn tại `invoiceId`.
+
+---
+
+## 11) Gợi ý code frontend
+
+- `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
+- **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).
+- Trang list invoice toàn hệ thống: `GET /admin/invoices`; detail: `GET /admin/invoices/:invoiceId`.
+- `/admin/quick-chat/agents/:agentId` có thể reuse data từ list để giảm thêm 1 request.
+- Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo.

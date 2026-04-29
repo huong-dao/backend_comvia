@@ -1,38 +1,32 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { WorkspaceContextGuard } from '../common/guards/workspace-context.guard';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
+import { AdminInvoicesQueryDto } from './dto/admin-invoices-query.dto';
+import { AdminOrdersQueryDto } from './dto/admin-orders-query.dto';
 import { OrdersInvoicesService } from './orders-invoices.service';
 
-@Controller('workspaces/:workspaceId')
+@Controller('admin')
+@Roles(UserRole.ADMIN)
 export class OrdersInvoicesController {
   constructor(private readonly service: OrdersInvoicesService) {}
 
   @Get('orders')
-  @UseGuards(WorkspaceContextGuard)
-  listOrders(@Param('workspaceId') workspaceId: string) {
-    return this.service.listOrders(workspaceId);
+  listOrders(@Query() query: AdminOrdersQueryDto) {
+    return this.service.listOrdersForAdmin(query);
   }
 
   @Get('orders/:orderId')
-  @UseGuards(WorkspaceContextGuard)
-  getOrder(
-    @Param('workspaceId') workspaceId: string,
-    @Param('orderId') orderId: string,
-  ) {
-    return this.service.getOrder(workspaceId, orderId);
+  getOrder(@Param('orderId') orderId: string) {
+    return this.service.getOrderForAdmin(orderId);
   }
 
   @Get('invoices')
-  @UseGuards(WorkspaceContextGuard)
-  listInvoices(@Param('workspaceId') workspaceId: string) {
-    return this.service.listInvoices(workspaceId);
+  listInvoices(@Query() query: AdminInvoicesQueryDto) {
+    return this.service.listInvoicesForAdmin(query);
   }
 
   @Get('invoices/:invoiceId')
-  @UseGuards(WorkspaceContextGuard)
-  getInvoice(
-    @Param('workspaceId') workspaceId: string,
-    @Param('invoiceId') invoiceId: string,
-  ) {
-    return this.service.getInvoice(workspaceId, invoiceId);
+  getInvoice(@Param('invoiceId') invoiceId: string) {
+    return this.service.getInvoiceForAdmin(invoiceId);
   }
 }
