@@ -80,7 +80,7 @@ npm run prisma:studio
 
 ### Orders & Invoices (ADMIN)
 - `GET /admin/orders` — phân trang + lọc query theo model `Order`; `orderId` chi tiết lấy từ `data[].id`.
-- `GET /admin/orders/:orderId` — chi tiết đơn (404 nếu không có); body gồm `items`, `invoice` (có thể `null`).
+- `GET /admin/orders/:orderId` — chi tiết đơn (404 nếu không có); body gồm `items`, `invoice` (có thể `null`), `workspace`, `owner` (User).
 - `GET /admin/invoices` — phân trang + lọc theo `Invoice`; **tùy chọn** `?orderId=<id>` để chỉ lấy hóa đơn của một đơn.
 - `GET /admin/invoices/:invoiceId` — chi tiết hóa đơn (404 nếu không có); body gồm `items`, `order`.
 

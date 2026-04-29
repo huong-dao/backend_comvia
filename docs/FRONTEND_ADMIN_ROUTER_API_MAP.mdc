@@ -279,10 +279,12 @@ Sắp xếp: `createdAt` giảm dần.
 
 **Ví dụ:** `GET /api/v1/admin/orders/clxxxxxxxxxxxxxxxx`
 
-**Response (200):** Một object `Order` đầy đủ với:
+**Response (200):** Một object `Order` với:
 - Các trường gốc (`id`, `orderCode`, `workspaceId`, `ownerUserId`, số tiền, `status`, `paidAt`, `topupRequestId`, `createdAt`, …).
 - `items`: mảng `OrderItem` (dòng sản phẩm/dịch vụ trên đơn).
-- `invoice`: một `Invoice` rút gọn liên kết 1-1, hoặc `null` nếu chưa có hóa đơn.
+- `invoice`: một `Invoice` liên kết 1-1, hoặc `null` nếu chưa có hóa đơn.
+- `workspace`: Workspace (`id`, `name`, `slug`, `status`, `ownerUserId`, `createdAt`).
+- `owner`: User sở hữu đơn (`id`, `email`, `fullName`, `role`, `status`, `createdAt`).
 
 **Lỗi:** `404` nếu không tồn tại `orderId`.
 
