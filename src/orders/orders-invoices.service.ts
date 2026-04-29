@@ -116,6 +116,26 @@ export class OrdersInvoicesService {
           paidAt: true,
           topupRequestId: true,
           createdAt: true,
+          workspace: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              status: true,
+              ownerUserId: true,
+              createdAt: true,
+            },
+          },
+          owner: {
+            select: {
+              id: true,
+              email: true,
+              fullName: true,
+              role: true,
+              status: true,
+              createdAt: true,
+            },
+          },
         },
       }),
       this.prismaService.order.count({ where }),

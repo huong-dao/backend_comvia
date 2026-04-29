@@ -221,7 +221,8 @@ Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 | `paidAtFrom`, `paidAtTo` | ISO date string | Khoảng `paidAt` (gte / lte) |
 | `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |
 
-**Response (200):**
+**Response (200):** Mỗi phần tử `data[]` gồm các trường đơn và kèm `workspace` (Workspace) cùng `owner` (User — người sở hữu đơn, `ownerUserId`).
+
 ```json
 {
   "data": [
@@ -236,7 +237,23 @@ Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
       "status": "PAID",
       "paidAt": null,
       "topupRequestId": null,
-      "createdAt": ""
+      "createdAt": "",
+      "workspace": {
+        "id": "",
+        "name": "",
+        "slug": null,
+        "status": "ACTIVE",
+        "ownerUserId": "",
+        "createdAt": ""
+      },
+      "owner": {
+        "id": "",
+        "email": "",
+        "fullName": null,
+        "role": "USER",
+        "status": "ACTIVE",
+        "createdAt": ""
+      }
     }
   ],
   "meta": {
