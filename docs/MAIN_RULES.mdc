@@ -1205,17 +1205,13 @@ Có thể hiển thị:
 
 ### 16.2 Audit Log
 Cần log tối thiểu:
-- đăng ký / đăng nhập / logout
-- OTP gửi / verify
 - tạo / sửa workspace
 - thay đổi billing info
 - mời / xóa member
 - kết nối / ngắt OA
-- submit / approve / reject template
-- tạo / chạy / pause / retry campaign
-- tạo / disable / regenerate API key
-- topup / cộng credit / refund / adjustment
-- tạo order / invoice / update invoice
+- submit (user và owner) / approve (staff) / reject template (staff) khi reject phải có lý do
+- tạo / disable / regenerate API key (user và owner)
+- topup / cộng credit / refund / adjustment (log transaction)
 
 ### 16.3 Background Jobs
 Các job nền cần có:
