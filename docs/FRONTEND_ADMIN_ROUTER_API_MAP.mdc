@@ -216,7 +216,7 @@ Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 | `workspaceId` | string | Lọc theo workspace |
 | `ownerUserId` | string | User sở hữu đơn |
 | `status` | enum | `PAID` \| `CANCELLED` |
-| `orderCode` | string | Khớp chính xác mã đơn (`orderCode` unique) |
+| `orderCode` | string | Tìm chuỗi con trong mã đơn (ILIKE / `contains`, không phân biệt hoa thường), không bắt buộc khớp full mã |
 | `topupRequestId` | string | Liên kết topup (nếu có) |
 | `paidAtFrom`, `paidAtTo` | ISO date string | Khoảng `paidAt` (gte / lte) |
 | `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |

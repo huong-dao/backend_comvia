@@ -21,7 +21,10 @@ export class OrdersInvoicesService {
       where.status = query.status;
     }
     if (query.orderCode) {
-      where.orderCode = query.orderCode;
+      where.orderCode = {
+        contains: query.orderCode,
+        mode: 'insensitive',
+      };
     }
     if (query.topupRequestId) {
       where.topupRequestId = query.topupRequestId;
