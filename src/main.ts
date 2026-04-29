@@ -23,8 +23,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      "http://103.200.20.197:3002",
-      'http://localhost:3002', // FE Next hiện tại
+      "https://comvia.cloud",
     ],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
