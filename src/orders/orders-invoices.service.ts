@@ -234,7 +234,29 @@ export class OrdersInvoicesService {
   async getInvoiceForAdmin(invoiceId: string) {
     const invoice = await this.prismaService.invoice.findUnique({
       where: { id: invoiceId },
-      include: { items: true, order: true },
+      include: {
+        items: true,
+        order: {
+          select: {
+            id: true,
+            orderCode: true,
+            totalAmountExclVat: true,
+            totalVatAmount: true,
+            totalAmountInclVat: true,
+            status: true,
+            paidAt: true,
+            createdAt: true,
+          },
+        },
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            status: true,
+          },
+        },
+      },
     });
     if (!invoice) {
       throw new NotFoundException('Invoice not found');

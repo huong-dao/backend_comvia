@@ -12,6 +12,8 @@ export const AUDIT_ACTIONS = {
   API_KEY_CREATED: 'api_key.created',
   API_KEY_DISABLED: 'api_key.disabled',
   API_KEY_REGENERATED: 'api_key.regenerated',
+  INVOICE_ISSUED_VIA_PDF: 'invoice.issued_via_pdf',
+  INVOICE_PDF_VERIFICATION_FAILED: 'invoice.pdf_verification_failed',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -24,6 +26,7 @@ export const AUDIT_RESOURCE_TYPES = {
   WORKSPACE_OA_CONNECTION: 'WorkspaceOaConnection',
   TEMPLATE: 'Template',
   API_KEY: 'ApiKey',
+  INVOICE: 'Invoice',
 } as const;
 
 export type AuditResourceType =

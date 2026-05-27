@@ -23,7 +23,7 @@ Phạm vi:
 | `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
 | `/admin/dev/payment-webhook` | Không cần load | `POST /topups/webhook` |
 | `/admin/internal-quick-chat` | `POST /internal/quick-chat/sessions` -> `GET /internal/quick-chat/sessions/:sessionId` | `POST /internal/quick-chat/sessions/:sessionId/messages`, `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm` |
-| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` (phân trang + lọc query), `GET /admin/invoices` (phân trang + lọc) | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId` |
+| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
 
 ---
 
@@ -179,7 +179,7 @@ Phạm vi:
 
 Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 
-**Auth / quyền:** JWT + `UserRole.ADMIN` (`@Roles(ADMIN)` trên controller). Không cần `workspaceId` trên URL; có thể lọc theo workspace bằng query nếu cần.
+**Auth / quyền:** JWT + `UserRole.ADMIN` hoặc `UserRole.STAFF` (`@Roles(ADMIN, STAFF)` trên controller orders/invoices). Không cần `workspaceId` trên URL; có thể lọc theo workspace bằng query nếu cần.
 
 ### Danh sách đơn hàng (phân trang + lọc tùy chọn)
 - `GET /admin/orders`
@@ -305,11 +305,80 @@ Sắp xếp: `createdAt` giảm dần.
 **Ví dụ:** `GET /api/v1/admin/invoices/clxxxxxxxxxxxxxxxx`
 
 **Response (200):** Một object `Invoice` đầy đủ với:
-- Các trường gốc (`id`, `invoiceCode`, `invoiceNumber`, `workspaceId`, `orderId`, `billingType`, `billingSnapshotJson`, `status`, `issueDate`, `invoicePdfUrl`, `createdAt`, `updatedAt`, …).
+- Các trường gốc (`id`, `invoiceCode`, `invoiceNumber`, `workspaceId`, `orderId`, `billingType`, `billingSnapshotJson`, `status`, `issueDate`, `invoicePdfUrl`, `verificationJson`, `createdAt`, `updatedAt`, …).
 - `items`: mảng `InvoiceItem`.
-- `order`: đơn hàng liên kết (`Order` đầy đủ theo include Prisma).
+- `order`: tóm tắt đơn (`orderCode`, tổng tiền, `paidAt`, …).
+- `workspace`: `{ id, name, slug, status }` để staff đối chiếu.
 
 **Lỗi:** `404` nếu không tồn tại `invoiceId`.
+
+### Issue hóa đơn qua PDF (atomic verify + issue)
+
+- `POST /admin/invoices/:invoiceId/verify-issue-pdf`
+
+**Auth / quyền:** JWT + `UserRole.ADMIN` hoặc `UserRole.STAFF`. **Không** gọi Gemini từ FE.
+
+**Content-Type:** `multipart/form-data`
+
+| Field | Bắt buộc | Ghi chú |
+|-------|----------|---------|
+| `file` | Có | PDF (`application/pdf`), tối đa 10MB |
+| `invoiceNumber` | Không | Số HĐ thực sau khi kế toán xuất ngoài — backend so khớp với PDF |
+| `issueDate` | Không | ISO date `YYYY-MM-DD` |
+| `idempotencyKey` | Không | Khuyến nghị để tránh upload lặp |
+
+**Luồng server:** load invoice `POSTED` → validate PDF → Gemini trích xuất JSON → so khớp billing + tiền + line item → nếu pass: lưu PDF (`/public/invoices/...`), cập nhật `ISSUED`, ghi audit log.
+
+**Response pass (200):**
+```json
+{
+  "ok": true,
+  "invoice": {
+    "id": "",
+    "status": "ISSUED",
+    "invoiceNumber": "",
+    "issueDate": "",
+    "invoicePdfUrl": "/public/invoices/.../....pdf"
+  }
+}
+```
+
+**Response fail verify (422):**
+```json
+{
+  "ok": false,
+  "code": "INVOICE_PDF_VERIFICATION_FAILED",
+  "invoiceId": "",
+  "mismatches": [
+    {
+      "field": "billing.tax_code",
+      "severity": "error",
+      "expected": "0123456789",
+      "found": null,
+      "note": "Mã số thuế trên PDF không khớp snapshot billing"
+    }
+  ],
+  "extractedPreview": {},
+  "message": "Vui lòng kiểm tra file PDF và thử upload lại."
+}
+```
+
+**Mã lỗi khác:**
+| HTTP | code | Khi nào |
+|------|------|---------|
+| `409` | `INVOICE_ALREADY_ISSUED` | Invoice đã `ISSUED` |
+| `400` | `INVOICE_CANCELLED` | Invoice `CANCELLED` |
+| `502` | — | Gemini/upstream lỗi hoặc timeout |
+| `503` | — | Thiếu `GEMINI_API_KEY` (trừ `DEMO_MODE=true` dùng mock server-side) |
+
+**Stable keys `mismatches[].field` (map sang tiếng Việt ở FE):**
+- `billing.company_name`, `billing.tax_code`, `billing.address`, `billing.invoice_email`, `billing.representative_name`, `billing.phone`, `billing.full_name`, `billing.citizen_id`
+- `commercial.vat_rate`, `commercial.amount_excl_vat`, `commercial.vat_amount`, `commercial.amount_incl_vat`, `commercial.line_item_name`
+- `identifiers.invoice_number`, `identifiers.issue_date`
+
+**FE gọi FormData:** không set `Content-Type` thủ công; chỉ gửi `Authorization: Bearer ...`.
+
+**Env backend:** `GEMINI_API_KEY`, `GEMINI_MODEL` (optional), `GEMINI_TIMEOUT_MS` (optional), `DEMO_MODE=true` cho dev không có key.
 
 ---
 

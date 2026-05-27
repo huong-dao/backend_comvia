@@ -446,6 +446,7 @@ model Invoice {
   billingSnapshotJson Json
   status          InvoiceStatus  @default(POSTED)
   issueDate       DateTime?
+  verificationJson Json?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
