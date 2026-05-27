@@ -15,11 +15,9 @@ Phạm vi:
 
 | Router | API load chính | API action chính |
 |-------|-----------------|------------------|
-| `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`, `GET /admin/audit-logs?limit=10`. | Không có |
+| `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
 | `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
-| `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
-| `/workspaces/:id/settings/audit-logs` (gợi ý FE) | `GET /workspaces/:workspaceId/audit-logs?action=&limit=` | Không có |
 | `/admin/quick-chat/agents` | `GET /admin/quick-chat/agents` | Điều hướng sang edit |
 | `/admin/quick-chat/agents/:agentId` | Có thể load từ `GET /admin/quick-chat/agents` rồi find theo `agentId` ở FE | `PUT /admin/quick-chat/agents/:agentId` |
 | `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
@@ -77,55 +75,7 @@ Phạm vi:
 
 ---
 
-## 4) `/admin/audit-logs`
-
-### Load
-- `GET /admin/audit-logs`
-
-### Query gợi ý
-- `workspaceId`
-- `action`
-- `limit`
-
-### Fields nên render
-- `createdAt`
-- `actorUserId`
-- `actor.email`, `actor.fullName` (nếu có)
-- `workspaceId`
-- `action`
-- `resourceType`
-- `resourceId`
-- `metadataJson`
-
-### Action phổ biến
-- `workspace.created`, `workspace.updated`, `billing_info.updated`
-- `member.invited`, `member.removed`
-- `oa.connected`, `oa.disconnected`
-- `template.submitted`, `template.approved`, `template.rejected`
-- `api_key.created`, `api_key.disabled`, `api_key.regenerated`
-
----
-
-## 4b) Workspace audit logs (owner)
-
-### Load
-- `GET /workspaces/:workspaceId/audit-logs`
-
-Headers:
-- `Authorization`
-- `x-workspace-id`
-
-Query:
-- `action`
-- `limit`
-
-Auth/Role: workspace `OWNER`
-
-Response format giống admin audit logs (có `actor`).
-
----
-
-## 5) `/admin/quick-chat/agents`
+## 4) `/admin/quick-chat/agents`
 
 ### Load
 - `GET /admin/quick-chat/agents`
@@ -143,7 +93,7 @@ Response format giống admin audit logs (có `actor`).
 
 ---
 
-## 6) `/admin/quick-chat/agents/:agentId`
+## 5) `/admin/quick-chat/agents/:agentId`
 
 ### Save
 - `PUT /admin/quick-chat/agents/:agentId`
@@ -162,7 +112,7 @@ Response format giống admin audit logs (có `actor`).
 
 ---
 
-## 7) `/admin/quick-chat/tools`
+## 6) `/admin/quick-chat/tools`
 
 ### Load
 - `GET /admin/quick-chat/tools`
@@ -173,7 +123,7 @@ Response format giống admin audit logs (có `actor`).
 
 ---
 
-## 8) `/admin/dev/payment-webhook`
+## 7) `/admin/dev/payment-webhook`
 
 ### Action
 - `POST /topups/webhook`
@@ -201,7 +151,7 @@ Response format giống admin audit logs (có `actor`).
 
 ---
 
-## 9) `/admin/internal-quick-chat`
+## 8) `/admin/internal-quick-chat`
 
 ### Tạo session
 - `POST /internal/quick-chat/sessions`
@@ -225,7 +175,7 @@ Response format giống admin audit logs (có `actor`).
 
 ---
 
-## 10) Admin: đơn hàng & hóa đơn (toàn hệ thống)
+## 9) Admin: đơn hàng & hóa đơn (toàn hệ thống)
 
 Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 
@@ -363,7 +313,7 @@ Sắp xếp: `createdAt` giảm dần.
 
 ---
 
-## 11) Gợi ý code frontend
+## 10) Gợi ý code frontend
 
 - `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
 - **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).

@@ -4,7 +4,7 @@ Team frontend **chỉ cần đọc 2 file** trong thư mục này:
 
 | File | Dùng cho |
 |------|----------|
-| [FRONTEND_API_GUIDE_NEXTJS.mdc](./FRONTEND_API_GUIDE_NEXTJS.mdc) | App user/workspace: auth, workspace, member, OA, template, topup, messaging, API key, audit log |
+| [FRONTEND_API_GUIDE_NEXTJS.mdc](./FRONTEND_API_GUIDE_NEXTJS.mdc) | App user/workspace: auth, workspace, member, OA, template, topup, messaging, API key |
 | [FRONTEND_ADMIN_ROUTER_API_MAP.mdc](./FRONTEND_ADMIN_ROUTER_API_MAP.mdc) | Màn admin backoffice: router → API map |
 
 ## Ghi chú nhanh

@@ -623,59 +623,9 @@ Response regenerate:
 Ghi chú audit log:
 - Backend tự ghi audit log khi `create` / `disable` / `regenerate` API key (không cần FE gọi endpoint riêng).
 
-## 11) Audit Log
+## 11) Audit Log (server-side only)
 
-Audit log được backend **tự ghi** sau khi các API nghiệp vụ thành công. Frontend chỉ cần gọi API đọc log để hiển thị lịch sử.
-
-### 11.1 List audit logs (workspace owner)
-
-Endpoint:
-- `GET /workspaces/:workspaceId/audit-logs`
-
-Headers:
-- `Authorization: Bearer <accessToken>`
-- `x-workspace-id: <workspaceId>`
-
-Auth/Role: `OWNER`
-
-Query:
-- `action` (optional) — lọc theo action, ví dụ `template.submitted`
-- `limit` (optional, default `50`, max `200`)
-
-Response:
-```json
-[
-  {
-    "id": "AUDIT_LOG_ID",
-    "actorUserId": "USER_ID",
-    "workspaceId": "WS_ID",
-    "action": "template.submitted",
-    "resourceType": "Template",
-    "resourceId": "TEMPLATE_ID",
-    "metadataJson": {
-      "name": "Template Demo",
-      "code": "482391"
-    },
-    "createdAt": "...",
-    "actor": {
-      "id": "USER_ID",
-      "email": "owner@example.com",
-      "fullName": "Owner Name"
-    }
-  }
-]
-```
-
-### 11.2 List audit logs (admin)
-
-Endpoint:
-- `GET /admin/audit-logs?workspaceId=&action=&limit=50`
-
-Auth/Role: `UserRole.ADMIN`
-
-Response format giống mục 11.1 (có thêm `actor`).
-
-### 11.3 Action được ghi tự động
+Audit log **không có API public**. Backend tự ghi vào bảng `AuditLog` sau khi các API nghiệp vụ thành công — frontend **không gọi** endpoint ghi/đọc log.
 
 | Action | API trigger | Role |
 |--------|-------------|------|
@@ -760,7 +710,6 @@ Endpoint ví dụ:
 - `PATCH /admin/users/:userId/lock` body `{ "locked": true }`
 - `GET /admin/workspaces`
 - `PATCH /admin/workspaces/:workspaceId/disable`
-- `GET /admin/audit-logs?workspaceId=...&action=...&limit=50`
 
 ## 14) Common error handling (frontend)
 
