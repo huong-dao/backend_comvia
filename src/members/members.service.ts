@@ -1,13 +1,21 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { MemberRole } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 
 @Injectable()
 export class MembersService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   async listMembers(workspaceId: string) {
     const members = await this.prismaService.workspaceMember.findMany({
@@ -37,12 +45,16 @@ export class MembersService {
     }));
   }
 
-  async invite(workspaceId: string, dto: InviteMemberDto) {
+  async invite(
+    workspaceId: string,
+    actorUserId: string,
+    dto: InviteMemberDto,
+  ) {
     const token = randomBytes(24).toString('base64url');
     const expiredAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const role = dto.role ?? MemberRole.MEMBER;
 
-    return this.prismaService.workspaceInvitation.create({
+    const invitation = await this.prismaService.workspaceInvitation.create({
       data: {
         workspaceId,
         inviteType: dto.inviteType,
@@ -62,9 +74,28 @@ export class MembersService {
         inviteValue: true,
       },
     });
+
+    await this.auditLogService.write({
+      actorUserId,
+      workspaceId,
+      action: AUDIT_ACTIONS.MEMBER_INVITED,
+      resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_INVITATION,
+      resourceId: invitation.id,
+      metadataJson: {
+        inviteType: invitation.inviteType,
+        inviteValue: invitation.inviteValue,
+        role: invitation.role,
+      },
+    });
+
+    return invitation;
   }
 
-  async removeMember(workspaceId: string, memberUserId: string) {
+  async removeMember(
+    workspaceId: string,
+    actorUserId: string,
+    memberUserId: string,
+  ) {
     // Prevent removing yourself accidentally: let FE handle UX.
     const member = await this.prismaService.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
@@ -75,8 +106,23 @@ export class MembersService {
       throw new BadRequestException('Member not found');
     }
 
-    await this.prismaService.workspaceMember.delete({
-      where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
+    await this.prismaService.$transaction(async (tx) => {
+      await tx.workspaceMember.delete({
+        where: { workspaceId_userId: { workspaceId, userId: memberUserId } },
+      });
+
+      await this.auditLogService.write({
+        actorUserId,
+        workspaceId,
+        action: AUDIT_ACTIONS.MEMBER_REMOVED,
+        resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_MEMBER,
+        resourceId: member.id,
+        metadataJson: {
+          memberUserId,
+          role: member.role,
+        },
+        tx,
+      });
     });
 
     return { ok: true };

@@ -116,19 +116,21 @@ export class InternalTemplatesController {
   @Post(':templateId/approve')
   @Roles(UserRole.STAFF)
   approve(
+    @Request() req: { user: { id: string } },
     @Param('templateId') templateId: string,
     @Body() dto: ApproveTemplateDto,
   ) {
-    return this.service.staffApprove(templateId, dto);
+    return this.service.staffApprove(templateId, req.user.id, dto);
   }
 
   @Post(':templateId/reject')
   @Roles(UserRole.STAFF)
   reject(
+    @Request() req: { user: { id: string } },
     @Param('templateId') templateId: string,
     @Body() dto: RejectTemplateDto,
   ) {
-    return this.service.staffReject(templateId, dto);
+    return this.service.staffReject(templateId, req.user.id, dto);
   }
 
   @Post(':templateId/disable')

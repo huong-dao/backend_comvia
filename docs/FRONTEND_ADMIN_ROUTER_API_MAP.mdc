@@ -1,5 +1,7 @@
 # Frontend Admin Router -> API Map
 
+> Bắt đầu tại [`docs/README.md`](./README.md). File này chỉ dành cho màn **admin backoffice**.
+
 Mục tiêu:
 - Bản rút gọn để team frontend code nhanh khu vực `ADMIN`.
 - Chỉ tập trung vào: route nào gọi API nào, action nào dùng endpoint nào.
@@ -17,6 +19,7 @@ Phạm vi:
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
 | `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
+| `/workspaces/:id/settings/audit-logs` (gợi ý FE) | `GET /workspaces/:workspaceId/audit-logs?action=&limit=` | Không có |
 | `/admin/quick-chat/agents` | `GET /admin/quick-chat/agents` | Điều hướng sang edit |
 | `/admin/quick-chat/agents/:agentId` | Có thể load từ `GET /admin/quick-chat/agents` rồi find theo `agentId` ở FE | `PUT /admin/quick-chat/agents/:agentId` |
 | `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
@@ -87,11 +90,38 @@ Phạm vi:
 ### Fields nên render
 - `createdAt`
 - `actorUserId`
+- `actor.email`, `actor.fullName` (nếu có)
 - `workspaceId`
 - `action`
 - `resourceType`
 - `resourceId`
 - `metadataJson`
+
+### Action phổ biến
+- `workspace.created`, `workspace.updated`, `billing_info.updated`
+- `member.invited`, `member.removed`
+- `oa.connected`, `oa.disconnected`
+- `template.submitted`, `template.approved`, `template.rejected`
+- `api_key.created`, `api_key.disabled`, `api_key.regenerated`
+
+---
+
+## 4b) Workspace audit logs (owner)
+
+### Load
+- `GET /workspaces/:workspaceId/audit-logs`
+
+Headers:
+- `Authorization`
+- `x-workspace-id`
+
+Query:
+- `action`
+- `limit`
+
+Auth/Role: workspace `OWNER`
+
+Response format giống admin audit logs (có `actor`).
 
 ---
 

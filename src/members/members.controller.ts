@@ -30,20 +30,26 @@ export class MembersController {
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
   invite(
+    @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,
     @Body() dto: InviteMemberDto,
   ) {
-    return this.membersService.invite(workspaceId, dto);
+    return this.membersService.invite(workspaceId, req.user.id, dto);
   }
 
   @Delete('members/:memberUserId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
   removeMember(
+    @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
   ) {
-    return this.membersService.removeMember(workspaceId, memberUserId);
+    return this.membersService.removeMember(
+      workspaceId,
+      req.user.id,
+      memberUserId,
+    );
   }
 
   @Post('invitations/accept')

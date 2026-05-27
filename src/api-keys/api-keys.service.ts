@@ -1,13 +1,21 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ApiKeyStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { sha256Hex } from '../common/utils/sha256';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 @Injectable()
 export class ApiKeysService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   private generateApiKey(): { apiKey: string; prefix: string } {
     const raw = randomBytes(32).toString('base64url');
@@ -39,6 +47,18 @@ export class ApiKeysService {
       },
     });
 
+    await this.auditLogService.write({
+      actorUserId,
+      workspaceId,
+      action: AUDIT_ACTIONS.API_KEY_CREATED,
+      resourceType: AUDIT_RESOURCE_TYPES.API_KEY,
+      resourceId: apiKeyRecord.id,
+      metadataJson: {
+        name: apiKeyRecord.name,
+        keyPrefix: apiKeyRecord.keyPrefix,
+      },
+    });
+
     // Only return full apiKey once (FE should store it securely)
     return { apiKey, ...apiKeyRecord };
   }
@@ -59,25 +79,43 @@ export class ApiKeysService {
     });
   }
 
-  async disable(workspaceId: string, apiKeyId: string) {
+  async disable(workspaceId: string, apiKeyId: string, actorUserId: string) {
     const apiKey = await this.prismaService.apiKey.findUnique({
       where: { id: apiKeyId },
-      select: { id: true, workspaceId: true },
+      select: { id: true, workspaceId: true, name: true, keyPrefix: true },
     });
     if (!apiKey || apiKey.workspaceId !== workspaceId) {
       throw new BadRequestException('ApiKey not found');
     }
 
-    return this.prismaService.apiKey.update({
+    const updated = await this.prismaService.apiKey.update({
       where: { id: apiKeyId },
       data: { status: 'DISABLED' satisfies ApiKeyStatus },
     });
+
+    await this.auditLogService.write({
+      actorUserId,
+      workspaceId,
+      action: AUDIT_ACTIONS.API_KEY_DISABLED,
+      resourceType: AUDIT_RESOURCE_TYPES.API_KEY,
+      resourceId: apiKeyId,
+      metadataJson: {
+        name: apiKey.name,
+        keyPrefix: apiKey.keyPrefix,
+      },
+    });
+
+    return updated;
   }
 
-  async regenerate(workspaceId: string, apiKeyId: string) {
+  async regenerate(
+    workspaceId: string,
+    apiKeyId: string,
+    actorUserId: string,
+  ) {
     const apiKey = await this.prismaService.apiKey.findUnique({
       where: { id: apiKeyId },
-      select: { id: true, workspaceId: true },
+      select: { id: true, workspaceId: true, name: true, keyPrefix: true },
     });
     if (!apiKey || apiKey.workspaceId !== workspaceId) {
       throw new BadRequestException('ApiKey not found');
@@ -93,6 +131,19 @@ export class ApiKeysService {
         keyPrefix: prefix,
         status: 'ACTIVE' satisfies ApiKeyStatus,
         lastUsedAt: null,
+      },
+    });
+
+    await this.auditLogService.write({
+      actorUserId,
+      workspaceId,
+      action: AUDIT_ACTIONS.API_KEY_REGENERATED,
+      resourceType: AUDIT_RESOURCE_TYPES.API_KEY,
+      resourceId: apiKeyId,
+      metadataJson: {
+        name: apiKey.name,
+        previousKeyPrefix: apiKey.keyPrefix,
+        newKeyPrefix: prefix,
       },
     });
 

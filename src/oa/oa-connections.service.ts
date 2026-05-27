@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { OaConnectionStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class OaConnectionsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   async getStatus(workspaceId: string) {
     const connection =
@@ -24,14 +32,13 @@ export class OaConnectionsService {
   }
 
   async connect(workspaceId: string, actorUserId: string) {
-    void actorUserId;
     const now = new Date();
     const oaId = `OA_${randomBytes(6).toString('hex')}`;
     const accessToken = randomBytes(24).toString('hex');
     const refreshToken = randomBytes(24).toString('hex');
     const tokenExpiredAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    return this.prismaService.workspaceOaConnection.upsert({
+    const connection = await this.prismaService.workspaceOaConnection.upsert({
       where: { workspaceId },
       create: {
         workspaceId,
@@ -53,14 +60,27 @@ export class OaConnectionsService {
         connectedAt: now,
       },
     });
+
+    await this.auditLogService.write({
+      actorUserId,
+      workspaceId,
+      action: AUDIT_ACTIONS.OA_CONNECTED,
+      resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_OA_CONNECTION,
+      resourceId: connection.id,
+      metadataJson: {
+        oaId: connection.oaId,
+        oaName: connection.oaName,
+      },
+    });
+
+    return connection;
   }
 
   async disconnect(workspaceId: string, actorUserId: string) {
-    void actorUserId;
     const connection =
       await this.prismaService.workspaceOaConnection.findUnique({
         where: { workspaceId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, oaId: true, oaName: true },
       });
 
     if (!connection) {
@@ -71,11 +91,26 @@ export class OaConnectionsService {
       return { ok: true };
     }
 
-    await this.prismaService.workspaceOaConnection.update({
-      where: { workspaceId },
-      data: {
-        status: 'DISCONNECTED' satisfies OaConnectionStatus,
-      },
+    await this.prismaService.$transaction(async (tx) => {
+      await tx.workspaceOaConnection.update({
+        where: { workspaceId },
+        data: {
+          status: 'DISCONNECTED' satisfies OaConnectionStatus,
+        },
+      });
+
+      await this.auditLogService.write({
+        actorUserId,
+        workspaceId,
+        action: AUDIT_ACTIONS.OA_DISCONNECTED,
+        resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_OA_CONNECTION,
+        resourceId: connection.id,
+        metadataJson: {
+          oaId: connection.oaId,
+          oaName: connection.oaName,
+        },
+        tx,
+      });
     });
 
     return { ok: true };

@@ -5,6 +5,11 @@ import {
   Prisma,
   WorkspaceStatus,
 } from '@prisma/client';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
@@ -12,7 +17,10 @@ import { WorkspaceBillingFieldsDto } from './dto/workspace-billing-fields.dto';
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   private validateBillingOrThrow(billing: WorkspaceBillingFieldsDto) {
     if (billing.billingType === BillingType.ORGANIZATION) {
@@ -70,7 +78,7 @@ export class WorkspacesService {
     }
     this.validateBillingOrThrow(dto.billing);
 
-    return this.prismaService.workspace.create({
+    const workspace = await this.prismaService.workspace.create({
       data: {
         name: dto.name,
         slug: dto.slug,
@@ -94,6 +102,21 @@ export class WorkspacesService {
         },
       },
     });
+
+    await this.auditLogService.write({
+      actorUserId: userId,
+      workspaceId: workspace.id,
+      action: AUDIT_ACTIONS.WORKSPACE_CREATED,
+      resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE,
+      resourceId: workspace.id,
+      metadataJson: {
+        name: workspace.name,
+        slug: workspace.slug,
+        billingType: workspace.billingProfile?.billingType,
+      },
+    });
+
+    return workspace;
   }
 
   async listForUser(userId: string) {
@@ -155,7 +178,7 @@ export class WorkspacesService {
       this.validateBillingOrThrow(dto.billing);
     }
 
-    return this.prismaService.workspace.update({
+    const updated = await this.prismaService.workspace.update({
       where: { id: workspaceId },
       data: {
         name: dto.name,
@@ -173,6 +196,35 @@ export class WorkspacesService {
         billingProfile: true,
       },
     });
+
+    if (dto.name !== undefined || dto.slug !== undefined) {
+      await this.auditLogService.write({
+        actorUserId: userId,
+        workspaceId,
+        action: AUDIT_ACTIONS.WORKSPACE_UPDATED,
+        resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE,
+        resourceId: workspaceId,
+        metadataJson: {
+          name: updated.name,
+          slug: updated.slug,
+        },
+      });
+    }
+
+    if (dto.billing) {
+      await this.auditLogService.write({
+        actorUserId: userId,
+        workspaceId,
+        action: AUDIT_ACTIONS.BILLING_INFO_UPDATED,
+        resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_BILLING_PROFILE,
+        resourceId: updated.billingProfile?.id ?? workspaceId,
+        metadataJson: {
+          billingType: updated.billingProfile?.billingType,
+        },
+      });
+    }
+
+    return updated;
   }
 
   async softDelete(userId: string, workspaceId: string) {

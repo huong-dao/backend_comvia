@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import { Prisma, TemplateStatus } from '@prisma/client';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
@@ -14,7 +19,10 @@ import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
 
 @Injectable()
 export class TemplatesService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   private static readonly SIX_DIGIT_CODE_ATTEMPTS = 64;
 
@@ -59,11 +67,12 @@ export class TemplatesService {
     templateId: string,
     status: TemplateStatus,
     options?: {
+      actorUserId?: string;
       providerTemplateId?: string | null;
       rejectedReason?: string | null;
     },
   ) {
-    await this.getTemplateForInternalReviewOrThrow(templateId);
+    const template = await this.getTemplateForInternalReviewOrThrow(templateId);
 
     return this.prismaService.$transaction(async (tx) => {
       await tx.templateSubmissionLog.create({
@@ -80,7 +89,7 @@ export class TemplatesService {
         },
       });
 
-      return tx.template.update({
+      const updated = await tx.template.update({
         where: { id: templateId },
         data: {
           status,
@@ -101,6 +110,36 @@ export class TemplatesService {
           updatedAt: true,
         },
       });
+
+      if (status === 'APPROVED' && options?.actorUserId) {
+        await this.auditLogService.write({
+          actorUserId: options.actorUserId,
+          workspaceId: template.workspaceId,
+          action: AUDIT_ACTIONS.TEMPLATE_APPROVED,
+          resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
+          resourceId: templateId,
+          metadataJson: {
+            providerTemplateId: updated.providerTemplateId,
+          },
+          tx,
+        });
+      }
+
+      if (status === 'REJECTED' && options?.actorUserId) {
+        await this.auditLogService.write({
+          actorUserId: options.actorUserId,
+          workspaceId: template.workspaceId,
+          action: AUDIT_ACTIONS.TEMPLATE_REJECTED,
+          resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
+          resourceId: templateId,
+          metadataJson: {
+            reason: options.rejectedReason,
+          },
+          tx,
+        });
+      }
+
+      return updated;
     });
   }
 
@@ -330,11 +369,9 @@ export class TemplatesService {
   }
 
   async submit(workspaceId: string, templateId: string, actorUserId: string) {
-    void actorUserId;
-
     const template = await this.prismaService.template.findFirst({
       where: { workspaceId, id: templateId },
-      select: { id: true, status: true, oaConnectionId: true },
+      select: { id: true, status: true, oaConnectionId: true, name: true, code: true },
     });
 
     if (!template) {
@@ -347,16 +384,33 @@ export class TemplatesService {
       throw new ForbiddenException('Template already approved');
     }
 
-    await this.prismaService.templateSubmissionLog.create({
-      data: {
-        templateId,
-        status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
-      },
-    });
+    return this.prismaService.$transaction(async (tx) => {
+      await tx.templateSubmissionLog.create({
+        data: {
+          templateId,
+          status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
+        },
+      });
 
-    return this.prismaService.template.update({
-      where: { id: templateId },
-      data: { status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus },
+      const updated = await tx.template.update({
+        where: { id: templateId },
+        data: { status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus },
+      });
+
+      await this.auditLogService.write({
+        actorUserId,
+        workspaceId,
+        action: AUDIT_ACTIONS.TEMPLATE_SUBMITTED,
+        resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
+        resourceId: templateId,
+        metadataJson: {
+          name: template.name,
+          code: template.code,
+        },
+        tx,
+      });
+
+      return updated;
     });
   }
 
@@ -377,22 +431,32 @@ export class TemplatesService {
     });
   }
 
-  async staffApprove(templateId: string, dto: ApproveTemplateDto) {
+  async staffApprove(
+    templateId: string,
+    actorUserId: string,
+    dto: ApproveTemplateDto,
+  ) {
     return this.updateTemplateInternalStatus(
       templateId,
       'APPROVED' satisfies TemplateStatus,
       {
+        actorUserId,
         providerTemplateId: dto.providerTemplateId ?? null,
         rejectedReason: null,
       },
     );
   }
 
-  async staffReject(templateId: string, dto: RejectTemplateDto) {
+  async staffReject(
+    templateId: string,
+    actorUserId: string,
+    dto: RejectTemplateDto,
+  ) {
     return this.updateTemplateInternalStatus(
       templateId,
       'REJECTED' satisfies TemplateStatus,
       {
+        actorUserId,
         rejectedReason: dto.reason,
       },
     );

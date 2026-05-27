@@ -1,0 +1,27 @@
+---
+alwaysApply: false
+description: Checklist đọc tài liệu đầu phiên AI khi làm backend Comvia.
+---
+
+# AI Session Bootstrap
+
+## Bước 1 — Đọc bắt buộc
+1. `.cursor/rules/MAIN_RULES.mdc`
+2. `.cursor/rules/development-guidelines.mdc`
+3. `.cursor/rules/project-overview.mdc`
+
+## Bước 2 — Đọc theo ngữ cảnh
+- Sửa DB/Prisma/migration: `prisma/schema.prisma`
+- Sửa API contract cho frontend: `docs/FRONTEND_API_GUIDE_NEXTJS.mdc` và/hoặc `docs/FRONTEND_ADMIN_ROUTER_API_MAP.mdc`
+- Sửa màn admin FE: `docs/FRONTEND_ADMIN_ROUTER_API_MAP.mdc`
+
+## Bước 3 — Tự xác nhận trước khi code
+- Đã xác định đúng module trong `MAIN_RULES`.
+- Đã liệt kê rủi ro ảnh hưởng chéo (wallet, VAT, idempotency, template/campaign).
+- Đã biết checklist test tối thiểu cho thay đổi.
+
+## Cam kết bắt buộc
+- Không code trước khi hiểu module liên quan trong `MAIN_RULES`.
+- Không tự ý đổi business rule cốt lõi (wallet, VAT, idempotency, template/campaign).
+- Mọi thay đổi liên quan tiền/credit/invoice phải có idempotency và audit log.
+- Có thay đổi logic/API thì cập nhật tài liệu trong `docs/` (frontend) hoặc `MAIN_RULES` (nghiệp vụ).

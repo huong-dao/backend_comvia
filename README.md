@@ -23,7 +23,14 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Comvia backend — NestJS + Prisma + PostgreSQL.
+
+## Documentation
+
+| Audience | Start here |
+|----------|------------|
+| **Frontend** | [`docs/README.md`](./docs/README.md) → 2 file API guide |
+| **Backend / AI** | `.cursor/rules/MAIN_RULES.mdc`, `development-guidelines.mdc`, `project-overview.mdc` |
 
 ## Project setup
 

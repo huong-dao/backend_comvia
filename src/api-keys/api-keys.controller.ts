@@ -42,19 +42,21 @@ export class ApiKeysController {
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
   disable(
+    @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,
     @Param('apiKeyId') apiKeyId: string,
   ) {
-    return this.apiKeysService.disable(workspaceId, apiKeyId);
+    return this.apiKeysService.disable(workspaceId, apiKeyId, req.user.id);
   }
 
   @Post(':apiKeyId/regenerate')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
   regenerate(
+    @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,
     @Param('apiKeyId') apiKeyId: string,
   ) {
-    return this.apiKeysService.regenerate(workspaceId, apiKeyId);
+    return this.apiKeysService.regenerate(workspaceId, apiKeyId, req.user.id);
   }
 }

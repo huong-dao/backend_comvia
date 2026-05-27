@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Patch, Param, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { ListAuditLogsQueryDto } from '../audit-log/dto/list-audit-logs-query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
 
@@ -29,16 +30,11 @@ export class AdminController {
   }
 
   @Get('audit-logs')
-  listAuditLogs(
-    @Query('workspaceId') workspaceId?: string,
-    @Query('action') action?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const limitNumber = limit ? Number(limit) : undefined;
+  listAuditLogs(@Query() query: ListAuditLogsQueryDto) {
     return this.service.listAuditLogs({
-      workspaceId,
-      action,
-      limit: limitNumber,
+      workspaceId: query.workspaceId,
+      action: query.action,
+      limit: query.limit,
     });
   }
 }
