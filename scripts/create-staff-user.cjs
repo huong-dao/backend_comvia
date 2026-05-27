@@ -1,14 +1,10 @@
 /**
  * Tạo user role STAFF + credential (bcrypt) + wallet, status ACTIVE.
  *
- * Usage (PowerShell):
- *   $env:STAFF_EMAIL="staff@comvia.local"; $env:STAFF_PASSWORD="YourSecurePass12"; node scripts/create-staff-user.cjs
+ * Usage:
+ *   node scripts/create-staff-user.cjs
  *
- * Env:
- *   DATABASE_URL   — bắt buộc (hoặc có trong .env qua dotenv)
- *   STAFF_EMAIL    — mặc định staff@comvia.local
- *   STAFF_PASSWORD — bắt buộc, tối thiểu 8 ký tự
- *   STAFF_FULL_NAME — mặc định "System Staff"
+ * Yêu cầu: DATABASE_URL trong .env (dotenv tự load).
  */
 require('dotenv/config');
 const { PrismaPg } = require('@prisma/adapter-pg');
@@ -17,20 +13,14 @@ const bcrypt = require('bcrypt');
 
 const SALT_ROUNDS = 10;
 
+const STAFF_EMAIL = 'staff@comvia.local';
+const STAFF_PASSWORD = 'YourSecurePass12';
+const STAFF_FULL_NAME = 'System Staff';
+
 async function main() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     console.error('Missing DATABASE_URL');
-    process.exit(1);
-  }
-
-  const email = process.env.STAFF_EMAIL || 'staff@comvia.local';
-  const password = process.env.STAFF_PASSWORD;
-  if (!password || password.length < 8) {
-    console.error(
-      'Set STAFF_PASSWORD (min 8 characters). Example:\n' +
-        '  STAFF_EMAIL=staff@comvia.local STAFF_PASSWORD=YourSecurePass12 node scripts/create-staff-user.cjs',
-    );
     process.exit(1);
   }
 
@@ -39,18 +29,20 @@ async function main() {
   });
 
   try {
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({
+      where: { email: STAFF_EMAIL },
+    });
     if (existing) {
-      console.error('User already exists:', email);
+      console.error('User already exists:', STAFF_EMAIL);
       process.exit(1);
     }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(STAFF_PASSWORD, SALT_ROUNDS);
 
     const user = await prisma.user.create({
       data: {
-        email,
-        fullName: process.env.STAFF_FULL_NAME || 'System Staff',
+        email: STAFF_EMAIL,
+        fullName: STAFF_FULL_NAME,
         role: 'STAFF',
         status: 'ACTIVE',
         credential: { create: { passwordHash } },
@@ -68,8 +60,13 @@ async function main() {
     console.log('Created STAFF user:', {
       id: user.id,
       email: user.email,
+      fullName: user.fullName,
       role: user.role,
       status: user.status,
+    });
+    console.log('Login with:', {
+      email: STAFF_EMAIL,
+      password: STAFF_PASSWORD,
     });
   } finally {
     await prisma.$disconnect();
