@@ -18,6 +18,7 @@ Phạm vi:
 | `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
 | `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
+| `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/quick-chat/agents` | `GET /admin/quick-chat/agents` | Điều hướng sang edit |
 | `/admin/quick-chat/agents/:agentId` | Có thể load từ `GET /admin/quick-chat/agents` rồi find theo `agentId` ở FE | `PUT /admin/quick-chat/agents/:agentId` |
 | `/admin/quick-chat/tools` | `GET /admin/quick-chat/tools` | Không có |
@@ -75,7 +76,25 @@ Phạm vi:
 
 ---
 
-## 4) `/admin/quick-chat/agents`
+## 4) `/admin/audit-logs`
+
+### Load
+- `GET /admin/audit-logs`
+
+### Query
+- `workspaceId` (optional) — không truyền = toàn hệ thống; có giá trị = chỉ workspace đó
+- `action` (optional)
+- `limit` (optional, default `50`, max `200`)
+
+Auth/Role: `UserRole.ADMIN`
+
+### Fields nên render
+- `createdAt`, `action`, `workspaceId`, `resourceType`, `resourceId`, `metadataJson`
+- `actor.email`, `actor.fullName`
+
+---
+
+## 5) `/admin/quick-chat/agents`
 
 ### Load
 - `GET /admin/quick-chat/agents`
@@ -93,7 +112,7 @@ Phạm vi:
 
 ---
 
-## 5) `/admin/quick-chat/agents/:agentId`
+## 6) `/admin/quick-chat/agents/:agentId`
 
 ### Save
 - `PUT /admin/quick-chat/agents/:agentId`
@@ -112,7 +131,7 @@ Phạm vi:
 
 ---
 
-## 6) `/admin/quick-chat/tools`
+## 7) `/admin/quick-chat/tools`
 
 ### Load
 - `GET /admin/quick-chat/tools`
@@ -123,7 +142,7 @@ Phạm vi:
 
 ---
 
-## 7) `/admin/dev/payment-webhook`
+## 8) `/admin/dev/payment-webhook`
 
 ### Action
 - `POST /topups/webhook`
@@ -151,7 +170,7 @@ Phạm vi:
 
 ---
 
-## 8) `/admin/internal-quick-chat`
+## 9) `/admin/internal-quick-chat`
 
 ### Tạo session
 - `POST /internal/quick-chat/sessions`
@@ -175,7 +194,7 @@ Phạm vi:
 
 ---
 
-## 9) Admin: đơn hàng & hóa đơn (toàn hệ thống)
+## 10) Admin: đơn hàng & hóa đơn (toàn hệ thống)
 
 Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 
@@ -382,7 +401,7 @@ Sắp xếp: `createdAt` giảm dần.
 
 ---
 
-## 10) Gợi ý code frontend
+## 11) Gợi ý code frontend
 
 - `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
 - **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).

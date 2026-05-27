@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   listUsers() {
     return this.prismaService.user.findMany({
@@ -47,5 +51,13 @@ export class AdminService {
       data: { status: 'DISABLED' },
       select: { id: true, status: true },
     });
+  }
+
+  listAuditLogs(params: {
+    workspaceId?: string;
+    action?: string;
+    limit?: number;
+  }) {
+    return this.auditLogService.list(params);
   }
 }

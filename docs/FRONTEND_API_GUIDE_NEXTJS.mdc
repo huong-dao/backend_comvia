@@ -623,9 +623,57 @@ Response regenerate:
 Ghi chú audit log:
 - Backend tự ghi audit log khi `create` / `disable` / `regenerate` API key (không cần FE gọi endpoint riêng).
 
-## 11) Audit Log (server-side only)
+## 11) Audit Log
 
-Audit log **không có API public**. Backend tự ghi vào bảng `AuditLog` sau khi các API nghiệp vụ thành công — frontend **không gọi** endpoint ghi/đọc log.
+Backend **tự ghi** log sau API nghiệp vụ thành công. FE **chỉ đọc** qua endpoint read-only bên dưới (không có API ghi log).
+
+### 11.1 Owner — xem log workspace của mình
+
+- `GET /workspaces/:workspaceId/audit-logs`
+
+Headers:
+- `Authorization: Bearer <accessToken>`
+- `x-workspace-id: <workspaceId>`
+
+Auth/Role: `OWNER` (chỉ workspace mình sở hữu / là owner)
+
+Query:
+- `action` (optional)
+- `limit` (optional, default `50`, max `200`)
+
+### 11.2 Admin — xem toàn hệ thống hoặc lọc theo workspace
+
+- `GET /admin/audit-logs?workspaceId=&action=&limit=50`
+
+Auth/Role: `UserRole.ADMIN`
+
+Query:
+- `workspaceId` (optional) — bỏ trống = tất cả workspace; có giá trị = chỉ workspace đó
+- `action`, `limit` — giống mục 11.1
+
+### 11.3 Response mẫu (Owner & Admin)
+
+```json
+[
+  {
+    "id": "AUDIT_LOG_ID",
+    "actorUserId": "USER_ID",
+    "workspaceId": "WS_ID",
+    "action": "member.invited",
+    "resourceType": "WorkspaceInvitation",
+    "resourceId": "INVITATION_ID",
+    "metadataJson": { "inviteValue": "member@example.com" },
+    "createdAt": "...",
+    "actor": {
+      "id": "USER_ID",
+      "email": "owner@example.com",
+      "fullName": "Owner Name"
+    }
+  }
+]
+```
+
+### 11.4 Action được ghi tự động (không gọi API riêng)
 
 | Action | API trigger | Role |
 |--------|-------------|------|
