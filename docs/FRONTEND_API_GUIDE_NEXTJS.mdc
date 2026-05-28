@@ -356,17 +356,166 @@ Response:
 Ghi chú audit log:
 - Backend tự ghi `member.invited` / `member.removed` khi invite / xóa member.
 
-## 6) OA Connection (mock)
+## 6) OA Connection (Zalo OAuth + ZNS)
 
-Endpoint:
-- `GET /workspaces/:workspaceId/oa/status`
-- `POST /workspaces/:workspaceId/oa/connect` (OWNER)
-- `POST /workspaces/:workspaceId/oa/disconnect` (OWNER)
+Backend tích hợp **Zalo Official Account (OA)** thật qua OAuth PKCE. Token được lưu trong DB theo workspace (không dùng Redis).
 
-Các API này hiện dùng mock OA. Frontend chỉ cần gọi connect trước khi làm Template/Messaging (vì backend check `oa.status === CONNECTED`).
+**Điều kiện trước Template/Messaging:** `oa.status === CONNECTED` và template đã `APPROVED` có `providerTemplateId`.
+
+### 6.1 Endpoint workspace
+
+Base:
+- `/workspaces/:workspaceId/oa`
+
+Headers (mọi endpoint dưới đây):
+- `Authorization: Bearer <accessToken>`
+
+Auth/Role:
+- `GET status`: `OWNER` hoặc `MEMBER`
+- `POST connect`, `POST disconnect`: `OWNER`
+
+| Method | Path | Mô tả |
+|--------|------|--------|
+| `GET` | `/workspaces/:workspaceId/oa/status` | Xem trạng thái kết nối OA |
+| `POST` | `/workspaces/:workspaceId/oa/connect` | Bắt đầu OAuth — trả URL cấp quyền Zalo |
+| `POST` | `/workspaces/:workspaceId/oa/disconnect` | Ngắt kết nối, xóa token |
+| `GET` | `/workspaces/:workspaceId/oa/connect/redirect` | Redirect HTTP 302 thẳng sang Zalo (cần JWT; SPA ưu tiên `POST connect`) |
+
+### 6.2 Luồng kết nối OA (FE khuyến nghị)
+
+```mermaid
+sequenceDiagram
+  participant FE as Next.js
+  participant API as Comvia API
+  participant Zalo as Zalo OAuth
+  FE->>API: POST /workspaces/:wsId/oa/connect
+  API-->>FE: { authorizationUrl, state, connectionId }
+  FE->>Zalo: window.location.href = authorizationUrl
+  Zalo->>API: GET /oa/auth/callback?code&state
+  API->>Zalo: Đổi code lấy access/refresh token
+  API->>FE: Redirect app (status=success|error)
+  FE->>API: GET /workspaces/:wsId/oa/status
+```
+
+**Bước 1 — Gọi connect (OWNER):**
+```http
+POST /workspaces/:workspaceId/oa/connect
+Authorization: Bearer <accessToken>
+```
+
+Response:
+```json
+{
+  "authorizationUrl": "https://oauth.zaloapp.com/v4/oa/permission?app_id=...&redirect_uri=...&code_challenge=...&state=...",
+  "state": "Ab12Cd34",
+  "connectionId": "OA_CONN_ID"
+}
+```
+
+**Bước 2 — Redirect user sang Zalo:**
+```ts
+const { authorizationUrl } = await comviaFetch<{
+  authorizationUrl: string;
+  state: string;
+  connectionId: string;
+}>(`/workspaces/${workspaceId}/oa/connect`, {
+  method: "POST",
+  token: accessToken,
+});
+
+window.location.href = authorizationUrl;
+```
+
+**Bước 3 — Callback OAuth (backend xử lý, Public):**
+
+Sau khi user cấp quyền trên Zalo, Zalo redirect về `redirect_uri` đã đăng ký. Backend Comvia nhận tại:
+
+```http
+GET /oa/auth/callback?code=<AUTH_CODE>&state=<STATE>&oa_id=<OA_ID?>
+```
+
+- Route **public** (không cần JWT).
+- Backend đổi `code` + PKCE lấy token, cập nhật `WorkspaceOaConnection`, rồi redirect về frontend:
+  - Mặc định: `https://app.comvia.cloud/settings/oa?connected=1&status=success`
+  - Lỗi: `...&status=error`
+
+**Bước 4 — Trang FE sau OAuth (`/settings/oa`):**
+
+```ts
+// app/settings/oa/page.tsx (ví dụ)
+const params = useSearchParams();
+const status = params.get("status"); // "success" | "error"
+
+useEffect(() => {
+  if (status === "success") {
+    toast.success("Đã kết nối Zalo OA");
+    refetchOaStatus();
+  } else if (status === "error") {
+    toast.error("Kết nối Zalo OA thất bại. Vui lòng thử lại.");
+  }
+}, [status]);
+```
+
+Ghi chú triển khai:
+- `redirect_uri` mặc định backend trùng cấu hình Zalo app hiện tại: `https://id.onweb.asia/v1/zalo/auth/call-back`.
+- Khi chuyển callback về Comvia, cập nhật env server `ZALO_OAUTH_REDIRECT_URI` **và** đăng ký lại URL trên Zalo Developer Console (ví dụ `https://<api-host>/api/v1/oa/auth/callback`).
+- Tuỳ chỉnh trang quay về sau OAuth: env `ZALO_OAUTH_SUCCESS_REDIRECT_URL`.
+
+### 6.3 Get OA status
+
+```http
+GET /workspaces/:workspaceId/oa/status
+Authorization: Bearer <accessToken>
+```
+
+Chưa kết nối:
+```json
+{
+  "workspaceId": "WS_ID",
+  "status": "NOT_CONNECTED"
+}
+```
+
+Đã kết nối (response **không** trả raw token):
+```json
+{
+  "id": "OA_CONN_ID",
+  "workspaceId": "WS_ID",
+  "oaId": "1234567890123456789",
+  "oaName": "Tên OA trên Zalo",
+  "oaAvatarLight": null,
+  "oaAvatarDark": null,
+  "tokenExpiredAt": "2026-05-28T10:00:00.000Z",
+  "status": "CONNECTED",
+  "connectedAt": "2026-05-27T10:00:00.000Z",
+  "createdAt": "...",
+  "updatedAt": "...",
+  "hasAccessToken": true,
+  "hasRefreshToken": true
+}
+```
+
+Các trạng thái FE cần xử lý UI:
+- `NOT_CONNECTED` — hiện nút "Kết nối Zalo OA"
+- `CONNECTED` — cho phép template/messaging
+- `TOKEN_EXPIRED` — hiện nút "Kết nối lại" (gọi lại `POST connect`)
+- `DISCONNECTED` — đã ngắt kết nối thủ công
+
+### 6.4 Disconnect OA
+
+```http
+POST /workspaces/:workspaceId/oa/disconnect
+Authorization: Bearer <accessToken>
+```
+
+Response:
+```json
+{ "ok": true }
+```
 
 Ghi chú audit log:
-- Backend tự ghi audit log khi connect/disconnect OA.
+- `oa.connected` — ghi khi OAuth callback **thành công** (`GET /oa/auth/callback`).
+- `oa.disconnected` — ghi khi `POST disconnect`.
 
 ## 7) Templates (CRUD + submit + staff approve/reject)
 
@@ -406,7 +555,11 @@ Ghi chú:
 ### 7.5 Submit template
 - `POST /workspaces/:workspaceId/templates/:templateId/submit`
 
-Response hiện tại là cập nhật trạng thái sang `PENDING_ZALO_APPROVAL` (mock flow).
+Response hiện tại là cập nhật trạng thái sang `PENDING_ZALO_APPROVAL` (chờ staff duyệt và gắn `providerTemplateId` từ Zalo).
+
+Ghi chú gửi ZNS:
+- Sau khi staff **approve**, template phải có `providerTemplateId` (ID template trên Zalo Business) thì mới gửi tin được.
+- `data` khi send message phải khớp `placeholdersJson` của template.
 
 ### 7.6 Staff review APIs (internal)
 Base:
@@ -458,10 +611,14 @@ Mark pending zalo approval:
 POST /internal/templates/:templateId/mark-pending-zalo-approval
 ```
 
-Approve request:
+Approve request (**bắt buộc** `providerTemplateId` — ID template ZNS trên Zalo):
 ```json
 { "providerTemplateId": "ZALO_TPL_123" }
 ```
+
+Ghi chú:
+- `providerTemplateId` lấy từ Zalo OA Manager sau khi template được Zalo duyệt.
+- Không có field này → API gửi tin trả `400 Template is missing Zalo providerTemplateId`.
 
 Reject request:
 ```json
@@ -475,10 +632,17 @@ POST /internal/templates/:templateId/disable
 
 Sau khi approve xong, template trở thành `APPROVED` để FE có thể gửi message.
 
-## 8) Messaging (send single + logs) - mock provider
+## 8) Messaging (send single + logs) — Zalo ZNS thật
 
 Base:
 - `/workspaces/:workspaceId/messages`
+
+Backend gọi API Zalo `POST https://business.openapi.zalo.me/message/template`, tự refresh access token nếu sắp hết hạn.
+
+**Điều kiện gửi thành công:**
+- OA `CONNECTED`
+- Template `APPROVED` và có `providerTemplateId`
+- Ví workspace owner đủ số dư (hiện `1000` / tin)
 
 ### 8.1 Send single
 Auth/Role: `OWNER` hoặc `MEMBER`
@@ -495,14 +659,34 @@ Request:
 }
 ```
 
-Response:
+Ghi chú:
+- `phoneNumber`: format quốc tế không dấu `+` (ví dụ `84901234567`).
+- `data`: object placeholder khớp template ZNS đã approve.
+
+Response thành công:
 ```json
 {
   "status": "SUCCESS",
-  "providerMessageId": "mock_msg_...",
+  "providerMessageId": "MSG_ID_TU_ZALO",
   "messageLogId": "MESSAGE_LOG_ID"
 }
 ```
+
+Response lỗi (ví dụ Zalo từ chối / thiếu credit / thiếu providerTemplateId):
+```json
+{
+  "statusCode": 400,
+  "message": {
+    "message": "Zalo ZNS send failed",
+    "messageLogId": "MESSAGE_LOG_ID"
+  },
+  "error": "Bad Request"
+}
+```
+
+Ghi chú nghiệp vụ:
+- **Chỉ trừ ví** khi Zalo trả success.
+- Nếu Zalo fail, backend vẫn tạo `MessageLog` với `status: FAILED` (có `messageLogId` trong body lỗi).
 
 ### 8.2 List message logs
 Endpoint:
@@ -682,7 +866,7 @@ Query:
 | `billing_info.updated` | `PATCH /workspaces/:workspaceId` (đổi billing) | OWNER |
 | `member.invited` | `POST /workspaces/:workspaceId/invitations` | OWNER |
 | `member.removed` | `DELETE /workspaces/:workspaceId/members/:memberUserId` | OWNER |
-| `oa.connected` | `POST /workspaces/:workspaceId/oa/connect` | OWNER |
+| `oa.connected` | OAuth callback thành công `GET /oa/auth/callback` | Public (Zalo redirect) |
 | `oa.disconnected` | `POST /workspaces/:workspaceId/oa/disconnect` | OWNER |
 | `template.submitted` | `POST /workspaces/:workspaceId/templates/:templateId/submit` | OWNER hoặc MEMBER |
 | `template.approved` | `POST /internal/templates/:templateId/approve` | STAFF |
@@ -737,14 +921,18 @@ Request:
 }
 ```
 
-Response (mock):
+Response (Zalo ZNS thật):
 ```json
 {
   "status": "success",
-  "providerMessageId": "mock_...",
+  "providerMessageId": "MSG_ID_TU_ZALO",
   "messageLogId": "MESSAGE_LOG_ID"
 }
 ```
+
+Ghi chú:
+- Cùng điều kiện như mục 8: OA connected, template approved + `providerTemplateId`, đủ credit.
+- Lỗi gửi tin trả `400` kèm `messageLogId` nếu đã ghi log FAILED.
 
 ## 13) Admin APIs (nếu FE có màn admin)
 
@@ -773,6 +961,7 @@ Backend NestJS thường trả lỗi theo dạng (tùy middleware/exceptions):
 Frontend nên:
 - bắt error từ `comviaFetch`
 - hiển thị thông điệp `error.message`
+- với lỗi gửi ZNS (`400`), `message` có thể là **object** `{ message, messageLogId }` — ưu tiên hiển thị `message.message` và link tới log nếu có `messageLogId`
 
 ## 15) Demo scenario gợi ý để test UI nhanh
 
@@ -780,15 +969,19 @@ Kịch bản 1 (user -> verify OTP -> workspace -> oa -> template -> staff appro
 1. `POST /auth/register` (lấy `demoOtpCode`)
 2. `POST /auth/otp/verify` (nhận `accessToken`)
 3. `POST /workspaces` (OWNER)
-4. `POST /workspaces/:wsId/oa/connect` (OWNER)
-5. `POST /workspaces/:wsId/templates` (OWNER)
-6. `POST /workspaces/:wsId/templates/:tplId/submit`
-7. `POST /internal/templates/:tplId/approve` (STAFF)
-8. `POST /workspaces/:wsId/messages/send-single`
+4. `POST /workspaces/:wsId/oa/connect` → redirect user sang `authorizationUrl` (Zalo OAuth)
+5. User cấp quyền OA → backend callback → FE nhận `?status=success` tại `/settings/oa`
+6. `GET /workspaces/:wsId/oa/status` → kiểm tra `CONNECTED`
+7. `POST /workspaces/:wsId/templates` (OWNER)
+8. `POST /workspaces/:wsId/templates/:tplId/submit`
+9. `POST /internal/templates/:tplId/approve` (STAFF) body `{ "providerTemplateId": "ZALO_TPL_ID" }`
+10. Nạp credit ví (topup) nếu cần
+11. `POST /workspaces/:wsId/messages/send-single`
 
 Kịch bản 2 (API key -> public send):
-1. tạo api key (owner)
-2. gọi `POST /public/messages/send` với `x-api-key` + `api_key` trong body
+1. Tạo api key (owner)
+2. Đảm bảo OA connected + template approved có `providerTemplateId`
+3. Gọi `POST /public/messages/send` với `x-api-key` + `api_key` trong body
 
 ## Phụ lục A) Enum / status (API response)
 

@@ -485,9 +485,12 @@ model WorkspaceOaConnection {
   oaName          String?
   oaAvatarLight   String?
   oaAvatarDark    String?
-  accessToken     String
-  refreshToken    String
-  tokenExpiredAt  DateTime
+  accessToken     String?
+  refreshToken    String?
+  tokenExpiredAt  DateTime?
+  oauthState           String?
+  oauthCodeVerifier    String?
+  oauthStateExpiresAt  DateTime?
   status          OaConnectionStatus @default(NOT_CONNECTED)
   connectedAt     DateTime?
   createdAt       DateTime @default(now())
@@ -497,6 +500,8 @@ model WorkspaceOaConnection {
   templates Template[]
   messageLogs MessageLog[]
   campaigns Campaign[]
+
+  @@index([oauthState])
 }
 
 enum TemplateStatus {

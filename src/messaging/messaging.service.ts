@@ -5,12 +5,16 @@ import {
   SendType,
   WalletTransactionType,
 } from '@prisma/client';
+import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SendSingleDto } from './dto/send-single.dto';
 
 @Injectable()
 export class MessagingService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly oaMessagingService: OaMessagingService,
+  ) {}
 
   async sendSingle(
     workspaceId: string,
@@ -19,11 +23,22 @@ export class MessagingService {
   ) {
     const template = await this.prismaService.template.findFirst({
       where: { id: dto.templateId, workspaceId, status: 'APPROVED' },
-      select: { id: true, oaConnectionId: true, status: true },
+      select: {
+        id: true,
+        oaConnectionId: true,
+        status: true,
+        providerTemplateId: true,
+      },
     });
 
     if (!template) {
       throw new BadRequestException('Template not found or not approved');
+    }
+
+    if (!template.providerTemplateId) {
+      throw new BadRequestException(
+        'Template is missing Zalo providerTemplateId',
+      );
     }
 
     const oa = await this.prismaService.workspaceOaConnection.findUnique({
@@ -57,13 +72,45 @@ export class MessagingService {
       throw new BadRequestException('Insufficient credit');
     }
 
-    const providerMessageId = `mock_msg_${Date.now()}`;
-
     const payloadSnapshot: Prisma.InputJsonValue = {
       templateId: template.id,
       phoneNumber: dto.phoneNumber,
       data: dto.data,
     } as Prisma.InputJsonValue;
+
+    let dispatchResult: Awaited<
+      ReturnType<OaMessagingService['dispatchZnsTemplate']>
+    >;
+    try {
+      dispatchResult = await this.oaMessagingService.dispatchZnsTemplate({
+        oaConnectionId: template.oaConnectionId,
+        phoneNumber: dto.phoneNumber,
+        providerTemplateId: template.providerTemplateId,
+        templateData: dto.data,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Zalo ZNS send failed';
+
+      const failedLog = await this.prismaService.messageLog.create({
+        data: {
+          workspaceId: workspace.id,
+          oaConnectionId: template.oaConnectionId,
+          templateId: template.id,
+          sendType: 'SINGLE' satisfies SendType,
+          phoneNumber: dto.phoneNumber,
+          payloadSnapshot,
+          status: 'FAILED' satisfies MessageStatus,
+          errorCode: errorMessage.slice(0, 255),
+          operatorUserId,
+        },
+      });
+
+      throw new BadRequestException({
+        message: errorMessage,
+        messageLogId: failedLog.id,
+      });
+    }
 
     return this.prismaService.$transaction(async (tx) => {
       const walletTransaction = await tx.walletTransaction.create({
@@ -78,7 +125,7 @@ export class MessagingService {
           sourceType: 'MESSAGE_LOG',
           sourceId: template.id,
           createdBy: operatorUserId,
-          note: 'Mock send single',
+          note: 'ZNS send single',
         },
       });
 
@@ -98,7 +145,7 @@ export class MessagingService {
           phoneNumber: dto.phoneNumber,
           payloadSnapshot,
           status: 'SUCCESS' satisfies MessageStatus,
-          providerMessageId,
+          providerMessageId: dispatchResult.providerMessageId,
           costAtTime: unitCost,
           walletTransactionId: walletTransaction.id,
           operatorUserId,

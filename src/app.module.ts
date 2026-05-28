@@ -23,12 +23,13 @@ import { QuickChatModule } from './quick-chat/quick-chat.module';
 import { MoneyAccountsModule } from './money-accounts/money-accounts.module';
 import pay2sConfig from './config/pay2s.config';
 import geminiConfig from './config/gemini.config';
+import zaloConfig from './config/zalo.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [pay2sConfig, geminiConfig],
+      load: [pay2sConfig, geminiConfig, zaloConfig],
     }),
     PrismaModule,
     AuditLogModule,

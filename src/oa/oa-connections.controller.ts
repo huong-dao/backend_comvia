@@ -1,12 +1,13 @@
 import {
-  Body,
   Controller,
   Get,
+  Param,
   Post,
   Request,
-  Param,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { MemberRole } from '@prisma/client';
 import { WorkspaceContextGuard } from '../common/guards/workspace-context.guard';
 import { WorkspaceRoles } from '../common/decorators/workspace-roles.decorator';
@@ -32,6 +33,18 @@ export class OaConnectionsController {
     @Param('workspaceId') workspaceId: string,
   ) {
     return this.service.connect(workspaceId, req.user.id);
+  }
+
+  @Get('connect/redirect')
+  @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(MemberRole.OWNER)
+  async connectRedirect(
+    @Request() req: { user: { id: string } },
+    @Param('workspaceId') workspaceId: string,
+    @Res() res: Response,
+  ) {
+    const result = await this.service.startConnect(workspaceId, req.user.id);
+    return res.redirect(result.authorizationUrl);
   }
 
   @Post('disconnect')
