@@ -1,14 +1,14 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { OaConnectionStatus } from '@prisma/client';
 import {
   AUDIT_ACTIONS,
   AUDIT_RESOURCE_TYPES,
 } from '../audit-log/audit-log.constants';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { createOAuthState, createPkcePair } from '../integrations/zalo/zalo-pkce.util';
+import {
+  createOAuthState,
+  createPkcePair,
+} from '../integrations/zalo/zalo-pkce.util';
 import { ZaloOAuthClient } from '../integrations/zalo/zalo-oauth.client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -97,13 +97,14 @@ export class OaConnectionsService {
       throw new BadRequestException('Missing OAuth code or state');
     }
 
-    const connection =
-      await this.prismaService.workspaceOaConnection.findFirst({
+    const connection = await this.prismaService.workspaceOaConnection.findFirst(
+      {
         where: {
           oauthState: state,
           oauthStateExpiresAt: { gt: new Date() },
         },
-      });
+      },
+    );
 
     if (!connection || !connection.oauthCodeVerifier) {
       throw new BadRequestException('Invalid or expired OAuth state');

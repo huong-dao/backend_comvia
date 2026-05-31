@@ -63,7 +63,10 @@ export function parseCampaignCsv(
     .filter((line) => line.length > 0);
 
   if (lines.length < 2) {
-    return { rows: [], errors: ['CSV must include a header row and at least one data row'] };
+    return {
+      rows: [],
+      errors: ['CSV must include a header row and at least one data row'],
+    };
   }
 
   const headerCells = parseCsvLine(lines[0]);

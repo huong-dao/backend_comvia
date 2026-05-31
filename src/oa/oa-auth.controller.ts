@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../common/decorators/public.decorator';
@@ -24,8 +19,7 @@ export class OaAuthController {
     @Query('oa_id') oaId: string | undefined,
     @Res() res: Response,
   ) {
-    const fallbackUrl =
-      'https://app.comvia.cloud/settings/oa?connected=1';
+    const fallbackUrl = 'https://app.comvia.cloud/settings/oa?connected=1';
     const successRedirectUrl =
       this.configService.get<string>('zalo.oauthSuccessRedirectUrl') ??
       fallbackUrl;

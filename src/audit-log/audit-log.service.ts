@@ -51,11 +51,7 @@ export class AuditLogService {
     });
   }
 
-  list(params: {
-    workspaceId?: string;
-    action?: string;
-    limit?: number;
-  }) {
+  list(params: { workspaceId?: string; action?: string; limit?: number }) {
     return this.prismaService.auditLog.findMany({
       where: {
         ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),

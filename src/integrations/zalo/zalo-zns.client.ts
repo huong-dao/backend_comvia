@@ -43,9 +43,7 @@ export class ZaloZnsClient {
 
     const payload = (await response.json()) as ZaloZnsSendResponse;
     if (!response.ok || payload.error !== 0) {
-      this.logger.error(
-        `[Zalo ZNS] Send failed: ${JSON.stringify(payload)}`,
-      );
+      this.logger.error(`[Zalo ZNS] Send failed: ${JSON.stringify(payload)}`);
       throw new Error(payload.message || 'Zalo ZNS send failed');
     }
 

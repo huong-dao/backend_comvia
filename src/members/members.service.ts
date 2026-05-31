@@ -45,11 +45,7 @@ export class MembersService {
     }));
   }
 
-  async invite(
-    workspaceId: string,
-    actorUserId: string,
-    dto: InviteMemberDto,
-  ) {
+  async invite(workspaceId: string, actorUserId: string, dto: InviteMemberDto) {
     const token = randomBytes(24).toString('base64url');
     const expiredAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const role = dto.role ?? MemberRole.MEMBER;

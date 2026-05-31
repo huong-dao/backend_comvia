@@ -108,11 +108,7 @@ export class ApiKeysService {
     return updated;
   }
 
-  async regenerate(
-    workspaceId: string,
-    apiKeyId: string,
-    actorUserId: string,
-  ) {
+  async regenerate(workspaceId: string, apiKeyId: string, actorUserId: string) {
     const apiKey = await this.prismaService.apiKey.findUnique({
       where: { id: apiKeyId },
       select: { id: true, workspaceId: true, name: true, keyPrefix: true },

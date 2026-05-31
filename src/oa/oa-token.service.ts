@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { OaConnectionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ZaloOAuthClient } from '../integrations/zalo/zalo-oauth.client';

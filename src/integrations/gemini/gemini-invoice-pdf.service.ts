@@ -55,7 +55,8 @@ export class GeminiInvoicePdfService {
       );
     }
 
-    const model = this.configService.get<string>('gemini.model') ?? 'gemini-2.0-flash';
+    const model =
+      this.configService.get<string>('gemini.model') ?? 'gemini-2.0-flash';
     const timeoutMs =
       this.configService.get<number>('gemini.timeoutMs') ?? 60_000;
 
@@ -137,9 +138,7 @@ export class GeminiInvoicePdfService {
   }
 
   getPromptVersion(): string {
-    return (
-      this.configService.get<string>('gemini.promptVersion') ?? 'v1'
-    );
+    return this.configService.get<string>('gemini.promptVersion') ?? 'v1';
   }
 
   private parseExtractedJson(raw: string): ExtractedInvoicePdfData {

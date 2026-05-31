@@ -26,7 +26,9 @@ export class OaMessagingService {
     input: DispatchZnsInput,
   ): Promise<DispatchZnsResult> {
     if (!input.providerTemplateId) {
-      throw new BadRequestException('Template is missing Zalo providerTemplateId');
+      throw new BadRequestException(
+        'Template is missing Zalo providerTemplateId',
+      );
     }
 
     const accessToken = await this.oaTokenService.getValidAccessToken(

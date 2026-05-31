@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsObject, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class UpdateTemplateDto {
   @IsOptional()

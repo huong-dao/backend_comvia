@@ -337,9 +337,7 @@ export class TemplatesService {
     return template;
   }
 
-  private isAdminOnlyTemplatePriceUpdate(
-    dto: UpdateTemplateDto,
-  ): boolean {
+  private isAdminOnlyTemplatePriceUpdate(dto: UpdateTemplateDto): boolean {
     return (
       dto.unitPricePerMessage !== undefined &&
       dto.name === undefined &&
@@ -410,7 +408,13 @@ export class TemplatesService {
   async submit(workspaceId: string, templateId: string, actorUserId: string) {
     const template = await this.prismaService.template.findFirst({
       where: { workspaceId, id: templateId },
-      select: { id: true, status: true, oaConnectionId: true, name: true, code: true },
+      select: {
+        id: true,
+        status: true,
+        oaConnectionId: true,
+        name: true,
+        code: true,
+      },
     });
 
     if (!template) {

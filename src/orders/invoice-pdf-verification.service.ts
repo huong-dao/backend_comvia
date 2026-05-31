@@ -75,11 +75,16 @@ export class InvoicePdfVerificationService {
     const vatAmount = Number(invoice.order.totalVatAmount);
     const amountInclVat = Number(invoice.order.totalAmountInclVat);
     const vatRate = Number(invoice.items[0]?.vatRate ?? 10);
-    const fileSha256 = this.invoicePdfStorageService.sha256Hex(params.file.buffer);
+    const fileSha256 = this.invoicePdfStorageService.sha256Hex(
+      params.file.buffer,
+    );
 
     const demoFallback: ExtractedInvoicePdfData = {
-      invoiceNumber: params.invoiceNumber ?? invoice.invoiceNumber ?? 'DEMO-INV-001',
-      issueDate: parseIsoDateOnly(params.issueDate) ?? new Date().toISOString().slice(0, 10),
+      invoiceNumber:
+        params.invoiceNumber ?? invoice.invoiceNumber ?? 'DEMO-INV-001',
+      issueDate:
+        parseIsoDateOnly(params.issueDate) ??
+        new Date().toISOString().slice(0, 10),
       billingType:
         invoice.billingType === BillingType.ORGANIZATION
           ? 'organization'
@@ -92,7 +97,8 @@ export class InvoicePdfVerificationService {
       phone: billingSnapshot.phone ?? null,
       fullName: billingSnapshot.fullName ?? null,
       citizenId: billingSnapshot.citizenId ?? null,
-      lineItemName: invoice.items[0]?.name ?? 'Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS',
+      lineItemName:
+        invoice.items[0]?.name ?? 'Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS',
       vatRatePercent: vatRate,
       amountExclVat,
       vatAmount,
@@ -116,19 +122,21 @@ export class InvoicePdfVerificationService {
       submittedIssueDate: params.issueDate,
     });
 
-    const verificationBase: Omit<InvoiceVerificationJson, 'result' | 'mismatches'> =
-      {
-        idempotencyKey: params.idempotencyKey ?? null,
-        verifiedAt: new Date().toISOString(),
-        model: this.geminiInvoicePdfService.getModelName(),
-        promptVersion: this.geminiInvoicePdfService.getPromptVersion(),
-        fileSha256,
-        fileSizeBytes: params.file.size,
-        actorUserId: params.actorUserId,
-        extracted,
-        submittedInvoiceNumber: params.invoiceNumber ?? null,
-        submittedIssueDate: params.issueDate ?? null,
-      };
+    const verificationBase: Omit<
+      InvoiceVerificationJson,
+      'result' | 'mismatches'
+    > = {
+      idempotencyKey: params.idempotencyKey ?? null,
+      verifiedAt: new Date().toISOString(),
+      model: this.geminiInvoicePdfService.getModelName(),
+      promptVersion: this.geminiInvoicePdfService.getPromptVersion(),
+      fileSha256,
+      fileSizeBytes: params.file.size,
+      actorUserId: params.actorUserId,
+      extracted,
+      submittedInvoiceNumber: params.invoiceNumber ?? null,
+      submittedIssueDate: params.issueDate ?? null,
+    };
 
     if (mismatches.length > 0) {
       const verificationJson: InvoiceVerificationJson = {
@@ -141,7 +149,8 @@ export class InvoicePdfVerificationService {
         await tx.invoice.update({
           where: { id: invoice.id },
           data: {
-            verificationJson: verificationJson as unknown as Prisma.InputJsonValue,
+            verificationJson:
+              verificationJson as unknown as Prisma.InputJsonValue,
           },
         });
 
@@ -201,7 +210,8 @@ export class InvoicePdfVerificationService {
           invoiceNumber: resolvedInvoiceNumber,
           issueDate: new Date(`${resolvedIssueDate}T00:00:00.000Z`),
           invoicePdfUrl: pdfUrl,
-          verificationJson: verificationJson as unknown as Prisma.InputJsonValue,
+          verificationJson:
+            verificationJson as unknown as Prisma.InputJsonValue,
         },
         select: {
           id: true,

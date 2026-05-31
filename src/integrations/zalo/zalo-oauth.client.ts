@@ -20,10 +20,7 @@ export class ZaloOAuthClient {
     return this.configService.getOrThrow<string>('zalo.oauthRedirectUri');
   }
 
-  buildPermissionUrl(params: {
-    codeChallenge: string;
-    state: string;
-  }): string {
+  buildPermissionUrl(params: { codeChallenge: string; state: string }): string {
     const query = new URLSearchParams({
       app_id: this.appId,
       redirect_uri: this.redirectUri,
@@ -76,7 +73,9 @@ export class ZaloOAuthClient {
     return payload;
   }
 
-  private async requestToken(body: URLSearchParams): Promise<ZaloTokenResponse> {
+  private async requestToken(
+    body: URLSearchParams,
+  ): Promise<ZaloTokenResponse> {
     const response = await fetch(
       'https://oauth.zaloapp.com/v4/oa/access_token',
       {

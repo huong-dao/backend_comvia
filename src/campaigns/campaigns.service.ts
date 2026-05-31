@@ -83,7 +83,9 @@ export class CampaignsService {
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
       include: {
-        template: { select: { id: true, name: true, code: true, status: true } },
+        template: {
+          select: { id: true, name: true, code: true, status: true },
+        },
       },
     });
   }
@@ -134,21 +136,21 @@ export class CampaignsService {
 
   async exportCsvTemplate(workspaceId: string, campaignId: string) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
-    const placeholders = campaign.template
-      .placeholdersJson as Record<string, unknown>;
+    const placeholders = campaign.template.placeholdersJson as Record<
+      string,
+      unknown
+    >;
     return buildCsvTemplateContent(placeholders);
   }
 
-  async importCsv(
-    workspaceId: string,
-    campaignId: string,
-    csvText: string,
-  ) {
+  async importCsv(workspaceId: string, campaignId: string, csvText: string) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
     this.assertCanImport(campaign);
 
-    const placeholders = campaign.template
-      .placeholdersJson as Record<string, unknown>;
+    const placeholders = campaign.template.placeholdersJson as Record<
+      string,
+      unknown
+    >;
     const parsed = parseCampaignCsv(csvText, placeholders);
     if (parsed.errors.length > 0) {
       throw new BadRequestException({
@@ -236,7 +238,9 @@ export class CampaignsService {
   ) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
     if (campaign.status === 'RUNNING') {
-      throw new BadRequestException('Cannot edit rows while campaign is running');
+      throw new BadRequestException(
+        'Cannot edit rows while campaign is running',
+      );
     }
     if (campaign.status === 'CANCELLED') {
       throw new BadRequestException('Campaign is cancelled');
@@ -294,7 +298,9 @@ export class CampaignsService {
   async removeRow(workspaceId: string, campaignId: string, rowId: string) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
     if (campaign.status === 'RUNNING') {
-      throw new BadRequestException('Cannot delete rows while campaign is running');
+      throw new BadRequestException(
+        'Cannot delete rows while campaign is running',
+      );
     }
 
     const row = await this.prismaService.campaignRow.findFirst({
@@ -314,7 +320,10 @@ export class CampaignsService {
     if (remaining === 0) {
       await this.prismaService.campaign.update({
         where: { id: campaign.id },
-        data: { status: 'DRAFT' satisfies CampaignStatus, estimatedTotalAmount: 0 },
+        data: {
+          status: 'DRAFT' satisfies CampaignStatus,
+          estimatedTotalAmount: 0,
+        },
       });
     }
 
@@ -392,7 +401,9 @@ export class CampaignsService {
     );
     const totalCharge = unitPrice * rows.length;
 
-    const wallet = await this.getOwnerWalletOrThrow(campaign.workspace.ownerUserId);
+    const wallet = await this.getOwnerWalletOrThrow(
+      campaign.workspace.ownerUserId,
+    );
     const balanceBefore = Number(wallet.balance);
     if (balanceBefore < totalCharge) {
       throw new BadRequestException(

@@ -29,7 +29,10 @@ export class TopupsService {
     return `${prefix}_${randomBytes(4).toString('hex')}`;
   }
 
-  private async saveQrCodeImage(qrCodeContent: string, topupCode: string): Promise<string> {
+  private async saveQrCodeImage(
+    qrCodeContent: string,
+    topupCode: string,
+  ): Promise<string> {
     try {
       // 1. Xác định đường dẫn thư mục tuyệt đối
       const rootDir = process.cwd();
@@ -68,21 +71,24 @@ export class TopupsService {
         await QRCode.toFile(filePath, qrCodeContent, {
           width: 600,
           margin: 2,
-          errorCorrectionLevel: 'M'
+          errorCorrectionLevel: 'M',
         });
 
         console.log(`[Success] Đã tạo ảnh QR từ Text cho: ${topupCode}`);
       }
 
       // 4. Trả về URL public dựa trên cấu hình Static Assets trong main.ts
-      const baseUrl = this.configService.get('BACKEND_URL') || 'http://localhost:3000';
+      const baseUrl =
+        this.configService.get('BACKEND_URL') || 'http://localhost:3000';
 
       // Theo cấu hình của bạn: prefix là '/public/'
       return `${baseUrl}/public/qrcodes/${topupCode}/${fileName}`;
-
     } catch (error) {
       // Log lỗi chi tiết để dễ dàng kiểm tra
-      console.error(`[Error] Lỗi khi lưu ảnh QR cho ${topupCode}:`, error.message);
+      console.error(
+        `[Error] Lỗi khi lưu ảnh QR cho ${topupCode}:`,
+        error.message,
+      );
       return '';
     }
   }
@@ -143,7 +149,9 @@ export class TopupsService {
       });
 
       if (!moneyAccount || !moneyAccount.isActive) {
-        throw new BadRequestException('Tài khoản ngân hàng không hợp lệ hoặc không hoạt động');
+        throw new BadRequestException(
+          'Tài khoản ngân hàng không hợp lệ hoặc không hoạt động',
+        );
       }
 
       if (!moneyAccount.pay2sBankId) {
@@ -190,7 +198,7 @@ export class TopupsService {
 
       // Handle Pay2S response format - could be { status: false, message: ... } or { resultCode: ..., ... }
       const responseStatus = pay2sResponse?.status ?? pay2sResponse?.resultCode;
-      
+
       if (!pay2sResponse) {
         throw new BadRequestException(
           'Pay2S API error: No response from Pay2S service',
@@ -198,11 +206,15 @@ export class TopupsService {
       }
 
       // Check for error response (status: false or resultCode !== 0)
-      if (responseStatus === false || (typeof responseStatus === 'number' && responseStatus !== 0)) {
-        const errorMessage = pay2sResponse.message || pay2sResponse.resultMessage || 'Unknown error';
-        throw new BadRequestException(
-          `Pay2S API error: ${errorMessage}`,
-        );
+      if (
+        responseStatus === false ||
+        (typeof responseStatus === 'number' && responseStatus !== 0)
+      ) {
+        const errorMessage =
+          pay2sResponse.message ||
+          pay2sResponse.resultMessage ||
+          'Unknown error';
+        throw new BadRequestException(`Pay2S API error: ${errorMessage}`);
       }
 
       // Extract QR code from response
@@ -215,7 +227,7 @@ export class TopupsService {
 
       if (qrCode) {
         qrCodeUrl = await this.saveQrCodeImage(qrCode, topup.topupCode);
-  
+
         if (!qrCodeUrl) {
           throw new BadRequestException('Lỗi tạo ảnh QR code');
         }
@@ -246,10 +258,14 @@ export class TopupsService {
           },
         });
       } catch (updateError) {
-        console.error('Lỗi khi cập nhật trạng thái topup thành FAILED:', updateError);
+        console.error(
+          'Lỗi khi cập nhật trạng thái topup thành FAILED:',
+          updateError,
+        );
       }
 
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       throw new BadRequestException(
         `Failed to create Pay2S collection request: ${errorMessage}`,
       );
@@ -354,7 +370,8 @@ export class TopupsService {
     });
 
     if (!topup) throw new NotFoundException('Topup request không tồn tại');
-    if (topup.status === 'PAID') return { status: 'success', message: 'Already processed' };
+    if (topup.status === 'PAID')
+      return { status: 'success', message: 'Already processed' };
 
     const amountPaid = new Prisma.Decimal(dto.amount);
 

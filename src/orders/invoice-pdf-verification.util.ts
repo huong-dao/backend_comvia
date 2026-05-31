@@ -45,7 +45,9 @@ export function amountMatches(
   return Math.abs(Math.round(expected) - Math.round(found)) <= tolerance;
 }
 
-export function parseIsoDateOnly(value: string | null | undefined): string | null {
+export function parseIsoDateOnly(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
@@ -80,7 +82,12 @@ export function buildInvoicePdfMismatches(params: {
   const push = (mismatch: InvoicePdfMismatch) => mismatches.push(mismatch);
 
   if (params.billingType === 'ORGANIZATION') {
-    if (!textMatches(params.billingSnapshot.companyName, params.extracted.companyName)) {
+    if (
+      !textMatches(
+        params.billingSnapshot.companyName,
+        params.extracted.companyName,
+      )
+    ) {
       push({
         field: INVOICE_PDF_MISMATCH_FIELDS.BILLING_COMPANY_NAME,
         severity: 'error',
@@ -105,7 +112,9 @@ export function buildInvoicePdfMismatches(params: {
       });
     }
   } else {
-    if (!textMatches(params.billingSnapshot.fullName, params.extracted.fullName)) {
+    if (
+      !textMatches(params.billingSnapshot.fullName, params.extracted.fullName)
+    ) {
       push({
         field: INVOICE_PDF_MISMATCH_FIELDS.BILLING_FULL_NAME,
         severity: 'error',
@@ -153,7 +162,10 @@ export function buildInvoicePdfMismatches(params: {
   }
 
   if (
-    !textMatches(params.billingSnapshot.invoiceEmail, params.extracted.invoiceEmail)
+    !textMatches(
+      params.billingSnapshot.invoiceEmail,
+      params.extracted.invoiceEmail,
+    )
   ) {
     push({
       field: INVOICE_PDF_MISMATCH_FIELDS.BILLING_INVOICE_EMAIL,
