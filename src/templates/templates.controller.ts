@@ -58,12 +58,18 @@ export class TemplatesController {
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
   update(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: { id: string; role: UserRole } },
     @Param('workspaceId') workspaceId: string,
     @Param('templateId') templateId: string,
     @Body() dto: UpdateTemplateDto,
   ) {
-    return this.service.update(workspaceId, templateId, req.user.id, dto);
+    return this.service.update(
+      workspaceId,
+      templateId,
+      req.user.id,
+      req.user.role,
+      dto,
+    );
   }
 
   @Post(':templateId/submit')

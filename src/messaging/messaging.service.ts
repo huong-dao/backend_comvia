@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { SendSingleDto } from './dto/send-single.dto';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class MessagingService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly oaMessagingService: OaMessagingService,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   async sendSingle(
@@ -28,6 +30,7 @@ export class MessagingService {
         oaConnectionId: true,
         status: true,
         providerTemplateId: true,
+        unitPricePerMessage: true,
       },
     });
 
@@ -66,7 +69,9 @@ export class MessagingService {
       throw new BadRequestException('Wallet not initialized');
     }
 
-    const unitCost = 1000;
+    const unitCost = await this.systemConfigService.resolveTemplateUnitPrice(
+      template.unitPricePerMessage,
+    );
     const walletBefore = Number(wallet.balance);
     if (walletBefore < unitCost) {
       throw new BadRequestException('Insufficient credit');

@@ -513,6 +513,13 @@ enum TemplateStatus {
   DISABLED
 }
 
+model SystemConfig {
+  id                      String   @id @default("singleton")
+  defaultMessageUnitPrice Decimal  @default(400)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
 model Template {
   id                String        @id @default(cuid())
   workspaceId       String
@@ -522,6 +529,7 @@ model Template {
   content           String
   placeholdersJson  Json
   providerTemplateId String?
+  unitPricePerMessage Decimal?
   status            TemplateStatus @default(DRAFT)
   rejectedReason    String?
   createdAt         DateTime @default(now())
@@ -615,6 +623,7 @@ model Campaign {
   estimatedTotalAmount Decimal @default(0)
   createdBy       String?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
   lastRunAt       DateTime?
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -643,6 +652,7 @@ model CampaignRow {
   walletTransactionId String?
   messageLogId     String?
   rawImportRow     Json?
+  createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)

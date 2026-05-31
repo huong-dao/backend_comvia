@@ -21,6 +21,8 @@ import { AdminModule } from './admin/admin.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { QuickChatModule } from './quick-chat/quick-chat.module';
 import { MoneyAccountsModule } from './money-accounts/money-accounts.module';
+import { SystemConfigModule } from './system-config/system-config.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import pay2sConfig from './config/pay2s.config';
 import geminiConfig from './config/gemini.config';
 import zaloConfig from './config/zalo.config';
@@ -32,6 +34,7 @@ import zaloConfig from './config/zalo.config';
       load: [pay2sConfig, geminiConfig, zaloConfig],
     }),
     PrismaModule,
+    SystemConfigModule,
     AuditLogModule,
     AuthModule,
     UsersModule,
@@ -45,6 +48,7 @@ import zaloConfig from './config/zalo.config';
     OaConnectionsModule,
     TemplatesModule,
     MessagingModule,
+    CampaignsModule,
     AdminModule,
     QuickChatModule,
     MoneyAccountsModule,

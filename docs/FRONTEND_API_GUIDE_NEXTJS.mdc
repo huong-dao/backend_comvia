@@ -550,7 +550,9 @@ Ghi chú:
 - `PATCH /workspaces/:workspaceId/templates/:templateId`
 
 Ghi chú:
-- Backend chặn sửa khi template đã `APPROVED`.
+- Backend chặn sửa nội dung khi template đã `APPROVED`, **trừ** `unitPricePerMessage` (chỉ `UserRole.ADMIN`).
+- Field `code` chỉ được đổi khi JWT user có `UserRole` là `ADMIN` hoặc `STAFF`; `USER` gửi `code` sẽ nhận `403`.
+- `unitPricePerMessage` (VND/tin): chỉ `ADMIN` set; nếu null thì dùng giá mặc định từ `GET /admin/config/message-pricing`.
 
 ### 7.5 Submit template
 - `POST /workspaces/:workspaceId/templates/:templateId/submit`
@@ -560,6 +562,25 @@ Response hiện tại là cập nhật trạng thái sang `PENDING_ZALO_APPROVAL
 Ghi chú gửi ZNS:
 - Sau khi staff **approve**, template phải có `providerTemplateId` (ID template trên Zalo Business) thì mới gửi tin được.
 - `data` khi send message phải khớp `placeholdersJson` của template.
+
+### 7.7 Campaigns (ZNS hàng loạt)
+
+Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
+
+- `POST /workspaces/:workspaceId/campaigns` — body `{ "name", "templateId" }` (template phải `APPROVED`)
+- `GET /workspaces/:workspaceId/campaigns`
+- `GET /workspaces/:workspaceId/campaigns/:campaignId`
+- `PATCH /workspaces/:workspaceId/campaigns/:campaignId` — chỉ đổi `name` (không đổi template)
+- `DELETE /workspaces/:workspaceId/campaigns/:campaignId` — `DRAFT`: xóa hẳn; đã chạy: `CANCELLED`
+- `GET /workspaces/:workspaceId/campaigns/:campaignId/csv-template` — tải CSV mẫu (cột `Phone` + placeholder)
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv` — `multipart/form-data` field `file` (thay toàn bộ rows; chỉ trước lần execute đầu)
+- `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=`
+- `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
+- `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — gửi tuần tự, trừ ví OWNER trước, hoàn tiền tin failed
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại)
+
+Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`).
 
 ### 7.6 Staff review APIs (internal)
 Base:
@@ -946,6 +967,8 @@ Endpoint ví dụ:
 - `PATCH /admin/users/:userId/lock` body `{ "locked": true }`
 - `GET /admin/workspaces`
 - `PATCH /admin/workspaces/:workspaceId/disable`
+- `GET /admin/config/message-pricing` — giá mặc định VND/tin (mặc định 400)
+- `PATCH /admin/config/message-pricing` body `{ "defaultMessageUnitPrice": 400 }`
 
 ## 14) Common error handling (frontend)
 

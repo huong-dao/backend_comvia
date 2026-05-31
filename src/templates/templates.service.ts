@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
-import { Prisma, TemplateStatus } from '@prisma/client';
+import { Prisma, TemplateStatus, UserRole } from '@prisma/client';
 import {
   AUDIT_ACTIONS,
   AUDIT_RESOURCE_TYPES,
@@ -43,6 +43,10 @@ export class TemplatesService {
     }
 
     return oaConnection;
+  }
+
+  private canEditTemplateCode(role: UserRole): boolean {
+    return role === UserRole.ADMIN || role === UserRole.STAFF;
   }
 
   private async getTemplateForInternalReviewOrThrow(templateId: string) {
@@ -333,10 +337,23 @@ export class TemplatesService {
     return template;
   }
 
+  private isAdminOnlyTemplatePriceUpdate(
+    dto: UpdateTemplateDto,
+  ): boolean {
+    return (
+      dto.unitPricePerMessage !== undefined &&
+      dto.name === undefined &&
+      dto.code === undefined &&
+      dto.content === undefined &&
+      dto.placeholdersJson === undefined
+    );
+  }
+
   async update(
     workspaceId: string,
     templateId: string,
     _actorUserId: string,
+    actorRole: UserRole,
     dto: UpdateTemplateDto,
   ) {
     const template = await this.prismaService.template.findFirst({
@@ -348,22 +365,44 @@ export class TemplatesService {
       throw new BadRequestException('Template not found');
     }
 
-    if (template.status === 'APPROVED') {
-      throw new ForbiddenException('Approved template is read-only');
-    }
     if (template.status === 'DISABLED') {
       throw new ForbiddenException('Template is disabled');
+    }
+
+    const adminPriceOnly =
+      template.status === 'APPROVED' &&
+      this.isAdminOnlyTemplatePriceUpdate(dto);
+
+    if (template.status === 'APPROVED' && !adminPriceOnly) {
+      throw new ForbiddenException('Approved template is read-only');
+    }
+
+    if (dto.code !== undefined && !this.canEditTemplateCode(actorRole)) {
+      throw new ForbiddenException(
+        'Only platform admin or staff can change template code',
+      );
+    }
+
+    if (dto.unitPricePerMessage !== undefined && actorRole !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only platform admin can set template unit price per message',
+      );
     }
 
     return this.prismaService.template.update({
       where: { id: templateId },
       data: {
-        name: dto.name,
-        code: dto.code,
-        content: dto.content,
-        placeholdersJson: dto.placeholdersJson
-          ? (dto.placeholdersJson as Prisma.InputJsonValue)
-          : undefined,
+        name: adminPriceOnly ? undefined : dto.name,
+        code: this.canEditTemplateCode(actorRole) ? dto.code : undefined,
+        content: adminPriceOnly ? undefined : dto.content,
+        placeholdersJson:
+          adminPriceOnly || !dto.placeholdersJson
+            ? undefined
+            : (dto.placeholdersJson as Prisma.InputJsonValue),
+        unitPricePerMessage:
+          dto.unitPricePerMessage !== undefined
+            ? new Prisma.Decimal(dto.unitPricePerMessage)
+            : undefined,
       },
     });
   }

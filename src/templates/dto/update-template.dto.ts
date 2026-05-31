@@ -1,4 +1,5 @@
-import { IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNumber, IsObject, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class UpdateTemplateDto {
   @IsOptional()
@@ -19,4 +20,10 @@ export class UpdateTemplateDto {
   @IsOptional()
   @IsObject()
   placeholdersJson?: Record<string, unknown>;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  unitPricePerMessage?: number;
 }
