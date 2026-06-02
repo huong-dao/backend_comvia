@@ -381,85 +381,187 @@ Auth/Role:
 | `POST` | `/workspaces/:workspaceId/oa/disconnect` | Ngắt kết nối, xóa token |
 | `GET` | `/workspaces/:workspaceId/oa/connect/redirect` | Redirect HTTP 302 thẳng sang Zalo (cần JWT; SPA ưu tiên `POST connect`) |
 
-### 6.2 Luồng kết nối OA (FE khuyến nghị)
+### 6.2 Luồng kết nối OA (Zalo OAuth thật — không mock)
 
 ```mermaid
 sequenceDiagram
-  participant FE as Next.js
+  participant U as User (Owner)
+  participant FE as Next.js App
   participant API as Comvia API
   participant Zalo as Zalo OAuth
+  U->>FE: Mở /app/w/:wsId/oa → bấm Kết nối
   FE->>API: POST /workspaces/:wsId/oa/connect
-  API-->>FE: { authorizationUrl, state, connectionId }
-  FE->>Zalo: window.location.href = authorizationUrl
+  API-->>FE: authorizationUrl + state (gắn wsId)
+  FE->>FE: sessionStorage workspaceId (fallback)
+  FE->>Zalo: window.location = authorizationUrl
   Zalo->>API: GET /oa/auth/callback?code&state
-  API->>Zalo: Đổi code lấy access/refresh token
-  API->>FE: Redirect app (status=success|error)
+  API->>Zalo: Đổi code + PKCE → lưu token
+  API->>FE: 302 → /app/w/:wsId/oa?status=success
   FE->>API: GET /workspaces/:wsId/oa/status
+  FE->>U: Hiển thị CONNECTED trên cùng trang OA
 ```
 
+**Nguyên tắc UX:** User bắt đầu OAuth tại trang workspace OA (`/app/w/{workspaceId}/oa`) → sau cấp quyền Zalo phải **quay lại đúng URL đó** (cùng `workspaceId`), không để user “lạc” sang trang settings chung.
+
+---
+
+### 6.2.1 Khuyến nghị chốt (ưu tiên cho Backend implement)
+
+| Ưu tiên | Ai | Việc cần làm |
+|--------|-----|----------------|
+| **A (khuyến nghị)** | **Backend** | Sau `GET /oa/auth/callback` thành công/thất bại → **HTTP 302** về URL workspace OA (xem §6.2.2). |
+| **A** | **Backend** | `state` OAuth phải resolve được `workspaceId` (đã gửi lúc `POST connect`). |
+| **B** | FE | Trước khi mở `authorizationUrl`: lưu `workspaceId` vào `sessionStorage` (fallback nếu backend chưa append query). |
+| **B** | FE | Trang `/app/w/[workspaceId]/oa` đọc `?status=success\|error` → thông báo + `GET .../oa/status` → xóa query. |
+| **C (fallback)** | Backend + FE | Chỉ dùng nếu chưa build redirect động: `ZALO_OAUTH_SUCCESS_REDIRECT_URL` → `/app/settings/oa` → FE chuyển tiếp sang `/app/w/{workspaceId}/oa` (§6.2.5). |
+
+**Production (Comvia):** base app = `https://app.comvia.cloud`. Ví dụ user đang tại:
+
+`https://app.comvia.cloud/app/w/cmoieuvb30001mlixf3krbauu/oa`
+
+→ Backend redirect sau OAuth **nên là:**
+
+`https://app.comvia.cloud/app/w/cmoieuvb30001mlixf3krbauu/oa?status=success`
+
+(lỗi: `...?status=error&message=...` — `message` URL-encoded, optional).
+
+---
+
+### 6.2.2 Contract redirect sau callback (Backend — spec để implement)
+
+**Input:** `GET /oa/auth/callback?code=...&state=...&oa_id=...` (public, không JWT).
+
+**Backend phải:**
+
+1. Parse `state` → lấy `workspaceId` (và `connectionId` nếu đã lưu lúc `POST connect`).
+2. Đổi `code` + PKCE verifier (lưu theo `state`/`connectionId`) → access/refresh token Zalo.
+3. Cập nhật `WorkspaceOaConnection` → `status = CONNECTED` (hoặc lỗi tương ứng).
+4. Ghi audit `oa.connected` khi thành công.
+5. **Redirect 302** về frontend — **không** trả JSON cho browser.
+
+**Base URL frontend:** env `COMVIA_APP_BASE_URL` (hoặc tương đương), ví dụ `https://app.comvia.cloud`. **Không** hard-code path `/settings/oa` làm đích mặc định duy nhất trên production.
+
+**URL đích khuyến nghị (build động từ `workspaceId` trong `state`):**
+
+```
+{COMVIA_APP_BASE_URL}/app/w/{workspaceId}/oa?status=success
+{COMVIA_APP_BASE_URL}/app/w/{workspaceId}/oa?status=error&message={optional}
+```
+
+**Query params FE đọc (ổn định, snake/camel đều được FE hỗ trợ trên trang callback fallback):**
+
+| Param | Bắt buộc | Giá trị | Ghi chú |
+|-------|----------|---------|---------|
+| `status` | Có | `success` \| `error` | FE hiển thị banner + refetch status |
+| `workspaceId` | Khuyến nghị trên fallback | ID workspace | Bắt buộc nếu redirect về `/app/settings/oa`; trên URL workspace có thể bỏ (đã có trong path) |
+| `message` | Không | string | Chỉ khi `status=error`, hiển thị lý do |
+| `connected` | Không | `1` | Tương thích cũ; FE coi `status=success` là đủ |
+
+**`state` khi tạo `POST /workspaces/:workspaceId/oa/connect` (gợi ý):**
+
+- Encode opaque token **hoặc** JSON signed chứa tối thiểu: `workspaceId`, `connectionId`, `codeVerifier` (PKCE), `exp`.
+- Sau callback: validate `state` (TTL, one-time) rồi mới redirect.
+
+**Pseudo-code redirect (NestJS):**
+
+```ts
+const appBase = process.env.COMVIA_APP_BASE_URL ?? 'https://app.comvia.cloud';
+const wsId = resolved.workspaceId; // từ state DB
+
+if (ok) {
+  return res.redirect(
+    `${appBase}/app/w/${wsId}/oa?status=success`,
+  );
+}
+return res.redirect(
+  `${appBase}/app/w/${wsId}/oa?status=error&message=${encodeURIComponent(errMessage)}`,
+);
+```
+
+**Không dùng mock:** `POST connect` phải trả `authorizationUrl` thật (`oauth.zaloapp.com/...`). Không set `CONNECTED` ngay trong `POST connect` mà chưa qua Zalo callback.
+
+---
+
+### 6.2.3 Các bước API chi tiết
+
 **Bước 1 — Gọi connect (OWNER):**
+
 ```http
 POST /workspaces/:workspaceId/oa/connect
 Authorization: Bearer <accessToken>
 ```
 
 Response:
+
 ```json
 {
   "authorizationUrl": "https://oauth.zaloapp.com/v4/oa/permission?app_id=...&redirect_uri=...&code_challenge=...&state=...",
-  "state": "Ab12Cd34",
+  "state": "opaque-or-signed-state",
   "connectionId": "OA_CONN_ID"
 }
 ```
 
-**Bước 2 — Redirect user sang Zalo:**
-```ts
-const { authorizationUrl } = await comviaFetch<{
-  authorizationUrl: string;
-  state: string;
-  connectionId: string;
-}>(`/workspaces/${workspaceId}/oa/connect`, {
-  method: "POST",
-  token: accessToken,
-});
+**Bước 2 — FE mở Zalo (đã implement):**
 
+```ts
+rememberOaOAuthWorkspace(workspaceId); // fallback sessionStorage
+const { authorizationUrl } = await comviaFetch<OaConnectResponse>(
+  `/workspaces/${workspaceId}/oa/connect`,
+  { method: "POST", token: accessToken },
+);
 window.location.href = authorizationUrl;
 ```
 
-**Bước 3 — Callback OAuth (backend xử lý, Public):**
-
-Sau khi user cấp quyền trên Zalo, Zalo redirect về `redirect_uri` đã đăng ký. Backend Comvia nhận tại:
+**Bước 3 — Zalo → Backend callback (public):**
 
 ```http
 GET /oa/auth/callback?code=<AUTH_CODE>&state=<STATE>&oa_id=<OA_ID?>
 ```
 
-- Route **public** (không cần JWT).
-- Backend đổi `code` + PKCE lấy token, cập nhật `WorkspaceOaConnection`, rồi redirect về frontend:
-  - Mặc định: `https://app.comvia.cloud/settings/oa?connected=1&status=success`
-  - Lỗi: `...&status=error`
+- `redirect_uri` đăng ký trên Zalo Developer Console phải trùng `ZALO_OAUTH_REDIRECT_URI` (API host), ví dụ `https://<api-host>/api/v1/oa/auth/callback`.
+- Không nhầm với URL redirect về **app** (mục 6.2.2).
 
-**Bước 4 — Trang FE sau OAuth (`/settings/oa`):**
+**Bước 4 — FE sau redirect (trang workspace OA):**
 
-```ts
-// app/settings/oa/page.tsx (ví dụ)
-const params = useSearchParams();
-const status = params.get("status"); // "success" | "error"
+Route: `/app/w/[workspaceId]/oa` (`app/app/w/[workspaceId]/oa/page.tsx`).
 
-useEffect(() => {
-  if (status === "success") {
-    toast.success("Đã kết nối Zalo OA");
-    refetchOaStatus();
-  } else if (status === "error") {
-    toast.error("Kết nối Zalo OA thất bại. Vui lòng thử lại.");
-  }
-}, [status]);
+- Đọc `status=success|error` (và optional `message`).
+- Thông báo kết quả, gọi `GET /workspaces/:workspaceId/oa/status`, `router.replace` về URL sạch (không còn query).
+
+---
+
+### 6.2.4 Phương án fallback — `/app/settings/oa` (chỉ khi backend chưa redirect thẳng workspace)
+
+Nếu tạm thời vẫn dùng env tĩnh:
+
+```env
+ZALO_OAUTH_SUCCESS_REDIRECT_URL=https://app.comvia.cloud/app/settings/oa
 ```
 
-Ghi chú triển khai:
-- `redirect_uri` mặc định backend trùng cấu hình Zalo app hiện tại: `https://id.onweb.asia/v1/zalo/auth/call-back`.
-- Khi chuyển callback về Comvia, cập nhật env server `ZALO_OAUTH_REDIRECT_URI` **và** đăng ký lại URL trên Zalo Developer Console (ví dụ `https://<api-host>/api/v1/oa/auth/callback`).
-- Tuỳ chỉnh trang quay về sau OAuth: env `ZALO_OAUTH_SUCCESS_REDIRECT_URL`.
+Backend redirect:
+
+```
+https://app.comvia.cloud/app/settings/oa?status=success&workspaceId={workspaceId}
+```
+
+FE (`/app/settings/oa`) chuyển tiếp → `/app/w/{workspaceId}/oa?oa_oauth=success`.
+
+Alias tương thích doc cũ: `/settings/oa` → redirect sang `/app/settings/oa` (giữ query).
+
+**Lưu ý:** Phương án này thêm một hop; production nên chuyển sang §6.2.2 khi có thể.
+
+---
+
+### 6.2.5 Biến môi trường Backend (checklist)
+
+| Env | Mục đích | Ví dụ |
+|-----|----------|-------|
+| `ZALO_OAUTH_REDIRECT_URI` | Callback **API** (Zalo gọi) | `https://api.comvia.cloud/api/v1/oa/auth/callback` |
+| `COMVIA_APP_BASE_URL` | Origin **frontend** để build URL sau OAuth | `https://app.comvia.cloud` |
+| `ZALO_OAUTH_SUCCESS_REDIRECT_URL` | **Chỉ fallback** nếu không build URL động `/app/w/{id}/oa` | `https://app.comvia.cloud/app/settings/oa` |
+| Zalo app credentials | `app_id`, secret, PKCE | Zalo Developer Console |
+
+**Deprecated / tránh:** redirect mặc định duy nhất tới `https://app.comvia.cloud/settings/oa` (thiếu prefix `/app` và thiếu `workspaceId`) — FE production không dùng route đó làm trang đích cuối.
 
 ### 6.3 Get OA status
 
@@ -992,9 +1094,9 @@ Kịch bản 1 (user -> verify OTP -> workspace -> oa -> template -> staff appro
 1. `POST /auth/register` (lấy `demoOtpCode`)
 2. `POST /auth/otp/verify` (nhận `accessToken`)
 3. `POST /workspaces` (OWNER)
-4. `POST /workspaces/:wsId/oa/connect` → redirect user sang `authorizationUrl` (Zalo OAuth)
-5. User cấp quyền OA → backend callback → FE nhận `?status=success` tại `/settings/oa`
-6. `GET /workspaces/:wsId/oa/status` → kiểm tra `CONNECTED`
+4. `POST /workspaces/:wsId/oa/connect` → FE mở `authorizationUrl` (Zalo OAuth)
+5. User cấp quyền → `GET /oa/auth/callback` → backend 302 về `https://app.comvia.cloud/app/w/:wsId/oa?status=success`
+6. FE trang OA đọc query → `GET /workspaces/:wsId/oa/status` → `CONNECTED`
 7. `POST /workspaces/:wsId/templates` (OWNER)
 8. `POST /workspaces/:wsId/templates/:tplId/submit`
 9. `POST /internal/templates/:tplId/approve` (STAFF) body `{ "providerTemplateId": "ZALO_TPL_ID" }`

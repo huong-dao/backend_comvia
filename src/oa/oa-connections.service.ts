@@ -87,6 +87,23 @@ export class OaConnectionsService {
     return this.startConnect(workspaceId, actorUserId);
   }
 
+  /** Resolve workspace from OAuth state (includes expired state for error redirects). */
+  async resolveWorkspaceIdByOAuthState(
+    state: string | undefined,
+  ): Promise<string | null> {
+    if (!state) {
+      return null;
+    }
+
+    const connection =
+      await this.prismaService.workspaceOaConnection.findFirst({
+        where: { oauthState: state },
+        select: { workspaceId: true },
+      });
+
+    return connection?.workspaceId ?? null;
+  }
+
   async handleOAuthCallback(params: {
     code?: string;
     state?: string;
