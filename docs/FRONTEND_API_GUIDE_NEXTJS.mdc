@@ -83,7 +83,7 @@ export async function comviaFetch<T>(
 
 ## 3) JWT Auth (Login / Me / OTP)
 
-### 3.1 Register (OTP demo)
+### 3.1 Register (OTP email)
 
 Endpoint:
 - `POST /auth/register` (Public)
@@ -97,14 +97,26 @@ Request:
 }
 ```
 
-Response (khi `DEMO_MODE=true`):
+Response (production — `DEMO_MODE=false`):
 ```json
 {
-  "id": "USER_ID",
-  "email": "demo.user@example.com",
-  "fullName": "Demo User",
-  "role": "USER",
-  "createdAt": "2026-03-20T07:..Z",
+  "user": {
+    "id": "USER_ID",
+    "email": "demo.user@example.com",
+    "fullName": "Demo User",
+    "role": "USER",
+    "status": "PENDING_VERIFICATION",
+    "createdAt": "2026-03-20T07:..Z"
+  },
+  "otpRequestId": "OTP_REQUEST_ID",
+  "expiredAt": "2026-03-20T07:..Z"
+}
+```
+
+Response (dev demo — `DEMO_MODE=true`):
+```json
+{
+  "user": { "...": "..." },
   "otpRequestId": "OTP_REQUEST_ID",
   "expiredAt": "2026-03-20T07:..Z",
   "demoOtpCode": "123456"
@@ -113,6 +125,9 @@ Response (khi `DEMO_MODE=true`):
 
 Ghi chú:
 - Sau register, user ở trạng thái `PENDING_VERIFICATION`.
+- Production: OTP được gửi qua email (subject: `comvia - OTP xác thực`), hiệu lực **5 phút**.
+- Dev demo: backend trả thêm `demoOtpCode` khi `DEMO_MODE=true` (không gửi email).
+- Gửi lại OTP (`POST /auth/otp/resend`) bị chặn trong **5 phút** kể từ lần gửi gần nhất.
 - Bạn phải gọi `otp/verify` trước khi `login` được.
 
 FE call ví dụ:
@@ -121,7 +136,7 @@ const registerRes = await comviaFetch<any>("/auth/register", {
   method: "POST",
   body: JSON.stringify({ email, password, fullName }),
 });
-const otpCode = registerRes.demoOtpCode; // chỉ có khi DEMO_MODE=true
+// Production: user nhập OTP từ email. Dev demo: registerRes.demoOtpCode
 ```
 
 ### 3.2 Verify OTP (đổi sang ACTIVE + nhận accessToken)
@@ -1091,7 +1106,7 @@ Frontend nên:
 ## 15) Demo scenario gợi ý để test UI nhanh
 
 Kịch bản 1 (user -> verify OTP -> workspace -> oa -> template -> staff approve -> send):
-1. `POST /auth/register` (lấy `demoOtpCode`)
+1. `POST /auth/register` (nhận email OTP hoặc `demoOtpCode` khi `DEMO_MODE=true`)
 2. `POST /auth/otp/verify` (nhận `accessToken`)
 3. `POST /workspaces` (OWNER)
 4. `POST /workspaces/:wsId/oa/connect` → FE mở `authorizationUrl` (Zalo OAuth)

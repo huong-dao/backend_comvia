@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { sha256Hex } from '../../common/utils/sha256';
+import { EmailService } from '../../integrations/email/email.service';
 
 function isTruthy(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
@@ -24,6 +25,7 @@ export class OtpService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   private get demoMode(): boolean {
@@ -36,8 +38,14 @@ export class OtpService {
   }
 
   private get resendCooldownSeconds(): number {
-    const v = Number(this.configService.get('OTP_RESEND_COOLDOWN_SECONDS'));
-    return Number.isFinite(v) && v >= 0 ? v : 60;
+    const configured = Number(
+      this.configService.get('OTP_RESEND_COOLDOWN_SECONDS'),
+    );
+    if (Number.isFinite(configured) && configured >= 0) {
+      return configured;
+    }
+
+    return this.ttlSeconds;
   }
 
   private get maxVerifyAttempts(): number {
@@ -48,6 +56,56 @@ export class OtpService {
   private generateOtpCode(): string {
     const n = Math.floor(Math.random() * 1_000_000);
     return n.toString().padStart(6, '0');
+  }
+
+  private formatCooldownMessage(remainingSeconds: number): string {
+    if (remainingSeconds >= 60) {
+      const minutes = Math.ceil(remainingSeconds / 60);
+      return `OTP resend cooldown: wait ${minutes} minute(s)`;
+    }
+
+    return `OTP resend cooldown: wait ${Math.ceil(remainingSeconds)}s`;
+  }
+
+  private async assertResendAllowed(
+    targetType: OtpTargetType,
+    targetValue: string,
+    purpose: OtpPurpose,
+  ): Promise<void> {
+    const last = await this.prismaService.otpRequest.findFirst({
+      where: { targetType, targetValue, purpose },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+
+    if (!last) {
+      return;
+    }
+
+    const elapsedSeconds = (Date.now() - last.createdAt.getTime()) / 1000;
+    if (elapsedSeconds < this.resendCooldownSeconds) {
+      throw new BadRequestException(
+        this.formatCooldownMessage(
+          this.resendCooldownSeconds - elapsedSeconds,
+        ),
+      );
+    }
+  }
+
+  private async sendOtpEmailIfNeeded(
+    targetType: OtpTargetType,
+    targetValue: string,
+    otpCode: string,
+  ): Promise<void> {
+    if (targetType !== 'EMAIL' || this.demoMode) {
+      return;
+    }
+
+    await this.emailService.sendOtpVerificationEmail({
+      to: targetValue,
+      otpCode,
+      expiresInMinutes: Math.ceil(this.ttlSeconds / 60),
+    });
   }
 
   async createOtp(
@@ -83,6 +141,8 @@ export class OtpService {
       select: { id: true, expiredAt: true },
     });
 
+    await this.sendOtpEmailIfNeeded(targetType, targetValue, otpCode);
+
     if (this.demoMode) {
       return {
         otpRequestId: otpRequest.id,
@@ -99,25 +159,17 @@ export class OtpService {
     targetValue: string,
     purpose: OtpPurpose,
   ) {
-    const last = await this.prismaService.otpRequest.findFirst({
-      where: { targetType, targetValue, purpose, status: 'ACTIVE' },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true, status: true },
+    await this.assertResendAllowed(targetType, targetValue, purpose);
+
+    await this.prismaService.otpRequest.updateMany({
+      where: {
+        targetType,
+        targetValue,
+        purpose,
+        status: 'ACTIVE',
+      },
+      data: { status: 'EXPIRED' as OtpStatus },
     });
-
-    if (last) {
-      const elapsedSeconds = (Date.now() - last.createdAt.getTime()) / 1000;
-      if (elapsedSeconds < this.resendCooldownSeconds) {
-        throw new BadRequestException(
-          `OTP resend cooldown: wait ${Math.ceil(this.resendCooldownSeconds - elapsedSeconds)}s`,
-        );
-      }
-
-      await this.prismaService.otpRequest.update({
-        where: { id: last.id },
-        data: { status: 'EXPIRED' as OtpStatus },
-      });
-    }
 
     return this.createOtp(targetType, targetValue, purpose);
   }

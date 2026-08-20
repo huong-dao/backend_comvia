@@ -26,12 +26,13 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import pay2sConfig from './config/pay2s.config';
 import geminiConfig from './config/gemini.config';
 import zaloConfig from './config/zalo.config';
+import emailConfig from './config/email.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [pay2sConfig, geminiConfig, zaloConfig],
+      load: [pay2sConfig, geminiConfig, zaloConfig, emailConfig],
     }),
     PrismaModule,
     SystemConfigModule,
