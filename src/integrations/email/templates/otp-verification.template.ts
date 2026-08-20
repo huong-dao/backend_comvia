@@ -192,8 +192,8 @@ export function buildOtpVerificationTemplate(
                       ${footerLogos}
                     </td>
                     <td align="right" style="vertical-align:middle;font-family:Arial,sans-serif;font-size:13px;line-height:1.8;color:#6B7280;">
-                      <div>🌐 <a href="https://comvia.vn" style="color:#2563EB;text-decoration:none;">https://comvia.vn</a></div>
-                      <div>✉️ <a href="mailto:support@softx.asia" style="color:#2563EB;text-decoration:none;">support@softx.asia</a></div>
+                      <div>🌐 <a href="https://comvia.cloud" style="color:#2563EB;text-decoration:none;">https://comvia.cloud</a></div>
+                      <div>🌐 <a href="https://softx.asia" style="color:#2563EB;text-decoration:none;">https://softx.asia</a></div>
                     </td>
                   </tr>
                 </table>
