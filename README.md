@@ -30,7 +30,7 @@ Comvia backend — NestJS + Prisma + PostgreSQL.
 | Audience | Start here |
 |----------|------------|
 | **Frontend** | [`docs/README.md`](./docs/README.md) → 2 file API guide |
-| **Backend / AI** | `.cursor/rules/MAIN_RULES.mdc`, `development-guidelines.mdc`, `project-overview.mdc` |
+| **Backend / AI** | `docs/business/business-rules.md`, `docs/architecture/north-star.md`, `docs/architecture/coding-convention.md` |
 
 ## Project setup
 

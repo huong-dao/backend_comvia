@@ -8,3 +8,6 @@ public
 .env
 
 .claude
+
+# Internal docs (business rules, architecture, FE integration guides) — not published to GitHub
+docs
