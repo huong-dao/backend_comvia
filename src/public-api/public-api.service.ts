@@ -89,9 +89,11 @@ export class PublicApiService {
       );
     }
 
+    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
+    // connection is reached via workspaceOaId.
     const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { id: template.oaConnectionId },
-      select: { id: true, status: true },
+      where: { workspaceOaId: template.oaConnectionId },
+      select: { status: true },
     });
 
     if (!oa || oa.status !== 'CONNECTED') {
@@ -134,7 +136,7 @@ export class PublicApiService {
     >;
     try {
       dispatchResult = await this.oaMessagingService.dispatchZnsTemplate({
-        oaConnectionId: oa.id,
+        oaConnectionId: template.oaConnectionId,
         phoneNumber: dto.phoneNumber,
         providerTemplateId: template.providerTemplateId,
         templateData: dto.data,
@@ -146,7 +148,7 @@ export class PublicApiService {
       const failedLog = await this.prismaService.messageLog.create({
         data: {
           workspaceId: workspace.id,
-          oaConnectionId: oa.id,
+          oaConnectionId: template.oaConnectionId,
           templateId: template.id,
           sendType: 'SINGLE' satisfies SendType,
           phoneNumber: dto.phoneNumber,
@@ -192,7 +194,7 @@ export class PublicApiService {
       const messageLog = await tx.messageLog.create({
         data: {
           workspaceId: workspace.id,
-          oaConnectionId: oa.id,
+          oaConnectionId: template.oaConnectionId,
           templateId: template.id,
           sendType: 'SINGLE' satisfies SendType,
           phoneNumber: dto.phoneNumber,

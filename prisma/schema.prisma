@@ -58,27 +58,27 @@ enum WorkspaceMemberStatus {
 }
 
 model User {
-  id                    String            @id @default(cuid())
-  email                 String            @unique
+  id                    String                  @id @default(cuid())
+  email                 String                  @unique
   fullName              String?
-  role                  UserRole          @default(USER)
-  status                UserStatus        @default(PENDING_VERIFICATION)
+  role                  UserRole                @default(USER)
+  status                UserStatus              @default(PENDING_VERIFICATION)
   lastActiveWorkspaceId String?
   credential            UserCredential?
-  ownedWorkspaces       Workspace[]       @relation("WorkspaceOwner")
+  ownedWorkspaces       Workspace[]             @relation("WorkspaceOwner")
   workspaceMemberships  WorkspaceMember[]
-  walletAccount        WalletAccount?
-  walletTransactions   WalletTransaction[]
-  topupRequests        TopupRequest[]
+  walletAccount         WalletAccount?
+  walletTransactions    WalletTransaction[]
+  topupRequests         TopupRequest[]
   orders                Order[]
-  auditLogs            AuditLog[]
-  quickChatSessions    QuickChatSession[]      @relation("QuickChatSessionUser")
-  quickChatMessages    QuickChatMessage[]      @relation("QuickChatMessageUser")
-  quickChatActions     QuickChatAction[]       @relation("QuickChatActionUser")
-  quickChatExecutions  QuickChatExecutionLog[] @relation("QuickChatExecutionUser")
+  auditLogs             AuditLog[]
+  quickChatSessions     QuickChatSession[]      @relation("QuickChatSessionUser")
+  quickChatMessages     QuickChatMessage[]      @relation("QuickChatMessageUser")
+  quickChatActions      QuickChatAction[]       @relation("QuickChatActionUser")
+  quickChatExecutions   QuickChatExecutionLog[] @relation("QuickChatExecutionUser")
 
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model UserCredential {
@@ -91,47 +91,47 @@ model UserCredential {
 }
 
 model OtpRequest {
-  id           String      @id @default(cuid())
+  id           String        @id @default(cuid())
   targetType   OtpTargetType
   targetValue  String
   purpose      OtpPurpose
-  otpCodeHash String
+  otpCodeHash  String
   expiredAt    DateTime
   usedAt       DateTime?
-  attemptCount Int         @default(0)
-  status       OtpStatus   @default(ACTIVE)
+  attemptCount Int           @default(0)
+  status       OtpStatus     @default(ACTIVE)
 
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([targetType, targetValue, purpose, status])
   @@index([targetValue])
 }
 
 model Workspace {
-  id         String           @id @default(cuid())
-  name       String
-  slug       String?          @unique
-  ownerUserId String
-  status     WorkspaceStatus  @default(ACTIVE)
-  owner      User             @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  members    WorkspaceMember[]
-  billingProfile       WorkspaceBillingProfile?
-  invitations          WorkspaceInvitation[]
-  oaConnection         WorkspaceOaConnection?
-  walletTransactions   WalletTransaction[]
-  topupRequests        TopupRequest[]
-  orders               Order[]
-  invoices             Invoice[]
-  templates            Template[]
-  messageLogs          MessageLog[]
-  campaigns            Campaign[]
-  apiKeys              ApiKey[]
-  auditLogs            AuditLog[]
-  quickChatSessions    QuickChatSession[]
+  id                 String                   @id @default(cuid())
+  name               String
+  slug               String?                  @unique
+  ownerUserId        String
+  status             WorkspaceStatus          @default(ACTIVE)
+  owner              User                     @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  members            WorkspaceMember[]
+  billingProfile     WorkspaceBillingProfile?
+  invitations        WorkspaceInvitation[]
+  oa                 WorkspaceOa?
+  walletTransactions WalletTransaction[]
+  topupRequests      TopupRequest[]
+  orders             Order[]
+  invoices           Invoice[]
+  templates          Template[]
+  messageLogs        MessageLog[]
+  campaigns          Campaign[]
+  apiKeys            ApiKey[]
+  auditLogs          AuditLog[]
+  quickChatSessions  QuickChatSession[]
 
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum QuickChatMessageRole {
@@ -157,7 +157,7 @@ model QuickChatAgentProfile {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions     QuickChatSession[]
+  sessions QuickChatSession[]
 }
 
 model QuickChatSession {
@@ -169,45 +169,45 @@ model QuickChatSession {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace   Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  user        User                   @relation("QuickChatSessionUser", fields: [userId], references: [id], onDelete: Cascade)
-  agent       QuickChatAgentProfile  @relation(fields: [agentId], references: [id], onDelete: Restrict)
-  messages    QuickChatMessage[]
-  actions     QuickChatAction[]
-  executions  QuickChatExecutionLog[]
+  workspace  Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user       User                    @relation("QuickChatSessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  agent      QuickChatAgentProfile   @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  messages   QuickChatMessage[]
+  actions    QuickChatAction[]
+  executions QuickChatExecutionLog[]
 
   @@index([workspaceId, createdAt])
   @@index([userId, createdAt])
 }
 
 model QuickChatMessage {
-  id         String               @id @default(cuid())
-  sessionId  String
-  userId     String
-  role       QuickChatMessageRole
-  content    String
-  createdAt  DateTime             @default(now())
+  id        String               @id @default(cuid())
+  sessionId String
+  userId    String
+  role      QuickChatMessageRole
+  content   String
+  createdAt DateTime             @default(now())
 
-  session    QuickChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user       User                 @relation("QuickChatMessageUser", fields: [userId], references: [id], onDelete: Cascade)
+  session QuickChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User             @relation("QuickChatMessageUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
 }
 
 model QuickChatAction {
-  id          String                @id @default(cuid())
-  sessionId   String
-  userId      String
-  toolName    String
-  argsJson    Json
-  summary     String
-  status      QuickChatActionStatus @default(PENDING_CONFIRMATION)
-  createdAt   DateTime              @default(now())
-  executedAt  DateTime?
+  id         String                @id @default(cuid())
+  sessionId  String
+  userId     String
+  toolName   String
+  argsJson   Json
+  summary    String
+  status     QuickChatActionStatus @default(PENDING_CONFIRMATION)
+  createdAt  DateTime              @default(now())
+  executedAt DateTime?
 
-  session     QuickChatSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user        User                  @relation("QuickChatActionUser", fields: [userId], references: [id], onDelete: Cascade)
-  executions  QuickChatExecutionLog[]
+  session    QuickChatSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User                    @relation("QuickChatActionUser", fields: [userId], references: [id], onDelete: Cascade)
+  executions QuickChatExecutionLog[]
 
   @@index([sessionId, createdAt])
   @@index([status, createdAt])
@@ -226,25 +226,25 @@ model QuickChatExecutionLog {
   idempotencyKey String?
   createdAt      DateTime @default(now())
 
-  session        QuickChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  action         QuickChatAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
-  user           User             @relation("QuickChatExecutionUser", fields: [userId], references: [id], onDelete: Cascade)
+  session QuickChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  action  QuickChatAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  user    User             @relation("QuickChatExecutionUser", fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([idempotencyKey])
   @@index([sessionId, createdAt])
   @@index([actionId, createdAt])
-  @@unique([idempotencyKey])
 }
 
 model WorkspaceMember {
-  id          String    @id @default(cuid())
+  id          String                @id @default(cuid())
   workspaceId String
   userId      String
-  role        MemberRole @default(MEMBER)
+  role        MemberRole            @default(MEMBER)
   status      WorkspaceMemberStatus @default(ACTIVE)
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   @@unique([workspaceId, userId])
   @@index([userId])
@@ -264,21 +264,21 @@ enum BillingType {
 }
 
 model WorkspaceBillingProfile {
-  id           String      @id @default(cuid())
+  id          String      @id @default(cuid())
   workspaceId String      @unique
   billingType BillingType
 
   // organization
-  companyName         String?
-  taxCode             String?
-  address             String?
-  invoiceEmail        String?
-  representativeName  String?
-  phone               String?
+  companyName        String?
+  taxCode            String?
+  address            String?
+  invoiceEmail       String?
+  representativeName String?
+  phone              String?
 
   // individual
-  fullName   String?
-  citizenId  String?
+  fullName          String?
+  citizenId         String?
   invoicePdfAddress String?
 
   createdAt DateTime @default(now())
@@ -288,13 +288,13 @@ model WorkspaceBillingProfile {
 }
 
 model WorkspaceInvitation {
-  id          String             @id @default(cuid())
+  id          String           @id @default(cuid())
   workspaceId String
   inviteType  String
   inviteValue String
   role        MemberRole
-  status      InvitationStatus  @default(PENDING)
-  token       String            @unique
+  status      InvitationStatus @default(PENDING)
+  token       String           @unique
   expiredAt   DateTime
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -313,13 +313,19 @@ enum WalletTransactionType {
   REVERSAL
 }
 
+enum WalletTransactionStatus {
+  SUCCESS
+  PENDING
+  FAILED
+}
+
 model WalletAccount {
-  id           String   @id @default(cuid())
-  ownerUserId String   @unique
-  balance      Decimal  @default(0)
-  totalTopup   Decimal  @default(0)
-  totalSpent   Decimal  @default(0)
-  totalRefund  Decimal  @default(0)
+  id          String  @id @default(cuid())
+  ownerUserId String  @unique
+  balance     Decimal @default(0)
+  totalTopup  Decimal @default(0)
+  totalSpent  Decimal @default(0)
+  totalRefund Decimal @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -329,11 +335,12 @@ model WalletAccount {
 }
 
 model WalletTransaction {
-  id              String               @id @default(cuid())
-  transactionCode String              @unique
-  ownerUserId    String
-  workspaceId    String
+  id              String                @id @default(cuid())
+  transactionCode String                @unique
+  ownerUserId     String
+  workspaceId     String
   type            WalletTransactionType
+  status          WalletTransactionStatus @default(SUCCESS)
   amount          Decimal
   balanceBefore   Decimal
   balanceAfter    Decimal
@@ -341,10 +348,10 @@ model WalletTransaction {
   sourceId        String
   createdBy       String?
   note            String?
-  createdAt       DateTime            @default(now())
+  createdAt       DateTime              @default(now())
 
-  owner      User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner     User      @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([ownerUserId, createdAt])
   @@index([workspaceId, createdAt])
@@ -359,32 +366,31 @@ enum TopupStatus {
 }
 
 model TopupRequest {
-  id               String      @id @default(cuid())
-  topupCode        String      @unique
-  ownerUserId      String
-  workspaceId      String
-  amountExclVat    Decimal
-  vatAmount        Decimal
-  amountInclVat    Decimal
-  
+  id            String  @id @default(cuid())
+  topupCode     String  @unique
+  ownerUserId   String
+  workspaceId   String
+  amountExclVat Decimal
+  vatAmount     Decimal
+  amountInclVat Decimal
+
   // Thông tin từ Pay2s
-  paymentProvider  String      // "PAY2S"
-  paymentRef       String?     // Mã giao dịch bên Pay2s trả về
-  qrCodeUrl        String?      // Nội dung chuỗi QR để bạn convert ra ảnh
-  
-  status           TopupStatus @default(PENDING)
-  paidAt           DateTime?
-  
+  paymentProvider String // "PAY2S"
+  paymentRef      String? // Mã giao dịch bên Pay2s trả về
+  qrCodeUrl       String? // Nội dung chuỗi QR để bạn convert ra ảnh
+
+  status TopupStatus @default(PENDING)
+  paidAt DateTime?
+
   // Quan hệ 1-1 với Order (Khi nạp thành công thì sinh ra đơn hàng này)
-  order            Order?      
-  
-  owner            User        @relation(fields: [ownerUserId], references: [id])
-  workspace        Workspace   @relation(fields: [workspaceId], references: [id])
+  order Order?
 
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  owner     User      @relation(fields: [ownerUserId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
 
 enum OrderStatus {
   PAID
@@ -392,38 +398,38 @@ enum OrderStatus {
 }
 
 model Order {
-  id                  String      @id @default(cuid())
-  orderCode           String      @unique
-  workspaceId         String
-  ownerUserId         String
-  
-  totalAmountExclVat  Decimal
-  totalVatAmount      Decimal
-  totalAmountInclVat  Decimal
-  status              OrderStatus @default(PAID) // Vì khi tạo từ Webhook là đã xong rồi
-  paidAt              DateTime?
-  
-  // Liên kết ngược lại Topup
-  topupRequestId      String?     @unique
-  topupRequest        TopupRequest? @relation(fields: [topupRequestId], references: [id])
+  id          String @id @default(cuid())
+  orderCode   String @unique
+  workspaceId String
+  ownerUserId String
 
-  owner               User        @relation(fields: [ownerUserId], references: [id])
-  workspace           Workspace   @relation(fields: [workspaceId], references: [id])
-  
-  items               OrderItem[]
-  invoice             Invoice?
-  
-  createdAt           DateTime    @default(now())
+  totalAmountExclVat Decimal
+  totalVatAmount     Decimal
+  totalAmountInclVat Decimal
+  status             OrderStatus @default(PAID) // Vì khi tạo từ Webhook là đã xong rồi
+  paidAt             DateTime?
+
+  // Liên kết ngược lại Topup
+  topupRequestId String?       @unique
+  topupRequest   TopupRequest? @relation(fields: [topupRequestId], references: [id])
+
+  owner     User      @relation(fields: [ownerUserId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  items   OrderItem[]
+  invoice Invoice?
+
+  createdAt DateTime @default(now())
 }
 
 model OrderItem {
-  id              String   @id @default(cuid())
-  orderId         String
-  name            String
-  quantity        Int      @default(1)
-  unitPrice       Decimal
-  vatRate         Decimal  @default(10)
-  vatAmount       Decimal
+  id                 String  @id @default(cuid())
+  orderId            String
+  name               String
+  quantity           Int     @default(1)
+  unitPrice          Decimal
+  vatRate            Decimal @default(10)
+  vatAmount          Decimal
   totalAmountInclVat Decimal
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -436,34 +442,34 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id               String         @id @default(cuid())
-  invoiceCode     String         @unique
-  invoiceNumber   String?
-  invoicePdfUrl   String?
-  workspaceId     String
-  orderId         String         @unique
-  billingType     BillingType
+  id                  String        @id @default(cuid())
+  invoiceCode         String        @unique
+  invoiceNumber       String?
+  invoicePdfUrl       String?
+  workspaceId         String
+  orderId             String        @unique
+  billingType         BillingType
   billingSnapshotJson Json
-  status          InvoiceStatus  @default(POSTED)
-  issueDate       DateTime?
-  verificationJson Json?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  status              InvoiceStatus @default(POSTED)
+  issueDate           DateTime?
+  verificationJson    Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  items               InvoiceItem[]
+  items InvoiceItem[]
 }
 
 model InvoiceItem {
-  id                String   @id @default(cuid())
-  invoiceId         String
-  name              String
-  quantity          Int      @default(1)
-  unitPrice         Decimal
-  vatRate           Decimal  @default(10)
-  vatAmount         Decimal
+  id                 String  @id @default(cuid())
+  invoiceId          String
+  name               String
+  quantity           Int     @default(1)
+  unitPrice          Decimal
+  vatRate            Decimal @default(10)
+  vatAmount          Decimal
   totalAmountInclVat Decimal
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -478,28 +484,45 @@ enum OaConnectionStatus {
   DISCONNECTED
 }
 
-model WorkspaceOaConnection {
-  id              String @id @default(cuid())
-  workspaceId     String @unique
-  oaId            String
-  oaName          String?
-  oaAvatarLight   String?
-  oaAvatarDark    String?
-  accessToken     String?
-  refreshToken    String?
-  tokenExpiredAt  DateTime?
-  oauthState           String?
-  oauthCodeVerifier    String?
-  oauthStateExpiresAt  DateTime?
-  status          OaConnectionStatus @default(NOT_CONNECTED)
-  connectedAt     DateTime?
+model WorkspaceOa {
+  id              String   @id @default(cuid())
+  workspaceId     String   @unique
+  name            String
+  code            String
+  description     String?
+  avatarUrl       String?
+  logoLightUrl    String?
+  logoDarkUrl     String?
+  createdByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  templates Template[]
+  workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection  WorkspaceOaConnection?
+  templates   Template[]
   messageLogs MessageLog[]
-  campaigns Campaign[]
+  campaigns   Campaign[]
+}
+
+model WorkspaceOaConnection {
+  id                  String             @id @default(cuid())
+  workspaceOaId       String             @unique
+  oaId                String
+  oaName              String?
+  oaAvatarLight       String?
+  oaAvatarDark        String?
+  accessToken         String?
+  refreshToken        String?
+  tokenExpiredAt      DateTime?
+  oauthState          String?
+  oauthCodeVerifier   String?
+  oauthStateExpiresAt DateTime?
+  status              OaConnectionStatus @default(NOT_CONNECTED)
+  connectedAt         DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  workspaceOa WorkspaceOa @relation(fields: [workspaceOaId], references: [id], onDelete: Cascade)
 
   @@index([oauthState])
 }
@@ -513,6 +536,12 @@ enum TemplateStatus {
   DISABLED
 }
 
+enum TemplateType {
+  TEXT
+  TABLE
+  OTP
+}
+
 model SystemConfig {
   id                      String   @id @default("singleton")
   defaultMessageUnitPrice Decimal  @default(400)
@@ -521,22 +550,27 @@ model SystemConfig {
 }
 
 model Template {
-  id                String        @id @default(cuid())
-  workspaceId       String
-  oaConnectionId    String
-  name              String
-  code              String
-  content           String
-  placeholdersJson  Json
-  providerTemplateId String?
+  id                  String         @id @default(cuid())
+  workspaceId         String
+  oaConnectionId      String
+  type                TemplateType   @default(TEXT)
+  name                String
+  code                String
+  title               String?
+  trackingId          String?
+  content             String?
+  secondaryContent    String?
+  otpExpiryMinutes    Int?
+  placeholdersJson    Json?
+  providerTemplateId  String?
   unitPricePerMessage Decimal?
-  status            TemplateStatus @default(DRAFT)
-  rejectedReason    String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  status              TemplateStatus @default(DRAFT)
+  rejectedReason      String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOa @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
 
   submissions TemplateSubmissionLog[]
   messageLogs MessageLog[]
@@ -547,12 +581,12 @@ model Template {
 }
 
 model TemplateSubmissionLog {
-  id          String   @id @default(cuid())
-  templateId  String
-  status      TemplateStatus
+  id               String         @id @default(cuid())
+  templateId       String
+  status           TemplateStatus
   providerResponse Json?
-  reason      String?
-  createdAt   DateTime @default(now())
+  reason           String?
+  createdAt        DateTime       @default(now())
 
   template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
@@ -570,25 +604,25 @@ enum MessageStatus {
 }
 
 model MessageLog {
-  id                String        @id @default(cuid())
-  workspaceId       String
-  oaConnectionId    String
-  templateId        String
-  sendType          SendType
-  phoneNumber       String
-  payloadSnapshot   Json
-  status            MessageStatus @default(PENDING)
-  errorCode         String?
-  providerMessageId String?
-  costAtTime        Decimal?
+  id                  String        @id @default(cuid())
+  workspaceId         String
+  oaConnectionId      String
+  templateId          String
+  sendType            SendType
+  phoneNumber         String
+  payloadSnapshot     Json
+  status              MessageStatus @default(PENDING)
+  errorCode           String?
+  providerMessageId   String?
+  costAtTime          Decimal?
   walletTransactionId String?
-  operatorUserId    String?
-  sentAt            DateTime?
-  createdAt         DateTime @default(now())
+  operatorUserId      String?
+  sentAt              DateTime?
+  createdAt           DateTime      @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
-  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOa   @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+  template     Template      @relation(fields: [templateId], references: [id], onDelete: Cascade)
   campaignRows CampaignRow[]
 
   @@index([workspaceId, sentAt])
@@ -607,28 +641,28 @@ enum CampaignStatus {
 }
 
 model Campaign {
-  id              String @id @default(cuid())
-  workspaceId     String
-  oaConnectionId  String
-  templateId      String
-  name            String
-  status          CampaignStatus @default(DRAFT)
-  totalData       Int @default(0)
-  totalValid      Int @default(0)
-  totalInvalid    Int @default(0)
-  totalPending    Int @default(0)
-  totalSuccess    Int @default(0)
-  totalFailed     Int @default(0)
-  unitPriceAtCreate Decimal @default(0)
-  estimatedTotalAmount Decimal @default(0)
-  createdBy       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  lastRunAt       DateTime?
+  id                   String         @id @default(cuid())
+  workspaceId          String
+  oaConnectionId       String
+  templateId           String
+  name                 String
+  status               CampaignStatus @default(DRAFT)
+  totalData            Int            @default(0)
+  totalValid           Int            @default(0)
+  totalInvalid         Int            @default(0)
+  totalPending         Int            @default(0)
+  totalSuccess         Int            @default(0)
+  totalFailed          Int            @default(0)
+  unitPriceAtCreate    Decimal        @default(0)
+  estimatedTotalAmount Decimal        @default(0)
+  createdBy            String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  lastRunAt            DateTime?
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  oaConnection WorkspaceOaConnection @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
-  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  oaConnection WorkspaceOa @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
+  template     Template    @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   rows CampaignRow[]
 }
@@ -641,21 +675,21 @@ enum CampaignRowStatus {
 }
 
 model CampaignRow {
-  id                String @id @default(cuid())
-  campaignId        String
-  phoneNumber       String
-  payloadData       Json
-  status            CampaignRowStatus @default(PENDING)
-  failureReason    String?
-  providerMessageId String?
-  retryCount        Int @default(0)
+  id                  String            @id @default(cuid())
+  campaignId          String
+  phoneNumber         String
+  payloadData         Json
+  status              CampaignRowStatus @default(PENDING)
+  failureReason       String?
+  providerMessageId   String?
+  retryCount          Int               @default(0)
   walletTransactionId String?
-  messageLogId     String?
-  rawImportRow     Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  messageLogId        String?
+  rawImportRow        Json?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   messageLog MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
 
   @@index([campaignId, status])
@@ -669,19 +703,19 @@ enum ApiKeyStatus {
 }
 
 model ApiKey {
-  id          String      @id @default(cuid())
+  id          String       @id @default(cuid())
   workspaceId String
   name        String
   keyPrefix   String?
-  keyHash     String      @unique
+  keyHash     String       @unique
   status      ApiKeyStatus @default(ACTIVE)
   lastUsedAt  DateTime?
   createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  logs ApiRequestLog[]
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  logs      ApiRequestLog[]
 
   @@index([workspaceId, status])
 }
@@ -700,16 +734,16 @@ model ApiRequestLog {
 }
 
 model AuditLog {
-  id              String   @id @default(cuid())
-  actorUserId     String?
-  workspaceId     String?
-  action          String
-  resourceType    String
-  resourceId      String?
-  metadataJson    Json?
-  createdAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  workspaceId  String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadataJson Json?
+  createdAt    DateTime @default(now())
 
-  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actor     User?      @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
@@ -717,22 +751,22 @@ model AuditLog {
 }
 
 model NotificationLog {
-  id           String   @id @default(cuid())
-  channel      String
-  recipient    String
-  eventType    String
-  status       String
-  payloadJson  Json?
-  sentAt       DateTime?
-  createdAt    DateTime @default(now())
+  id          String    @id @default(cuid())
+  channel     String
+  recipient   String
+  eventType   String
+  status      String
+  payloadJson Json?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
 }
 
 model BackgroundJobLog {
-  id           String   @id @default(cuid())
-  name         String
-  status       String
-  error        String?
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  name      String
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
 }
 
 enum CollectionRequestType {
@@ -741,12 +775,12 @@ enum CollectionRequestType {
 }
 
 model MoneyAccount {
-  id            String  @id @default(cuid())
-  accountNumber String  @unique
+  id            String   @id @default(cuid())
+  accountNumber String   @unique
   bankName      String?
   bankCode      String?
   pay2sBankId   String?
-  isActive      Boolean @default(true)
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

@@ -44,9 +44,11 @@ export class MessagingService {
       );
     }
 
+    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
+    // connection is reached via workspaceOaId.
     const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { id: template.oaConnectionId },
-      select: { id: true, status: true },
+      where: { workspaceOaId: template.oaConnectionId },
+      select: { status: true },
     });
 
     if (!oa || oa.status !== 'CONNECTED') {

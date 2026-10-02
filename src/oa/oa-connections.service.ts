@@ -24,12 +24,12 @@ export class OaConnectionsService {
   ) {}
 
   async getStatus(workspaceId: string) {
-    const connection =
-      await this.prismaService.workspaceOaConnection.findUnique({
-        where: { workspaceId },
-      });
+    const workspaceOa = await this.prismaService.workspaceOa.findUnique({
+      where: { workspaceId },
+      include: { connection: true },
+    });
 
-    if (!connection) {
+    if (!workspaceOa?.connection) {
       return {
         workspaceId,
         status: 'NOT_CONNECTED' satisfies OaConnectionStatus,
@@ -37,9 +37,11 @@ export class OaConnectionsService {
     }
 
     const { accessToken, refreshToken, oauthCodeVerifier, ...safeConnection } =
-      connection;
+      workspaceOa.connection;
+    void oauthCodeVerifier;
 
     return {
+      workspaceId,
       ...safeConnection,
       hasAccessToken: Boolean(accessToken),
       hasRefreshToken: Boolean(refreshToken),
@@ -47,22 +49,27 @@ export class OaConnectionsService {
   }
 
   async startConnect(workspaceId: string, actorUserId: string) {
+    void actorUserId;
+
+    // The OA profile and its empty connection row are provisioned by the
+    // "Create OA" flow (TICKET-010); connecting only arms the OAuth state.
+    const workspaceOa = await this.prismaService.workspaceOa.findUnique({
+      where: { workspaceId },
+      select: { id: true, connection: { select: { id: true } } },
+    });
+
+    if (!workspaceOa?.connection) {
+      throw new BadRequestException('OA must be created before connecting');
+    }
+
     const now = new Date();
     const state = createOAuthState();
     const { codeVerifier, codeChallenge } = createPkcePair();
     const oauthStateExpiresAt = new Date(now.getTime() + OAUTH_STATE_TTL_MS);
 
-    const connection = await this.prismaService.workspaceOaConnection.upsert({
-      where: { workspaceId },
-      create: {
-        workspaceId,
-        oaId: PENDING_OA_ID,
-        status: 'NOT_CONNECTED',
-        oauthState: state,
-        oauthCodeVerifier: codeVerifier,
-        oauthStateExpiresAt,
-      },
-      update: {
+    const connection = await this.prismaService.workspaceOaConnection.update({
+      where: { workspaceOaId: workspaceOa.id },
+      data: {
         oauthState: state,
         oauthCodeVerifier: codeVerifier,
         oauthStateExpiresAt,
@@ -95,13 +102,14 @@ export class OaConnectionsService {
       return null;
     }
 
-    const connection =
-      await this.prismaService.workspaceOaConnection.findFirst({
+    const connection = await this.prismaService.workspaceOaConnection.findFirst(
+      {
         where: { oauthState: state },
-        select: { workspaceId: true },
-      });
+        select: { workspaceOa: { select: { workspaceId: true } } },
+      },
+    );
 
-    return connection?.workspaceId ?? null;
+    return connection?.workspaceOa.workspaceId ?? null;
   }
 
   async handleOAuthCallback(params: {
@@ -120,6 +128,7 @@ export class OaConnectionsService {
           oauthState: state,
           oauthStateExpiresAt: { gt: new Date() },
         },
+        include: { workspaceOa: { select: { workspaceId: true } } },
       },
     );
 
@@ -127,11 +136,15 @@ export class OaConnectionsService {
       throw new BadRequestException('Invalid or expired OAuth state');
     }
 
+    const workspaceId = connection.workspaceOa.workspaceId;
+
     const tokenResponse = await this.zaloOAuthClient.exchangeAuthorizationCode({
       authCode: code,
       codeVerifier: connection.oauthCodeVerifier,
     });
 
+    // Zalo-provided oaId/oaName live only on the connection row; the manually
+    // managed WorkspaceOa profile is never overwritten here (ADR-001).
     let oaId = oaIdFromQuery ?? connection.oaId;
     let oaName = connection.oaName;
 
@@ -143,7 +156,7 @@ export class OaConnectionsService {
       oaName = oaInfo.data?.name ?? oaName;
     } catch {
       if (oaId === PENDING_OA_ID) {
-        oaId = `OA_${connection.workspaceId.slice(-8)}`;
+        oaId = `OA_${workspaceId.slice(-8)}`;
       }
     }
 
@@ -165,11 +178,12 @@ export class OaConnectionsService {
         oauthCodeVerifier: null,
         oauthStateExpiresAt: null,
       },
+      include: { workspaceOa: { select: { workspaceId: true } } },
     });
 
     await this.auditLogService.write({
       actorUserId: null,
-      workspaceId: connection.workspaceId,
+      workspaceId,
       action: AUDIT_ACTIONS.OA_CONNECTED,
       resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE_OA_CONNECTION,
       resourceId: connection.id,
@@ -184,23 +198,28 @@ export class OaConnectionsService {
   }
 
   async disconnect(workspaceId: string, actorUserId: string) {
-    const connection =
-      await this.prismaService.workspaceOaConnection.findUnique({
-        where: { workspaceId },
-        select: { id: true, status: true, oaId: true, oaName: true },
-      });
+    const workspaceOa = await this.prismaService.workspaceOa.findUnique({
+      where: { workspaceId },
+      select: {
+        id: true,
+        connection: {
+          select: { id: true, status: true, oaId: true, oaName: true },
+        },
+      },
+    });
 
-    if (!connection) {
+    if (!workspaceOa?.connection) {
       return { ok: true };
     }
 
+    const connection = workspaceOa.connection;
     if (connection.status === 'DISCONNECTED') {
       return { ok: true };
     }
 
     await this.prismaService.$transaction(async (tx) => {
       await tx.workspaceOaConnection.update({
-        where: { workspaceId },
+        where: { workspaceOaId: workspaceOa.id },
         data: {
           status: 'DISCONNECTED' satisfies OaConnectionStatus,
           accessToken: null,

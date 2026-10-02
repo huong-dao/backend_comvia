@@ -41,7 +41,7 @@ export class OaAuthController {
         resolveOaOAuthRedirectUrl({
           appBaseUrl,
           fallbackRedirectUrl,
-          workspaceId: updated.workspaceId,
+          workspaceId: updated.workspaceOa.workspaceId,
           status: 'success',
         }),
       );

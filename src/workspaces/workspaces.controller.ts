@@ -42,6 +42,17 @@ export class WorkspacesController {
     return this.workspacesService.switchWorkspace(req.user.id, workspaceId);
   }
 
+  @Get(':workspaceId')
+  @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(MemberRole.OWNER)
+  async getDetail(
+    @Request() req: { workspaceMember?: { role: MemberRole } },
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    const detail = await this.workspacesService.getDetail(workspaceId);
+    return { ...detail, role: req.workspaceMember?.role };
+  }
+
   @Patch(':workspaceId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)

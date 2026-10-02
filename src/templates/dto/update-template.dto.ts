@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
+import { TemplateType } from '@prisma/client';
 import {
+  IsEnum,
+  IsInt,
   IsNumber,
   IsObject,
   IsOptional,
@@ -20,9 +23,30 @@ export class UpdateTemplateDto {
   code?: string;
 
   @IsOptional()
+  @IsEnum(TemplateType)
+  type?: TemplateType;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  trackingId?: string;
+
+  @IsOptional()
   @IsString()
   @MinLength(1)
   content?: string;
+
+  @IsOptional()
+  @IsString()
+  secondaryContent?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  otpExpiryMinutes?: number;
 
   @IsOptional()
   @IsObject()

@@ -19,6 +19,14 @@ export class WalletController {
     @Param('workspaceId') workspaceId: string,
     @Query() query: TransactionsQueryDto,
   ) {
-    return this.walletService.listTransactions(workspaceId, query.type);
+    return this.walletService.listTransactions(workspaceId, {
+      type: query.type,
+      types: query.types,
+      status: query.status,
+      fromDate: query.fromDate,
+      toDate: query.toDate,
+      offset: query.offset,
+      limit: query.limit,
+    });
   }
 }

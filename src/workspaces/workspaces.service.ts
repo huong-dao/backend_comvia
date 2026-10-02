@@ -41,13 +41,12 @@ export class WorkspacesService {
       if (
         !billing.fullName ||
         !billing.citizenId ||
-        !billing.taxCode ||
         !billing.address ||
         !billing.invoiceEmail ||
         !billing.phone
       ) {
         throw new BadRequestException(
-          'Individual billing requires fullName, citizenId, taxCode, address, invoiceEmail, and phone',
+          'Individual billing requires fullName, citizenId, address, invoiceEmail, and phone',
         );
       }
       return;
@@ -225,6 +224,43 @@ export class WorkspacesService {
     }
 
     return updated;
+  }
+
+  async getDetail(workspaceId: string) {
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        billingProfile: {
+          select: {
+            billingType: true,
+            companyName: true,
+            taxCode: true,
+            address: true,
+            invoiceEmail: true,
+            representativeName: true,
+            phone: true,
+            fullName: true,
+            citizenId: true,
+          },
+        },
+      },
+    });
+
+    if (!workspace) {
+      throw new BadRequestException('Workspace not found');
+    }
+
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      status: workspace.status,
+      billingProfile: workspace.billingProfile,
+    };
   }
 
   async softDelete(userId: string, workspaceId: string) {

@@ -4,7 +4,13 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
-import { Prisma, TemplateStatus, UserRole } from '@prisma/client';
+import {
+  OaConnectionStatus,
+  Prisma,
+  TemplateStatus,
+  TemplateType,
+  UserRole,
+} from '@prisma/client';
 import {
   AUDIT_ACTIONS,
   AUDIT_RESOURCE_TYPES,
@@ -32,17 +38,51 @@ export class TemplatesService {
   }
 
   private async getConnectedOaConnectionOrThrow(workspaceId: string) {
-    const oaConnection =
-      await this.prismaService.workspaceOaConnection.findUnique({
-        where: { workspaceId },
-        select: { id: true, status: true },
-      });
+    // Template.oaConnectionId references WorkspaceOa.id (ADR-001); gate template
+    // creation on the Zalo connection status reached via the OA profile.
+    const workspaceOa = await this.prismaService.workspaceOa.findUnique({
+      where: { workspaceId },
+      select: { id: true, connection: { select: { status: true } } },
+    });
 
-    if (!oaConnection || oaConnection.status !== 'CONNECTED') {
+    if (!workspaceOa || workspaceOa.connection?.status !== 'CONNECTED') {
       throw new BadRequestException('OA is not connected');
     }
 
-    return oaConnection;
+    return { id: workspaceOa.id };
+  }
+
+  /**
+   * Enforce BR-TPL-01 content-structure rules per template type:
+   * - TEXT / TABLE: `content` (>=1 char) and `placeholdersJson` are required.
+   * - OTP: `content`/`placeholdersJson` are ignored; `otpExpiryMinutes` is required.
+   */
+  private validateTemplateByTypeOrThrow(input: {
+    type: TemplateType;
+    content?: string | null;
+    placeholdersJson?: Record<string, unknown> | null;
+    otpExpiryMinutes?: number | null;
+  }): void {
+    if (input.type === TemplateType.OTP) {
+      if (input.otpExpiryMinutes == null) {
+        throw new BadRequestException(
+          'otpExpiryMinutes is required for OTP templates',
+        );
+      }
+      return;
+    }
+
+    // TEXT and TABLE share the free-text content requirement.
+    if (input.content == null || input.content.length < 1) {
+      throw new BadRequestException(
+        'content is required for TEXT/TABLE templates',
+      );
+    }
+    if (input.placeholdersJson == null) {
+      throw new BadRequestException(
+        'placeholdersJson is required for TEXT/TABLE templates',
+      );
+    }
   }
 
   private canEditTemplateCode(role: UserRole): boolean {
@@ -154,6 +194,16 @@ export class TemplatesService {
   ) {
     const oa = await this.getConnectedOaConnectionOrThrow(workspaceId);
 
+    const type = dto.type ?? TemplateType.TEXT;
+    this.validateTemplateByTypeOrThrow({
+      type,
+      content: dto.content,
+      placeholdersJson: dto.placeholdersJson,
+      otpExpiryMinutes: dto.otpExpiryMinutes,
+    });
+
+    const isOtp = type === TemplateType.OTP;
+
     for (let i = 0; i < TemplatesService.SIX_DIGIT_CODE_ATTEMPTS; i++) {
       const code = this.randomSixDigitCode();
       try {
@@ -161,17 +211,34 @@ export class TemplatesService {
           data: {
             workspaceId,
             oaConnectionId: oa.id,
+            type,
             name: dto.name,
             code,
-            content: dto.content,
-            placeholdersJson: dto.placeholdersJson as Prisma.InputJsonValue,
+            title: dto.title ?? null,
+            trackingId: dto.trackingId ?? null,
+            // OTP templates omit free-text content/placeholders.
+            content: isOtp ? null : dto.content,
+            placeholdersJson: isOtp
+              ? Prisma.DbNull
+              : (dto.placeholdersJson as Prisma.InputJsonValue),
+            // secondaryContent only applies to TABLE templates.
+            secondaryContent:
+              type === TemplateType.TABLE
+                ? (dto.secondaryContent ?? null)
+                : null,
+            otpExpiryMinutes: isOtp ? dto.otpExpiryMinutes : null,
             status: 'DRAFT' satisfies TemplateStatus,
           },
           select: {
             id: true,
+            type: true,
             name: true,
             code: true,
+            title: true,
+            trackingId: true,
             content: true,
+            secondaryContent: true,
+            otpExpiryMinutes: true,
             placeholdersJson: true,
             status: true,
             rejectedReason: true,
@@ -201,8 +268,13 @@ export class TemplatesService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        type: true,
         name: true,
         code: true,
+        title: true,
+        trackingId: true,
+        secondaryContent: true,
+        otpExpiryMinutes: true,
         status: true,
         createdAt: true,
         updatedAt: true,
@@ -222,8 +294,33 @@ export class TemplatesService {
     return template;
   }
 
+  /** Flatten WorkspaceOa + its Zalo connection into the legacy oaConnection shape. */
+  private flattenOaConnection(oaProfile: {
+    id: string;
+    connection: {
+      oaId: string;
+      oaName: string | null;
+      status: OaConnectionStatus;
+      connectedAt: Date | null;
+      tokenExpiredAt?: Date | null;
+    } | null;
+  }) {
+    const connection = oaProfile.connection;
+    return {
+      id: oaProfile.id,
+      oaId: connection?.oaId ?? null,
+      oaName: connection?.oaName ?? null,
+      status:
+        connection?.status ?? ('NOT_CONNECTED' satisfies OaConnectionStatus),
+      connectedAt: connection?.connectedAt ?? null,
+      ...(connection && 'tokenExpiredAt' in connection
+        ? { tokenExpiredAt: connection.tokenExpiredAt ?? null }
+        : {}),
+    };
+  }
+
   async staffListTemplates(query: InternalTemplatesQueryDto) {
-    return this.prismaService.template.findMany({
+    const templates = await this.prismaService.template.findMany({
       where: {
         ...(query.status ? { status: query.status } : {}),
         ...(query.workspaceId ? { workspaceId: query.workspaceId } : {}),
@@ -240,12 +337,19 @@ export class TemplatesService {
                 },
                 {
                   oaConnection: {
-                    oaName: { contains: query.keyword, mode: 'insensitive' },
+                    connection: {
+                      oaName: {
+                        contains: query.keyword,
+                        mode: 'insensitive',
+                      },
+                    },
                   },
                 },
                 {
                   oaConnection: {
-                    oaId: { contains: query.keyword, mode: 'insensitive' },
+                    connection: {
+                      oaId: { contains: query.keyword, mode: 'insensitive' },
+                    },
                   },
                 },
               ],
@@ -256,8 +360,13 @@ export class TemplatesService {
       take: query.limit ?? 50,
       select: {
         id: true,
+        type: true,
         name: true,
         code: true,
+        title: true,
+        trackingId: true,
+        secondaryContent: true,
+        otpExpiryMinutes: true,
         status: true,
         providerTemplateId: true,
         rejectedReason: true,
@@ -274,14 +383,23 @@ export class TemplatesService {
         oaConnection: {
           select: {
             id: true,
-            oaId: true,
-            oaName: true,
-            status: true,
-            connectedAt: true,
+            connection: {
+              select: {
+                oaId: true,
+                oaName: true,
+                status: true,
+                connectedAt: true,
+              },
+            },
           },
         },
       },
     });
+
+    return templates.map((template) => ({
+      ...template,
+      oaConnection: this.flattenOaConnection(template.oaConnection),
+    }));
   }
 
   async staffGetTemplate(templateId: string) {
@@ -289,9 +407,14 @@ export class TemplatesService {
       where: { id: templateId },
       select: {
         id: true,
+        type: true,
         name: true,
         code: true,
+        title: true,
+        trackingId: true,
         content: true,
+        secondaryContent: true,
+        otpExpiryMinutes: true,
         placeholdersJson: true,
         providerTemplateId: true,
         status: true,
@@ -310,11 +433,15 @@ export class TemplatesService {
         oaConnection: {
           select: {
             id: true,
-            oaId: true,
-            oaName: true,
-            status: true,
-            tokenExpiredAt: true,
-            connectedAt: true,
+            connection: {
+              select: {
+                oaId: true,
+                oaName: true,
+                status: true,
+                tokenExpiredAt: true,
+                connectedAt: true,
+              },
+            },
           },
         },
         submissions: {
@@ -334,7 +461,10 @@ export class TemplatesService {
       throw new BadRequestException('Template not found');
     }
 
-    return template;
+    return {
+      ...template,
+      oaConnection: this.flattenOaConnection(template.oaConnection),
+    };
   }
 
   private isAdminOnlyTemplatePriceUpdate(dto: UpdateTemplateDto): boolean {
@@ -343,7 +473,12 @@ export class TemplatesService {
       dto.name === undefined &&
       dto.code === undefined &&
       dto.content === undefined &&
-      dto.placeholdersJson === undefined
+      dto.placeholdersJson === undefined &&
+      dto.type === undefined &&
+      dto.title === undefined &&
+      dto.trackingId === undefined &&
+      dto.secondaryContent === undefined &&
+      dto.otpExpiryMinutes === undefined
     );
   }
 
@@ -356,7 +491,14 @@ export class TemplatesService {
   ) {
     const template = await this.prismaService.template.findFirst({
       where: { workspaceId, id: templateId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        type: true,
+        content: true,
+        placeholdersJson: true,
+        otpExpiryMinutes: true,
+      },
     });
 
     if (!template) {
@@ -387,12 +529,34 @@ export class TemplatesService {
       );
     }
 
+    // Validate the merged (existing + patch) template against its type rules,
+    // unless this is the admin price-only branch (nothing structural changes).
+    if (!adminPriceOnly) {
+      this.validateTemplateByTypeOrThrow({
+        type: dto.type ?? template.type,
+        content: dto.content !== undefined ? dto.content : template.content,
+        placeholdersJson:
+          dto.placeholdersJson !== undefined
+            ? dto.placeholdersJson
+            : (template.placeholdersJson as Record<string, unknown> | null),
+        otpExpiryMinutes:
+          dto.otpExpiryMinutes !== undefined
+            ? dto.otpExpiryMinutes
+            : template.otpExpiryMinutes,
+      });
+    }
+
     return this.prismaService.template.update({
       where: { id: templateId },
       data: {
         name: adminPriceOnly ? undefined : dto.name,
         code: this.canEditTemplateCode(actorRole) ? dto.code : undefined,
+        type: adminPriceOnly ? undefined : dto.type,
+        title: adminPriceOnly ? undefined : dto.title,
+        trackingId: adminPriceOnly ? undefined : dto.trackingId,
         content: adminPriceOnly ? undefined : dto.content,
+        secondaryContent: adminPriceOnly ? undefined : dto.secondaryContent,
+        otpExpiryMinutes: adminPriceOnly ? undefined : dto.otpExpiryMinutes,
         placeholdersJson:
           adminPriceOnly || !dto.placeholdersJson
             ? undefined

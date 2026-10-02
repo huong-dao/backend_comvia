@@ -15,10 +15,12 @@ export class OaTokenService {
     private readonly zaloOAuthClient: ZaloOAuthClient,
   ) {}
 
-  async getValidAccessToken(oaConnectionId: string): Promise<string> {
+  // Callers pass WorkspaceOa.id (Template/Campaign.oaConnectionId per ADR-001);
+  // the Zalo connection is resolved via its workspaceOaId.
+  async getValidAccessToken(workspaceOaId: string): Promise<string> {
     const connection =
       await this.prismaService.workspaceOaConnection.findUnique({
-        where: { id: oaConnectionId },
+        where: { workspaceOaId },
         select: {
           id: true,
           status: true,

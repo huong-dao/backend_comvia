@@ -3,6 +3,7 @@ import {
   CampaignRowStatus,
   CampaignStatus,
   MessageStatus,
+  OaConnectionStatus,
   Prisma,
   SendType,
   WalletTransactionType,
@@ -63,7 +64,7 @@ export class CampaignsService {
       template.unitPricePerMessage,
     );
 
-    return this.prismaService.campaign.create({
+    const campaign = await this.prismaService.campaign.create({
       data: {
         workspaceId,
         oaConnectionId: template.oaConnectionId,
@@ -76,6 +77,7 @@ export class CampaignsService {
       },
       include: this.campaignInclude(),
     });
+    return this.flattenCampaignOa(campaign);
   }
 
   list(workspaceId: string) {
@@ -92,10 +94,11 @@ export class CampaignsService {
 
   async get(workspaceId: string, campaignId: string) {
     const campaign = await this.findCampaignOrThrow(workspaceId, campaignId);
-    return this.prismaService.campaign.findUnique({
+    const found = await this.prismaService.campaign.findUnique({
       where: { id: campaign.id },
       include: this.campaignInclude(),
     });
+    return found ? this.flattenCampaignOa(found) : found;
   }
 
   async update(
@@ -108,11 +111,12 @@ export class CampaignsService {
       throw new BadRequestException('Cancelled campaign cannot be updated');
     }
 
-    return this.prismaService.campaign.update({
+    const updated = await this.prismaService.campaign.update({
       where: { id: campaign.id },
       data: { name: dto.name },
       include: this.campaignInclude(),
     });
+    return this.flattenCampaignOa(updated);
   }
 
   async remove(workspaceId: string, campaignId: string) {
@@ -482,7 +486,7 @@ export class CampaignsService {
     });
 
     return {
-      campaign: updated,
+      campaign: this.flattenCampaignOa(updated),
       holdTransactionId,
       sentCount: rows.length - failedCount,
       failedCount,
@@ -776,8 +780,10 @@ export class CampaignsService {
       );
     }
 
+    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
+    // connection is reached via workspaceOaId.
     const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { id: template.oaConnectionId },
+      where: { workspaceOaId: template.oaConnectionId },
       select: { status: true },
     });
     if (!oa || oa.status !== 'CONNECTED') {
@@ -847,9 +853,45 @@ export class CampaignsService {
           unitPricePerMessage: true,
         },
       },
+      // oaConnection is the WorkspaceOa profile (ADR-001); Zalo identifiers live
+      // on its nested connection row.
       oaConnection: {
-        select: { id: true, oaId: true, oaName: true, status: true },
+        select: {
+          id: true,
+          connection: {
+            select: { oaId: true, oaName: true, status: true },
+          },
+        },
       },
+    };
+  }
+
+  /** Flatten WorkspaceOa + its Zalo connection into the legacy oaConnection shape. */
+  private flattenCampaignOa<
+    T extends {
+      oaConnection: {
+        id: string;
+        connection: {
+          oaId: string;
+          oaName: string | null;
+          status: OaConnectionStatus;
+        } | null;
+      } | null;
+    },
+  >(campaign: T) {
+    const { oaConnection, ...rest } = campaign;
+    return {
+      ...rest,
+      oaConnection: oaConnection
+        ? {
+            id: oaConnection.id,
+            oaId: oaConnection.connection?.oaId ?? null,
+            oaName: oaConnection.connection?.oaName ?? null,
+            status:
+              oaConnection.connection?.status ??
+              ('NOT_CONNECTED' satisfies OaConnectionStatus),
+          }
+        : null,
     };
   }
 }
