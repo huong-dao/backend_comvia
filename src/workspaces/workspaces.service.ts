@@ -163,7 +163,7 @@ export class WorkspacesService {
   ) {
     const workspace = await this.prismaService.workspace.findUnique({
       where: { id: workspaceId },
-      select: { ownerUserId: true },
+      select: { ownerUserId: true, status: true },
     });
 
     if (!workspace) {
@@ -171,6 +171,11 @@ export class WorkspacesService {
     }
     if (workspace.ownerUserId !== userId) {
       throw new BadRequestException('Only workspace owner can update');
+    }
+    // PO decision (ISSUE-007): a DELETED workspace is immutable; ACTIVE,
+    // DISABLED and SUSPENDED stay editable by the owner.
+    if (workspace.status === WorkspaceStatus.DELETED) {
+      throw new BadRequestException('Workspace has been deleted');
     }
 
     if (dto.billing) {

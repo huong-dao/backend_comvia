@@ -325,8 +325,11 @@ describe('WalletService.getBalance monthly stats', () => {
     expect(lastMonthWhere.where.createdAt.gte.toISOString()).toBe(
       '2025-12-31T17:00:00.000Z',
     );
+    // Previous month window matches the elapsed length of the current month so
+    // far (now = Feb 15 17:00 VN => 14d17h in), anchored to last month's start:
+    // 2025-12-31T17:00Z + 14d17h = 2026-01-15T10:00:00Z (not the full month).
     expect(lastMonthWhere.where.createdAt.lt.toISOString()).toBe(
-      '2026-01-31T17:00:00.000Z',
+      '2026-01-15T10:00:00.000Z',
     );
   });
 
@@ -349,5 +352,85 @@ describe('WalletService.getBalance monthly stats', () => {
 
     expect(result).toBeNull();
     expect(groupBy).not.toHaveBeenCalled();
+  });
+});
+
+describe('WalletService monthly stats clamps the previous-month window', () => {
+  let service: WalletService;
+  const workspaceFindUnique = jest.fn();
+  const walletAccountFindUnique = jest.fn();
+  const groupBy = jest.fn<
+    Promise<unknown>,
+    [Prisma.WalletTransactionGroupByArgs]
+  >();
+
+  beforeAll(() => {
+    jest.useFakeTimers();
+    // 2026-03-31T05:00:00Z => 2026-03-31 12:00 VN. March is 30d11h in; last
+    // month (February) only has 28 days, so the previous window must clamp.
+    jest.setSystemTime(new Date('2026-03-31T05:00:00Z'));
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
+  beforeEach(async () => {
+    workspaceFindUnique.mockReset();
+    walletAccountFindUnique.mockReset();
+    groupBy.mockReset();
+    groupBy.mockResolvedValue([]);
+    workspaceFindUnique.mockResolvedValue({ ownerUserId: 'owner-1' });
+    walletAccountFindUnique.mockResolvedValue({
+      ownerUserId: 'owner-1',
+      balance: 0,
+      totalTopup: 0,
+      totalSpent: 0,
+      totalRefund: 0,
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        WalletService,
+        {
+          provide: PrismaService,
+          useValue: {
+            workspace: { findUnique: workspaceFindUnique },
+            walletAccount: { findUnique: walletAccountFindUnique },
+            walletTransaction: { groupBy },
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<WalletService>(WalletService);
+  });
+
+  it('clamps the previous window to the end of a shorter February', async () => {
+    await service.getBalance('ws-1');
+
+    const thisMonthWhere = groupBy.mock.calls[0][0] as {
+      where: { createdAt: { gte: Date; lt: Date } };
+    };
+    const lastMonthWhere = groupBy.mock.calls[1][0] as {
+      where: { createdAt: { gte: Date; lt: Date } };
+    };
+
+    // March 2026 in VN: start = 2026-03-01 00:00 +07 => 2026-02-28T17:00:00Z.
+    expect(thisMonthWhere.where.createdAt.gte.toISOString()).toBe(
+      '2026-02-28T17:00:00.000Z',
+    );
+    // Last month start = 2026-02-01 00:00 +07 => 2026-01-31T17:00:00Z.
+    expect(lastMonthWhere.where.createdAt.gte.toISOString()).toBe(
+      '2026-01-31T17:00:00.000Z',
+    );
+    // Elapsed in March exceeds February's length, so the previous window clamps
+    // to the start of this month (whole of February), not into March.
+    expect(lastMonthWhere.where.createdAt.lt.toISOString()).toBe(
+      '2026-02-28T17:00:00.000Z',
+    );
+    expect(lastMonthWhere.where.createdAt.lt.toISOString()).toBe(
+      thisMonthWhere.where.createdAt.gte.toISOString(),
+    );
   });
 });

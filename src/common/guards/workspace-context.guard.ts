@@ -4,21 +4,34 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { WorkspaceStatus } from '@prisma/client';
+import { ALLOW_WORKSPACE_STATUSES_KEY } from '../decorators/allow-workspace-statuses.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type WorkspaceContextRequest = {
   user?: { id?: string };
   params?: { workspaceId?: string };
-  workspace?: { id: string; status: string; ownerUserId: string };
+  workspace?: { id: string; status: WorkspaceStatus; ownerUserId: string };
   workspaceMember?: { id: string; role: string; status?: string };
 };
 
 @Injectable()
 export class WorkspaceContextGuard implements CanActivate {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<WorkspaceContextRequest>();
+
+    // Routes default to ACTIVE-only; management routes opt into more statuses
+    // via @AllowWorkspaceStatuses. DELETED is never opted in, so it stays blocked.
+    const allowedStatuses = this.reflector.getAllAndOverride<WorkspaceStatus[]>(
+      ALLOW_WORKSPACE_STATUSES_KEY,
+      [context.getHandler(), context.getClass()],
+    ) ?? [WorkspaceStatus.ACTIVE];
 
     const userId = req.user?.id;
     if (!userId) {
@@ -45,7 +58,7 @@ export class WorkspaceContextGuard implements CanActivate {
       throw new ForbiddenException('Access denied: workspace not found');
     }
 
-    if (workspace.status !== 'ACTIVE') {
+    if (!allowedStatuses.includes(workspace.status)) {
       throw new ForbiddenException(
         `Workspace is not active (${workspace.status})`,
       );

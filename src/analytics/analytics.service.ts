@@ -40,10 +40,12 @@ export class AnalyticsService {
   constructor(private readonly prismaService: PrismaService) {}
 
   /**
-   * Tính biên kỳ hiện tại và kỳ liền trước cùng độ dài theo timezone Asia/Ho_Chi_Minh.
+   * Tính biên kỳ hiện tại và kỳ liền trước theo timezone Asia/Ho_Chi_Minh.
    * - 7d: 7 ngày tính tới `now`; kỳ trước là 7 ngày liền trước.
-   * - month: từ đầu tháng (giờ VN) tới `now`; kỳ trước là trọn tháng liền trước.
-   * - year: từ đầu năm (giờ VN) tới `now`; kỳ trước là trọn năm liền trước.
+   * - month: từ đầu tháng (giờ VN) tới `now`; kỳ trước là đoạn cùng độ dài đã
+   *   trôi qua tính từ đầu tháng liền trước (xem `elapsedAlignedPrevious`).
+   * - year: từ đầu năm (giờ VN) tới `now`; kỳ trước là đoạn cùng độ dài đã trôi
+   *   qua tính từ đầu năm liền trước.
    *
    * `now` được tách thành tham số để unit test khóa được biên kỳ.
    */
@@ -73,7 +75,7 @@ export class AnalyticsService {
       const previousStart = utcInstantFromVnWall(vnYear, vnMonth - 1);
       return {
         current: { start: currentStart, end: now },
-        previous: { start: previousStart, end: currentStart },
+        previous: this.elapsedAlignedPrevious(currentStart, previousStart, now),
       };
     }
 
@@ -82,8 +84,27 @@ export class AnalyticsService {
     const previousStart = utcInstantFromVnWall(vnYear - 1, 0);
     return {
       current: { start: currentStart, end: now },
-      previous: { start: previousStart, end: currentStart },
+      previous: this.elapsedAlignedPrevious(currentStart, previousStart, now),
     };
+  }
+
+  /**
+   * Kỳ trước để so % thay đổi = đoạn CÙNG ĐỘ DÀI ĐÃ TRÔI QUA của kỳ hiện tại,
+   * bắt đầu từ đầu kỳ liền trước: [previousStart, previousStart + (now - currentStart)).
+   * Clamp điểm cuối tại `currentStart` để không vượt quá hết kỳ trước — ví dụ
+   * 31/3 so với tháng 2 chỉ có 28 ngày thì kỳ trước chốt hết tháng 2.
+   */
+  private elapsedAlignedPrevious(
+    currentStart: Date,
+    previousStart: Date,
+    now: Date,
+  ): PeriodRange {
+    const elapsedMs = now.getTime() - currentStart.getTime();
+    const previousEndMs = Math.min(
+      previousStart.getTime() + elapsedMs,
+      currentStart.getTime(),
+    );
+    return { start: previousStart, end: new Date(previousEndMs) };
   }
 
   async getOverview(

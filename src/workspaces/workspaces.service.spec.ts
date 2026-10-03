@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { BillingType } from '@prisma/client';
+import { BillingType, WorkspaceStatus } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
@@ -144,6 +144,72 @@ describe('WorkspacesService billing validation', () => {
       expect(prisma.workspace.create).not.toHaveBeenCalled();
     },
   );
+});
+
+/**
+ * Covers TICKET-002 / ISSUE-007 / BR-WS-04 / BR-WS-05 (PO decision update):
+ * Owner PATCH stays allowed while the workspace is ACTIVE, DISABLED or
+ * SUSPENDED, and is rejected once it is DELETED with a clear message. The gate
+ * lives in updateOwner itself (service layer), exercised here with Prisma
+ * mocked — no database needed.
+ */
+describe('WorkspacesService updateOwner status gate (TICKET-002)', () => {
+  const ownerUserId = 'user-1';
+  const workspaceId = 'ws-1';
+
+  let prisma: {
+    workspace: { findUnique: jest.Mock; update: jest.Mock };
+  };
+  let service: WorkspacesService;
+
+  beforeEach(() => {
+    prisma = {
+      workspace: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({
+          id: workspaceId,
+          name: 'WS',
+          slug: 'ws',
+          billingProfile: null,
+        }),
+      },
+    };
+    service = new WorkspacesService(
+      prisma as unknown as PrismaService,
+      {
+        write: jest.fn().mockResolvedValue(undefined),
+      } as unknown as AuditLogService,
+    );
+  });
+
+  it.each([
+    WorkspaceStatus.ACTIVE,
+    WorkspaceStatus.DISABLED,
+    WorkspaceStatus.SUSPENDED,
+  ])('allows owner PATCH when status is %s', async (status) => {
+    prisma.workspace.findUnique.mockResolvedValue({ ownerUserId, status });
+
+    const dto: UpdateWorkspaceDto = { name: 'Renamed' };
+
+    await expect(
+      service.updateOwner(ownerUserId, workspaceId, dto),
+    ).resolves.toBeDefined();
+    expect(prisma.workspace.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects owner PATCH when the workspace is DELETED', async () => {
+    prisma.workspace.findUnique.mockResolvedValue({
+      ownerUserId,
+      status: WorkspaceStatus.DELETED,
+    });
+
+    const dto: UpdateWorkspaceDto = { name: 'Renamed' };
+
+    await expect(
+      service.updateOwner(ownerUserId, workspaceId, dto),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.workspace.update).not.toHaveBeenCalled();
+  });
 });
 
 /**

@@ -38,7 +38,7 @@ describe('AnalyticsService', () => {
       expect(range.previous.end.toISOString()).toBe('2026-03-08T05:00:00.000Z');
     });
 
-    it('month: đầu tháng giờ VN tới now; kỳ trước là trọn tháng liền trước', () => {
+    it('month: đầu tháng giờ VN tới now; kỳ trước = đoạn cùng độ dài đã trôi qua từ đầu tháng trước', () => {
       const range = service.computePeriodRange(AnalyticsPeriod.MONTH, now);
 
       // 2026-03-01 00:00 +07:00 = 2026-02-28T17:00:00Z
@@ -50,10 +50,99 @@ describe('AnalyticsService', () => {
       expect(range.previous.start.toISOString()).toBe(
         '2026-01-31T17:00:00.000Z',
       );
-      expect(range.previous.end.toISOString()).toBe('2026-02-28T17:00:00.000Z');
+      // Đã trôi qua từ đầu tháng 3: 2026-02-28T17:00Z -> 2026-03-15T05:00Z = 14d12h.
+      // Kỳ trước = 2026-01-31T17:00Z + 14d12h = 2026-02-15T05:00:00Z (chưa chạm biên).
+      expect(range.previous.end.toISOString()).toBe('2026-02-15T05:00:00.000Z');
     });
 
-    it('year: đầu năm giờ VN tới now; kỳ trước là trọn năm liền trước', () => {
+    it('month giữa tháng: kỳ trước chưa clamp, kết thúc cùng mốc giờ đã trôi', () => {
+      // now = 2026-05-10 12:00 VN = 2026-05-10T05:00:00Z
+      const midMay = new Date('2026-05-10T05:00:00.000Z');
+      const range = service.computePeriodRange(AnalyticsPeriod.MONTH, midMay);
+
+      // 2026-05-01 00:00 +07:00 = 2026-04-30T17:00:00Z
+      expect(range.current.start.toISOString()).toBe(
+        '2026-04-30T17:00:00.000Z',
+      );
+      // 2026-04-01 00:00 +07:00 = 2026-03-31T17:00:00Z
+      expect(range.previous.start.toISOString()).toBe(
+        '2026-03-31T17:00:00.000Z',
+      );
+      // Đã trôi 9d12h từ đầu tháng 5 -> kỳ trước = 2026-03-31T17:00Z + 9d12h = 2026-04-10T05:00:00Z.
+      expect(range.previous.end.toISOString()).toBe('2026-04-10T05:00:00.000Z');
+    });
+
+    it('month 31/3: tháng 2 chỉ 28 ngày nên kỳ trước clamp hết tháng 2', () => {
+      // now = 2026-03-31 12:00 VN = 2026-03-31T05:00:00Z
+      const mar31 = new Date('2026-03-31T05:00:00.000Z');
+      const range = service.computePeriodRange(AnalyticsPeriod.MONTH, mar31);
+
+      // Kỳ trước bắt đầu đầu tháng 2 và clamp tại đầu tháng 3 (currentStart) = hết tháng 2.
+      expect(range.previous.start.toISOString()).toBe(
+        '2026-01-31T17:00:00.000Z',
+      );
+      expect(range.previous.end.toISOString()).toBe('2026-02-28T17:00:00.000Z');
+      // Clamp nghĩa là kỳ trước đúng bằng currentStart.
+      expect(range.previous.end.toISOString()).toBe(
+        range.current.start.toISOString(),
+      );
+    });
+
+    it('month ngày 1 giữa đêm: kỳ hiện tại và kỳ trước đều là cửa sổ ngắn', () => {
+      // now = 2026-03-01 00:30 VN = 2026-02-28T17:30:00Z
+      const firstOfMonth = new Date('2026-02-28T17:30:00.000Z');
+      const range = service.computePeriodRange(
+        AnalyticsPeriod.MONTH,
+        firstOfMonth,
+      );
+
+      // Trôi qua 30 phút từ đầu tháng 3.
+      expect(range.current.start.toISOString()).toBe(
+        '2026-02-28T17:00:00.000Z',
+      );
+      expect(range.previous.start.toISOString()).toBe(
+        '2026-01-31T17:00:00.000Z',
+      );
+      // Kỳ trước = đầu tháng 2 + 30 phút.
+      expect(range.previous.end.toISOString()).toBe('2026-01-31T17:30:00.000Z');
+    });
+
+    it('month tháng 1: kỳ trước là tháng 12 năm liền trước', () => {
+      // now = 2026-01-15 12:00 VN = 2026-01-15T05:00:00Z
+      const midJan = new Date('2026-01-15T05:00:00.000Z');
+      const range = service.computePeriodRange(AnalyticsPeriod.MONTH, midJan);
+
+      // 2026-01-01 00:00 +07:00 = 2025-12-31T17:00:00Z
+      expect(range.current.start.toISOString()).toBe(
+        '2025-12-31T17:00:00.000Z',
+      );
+      // 2025-12-01 00:00 +07:00 = 2025-11-30T17:00:00Z
+      expect(range.previous.start.toISOString()).toBe(
+        '2025-11-30T17:00:00.000Z',
+      );
+      // Đã trôi 14d12h -> kỳ trước = 2025-11-30T17:00Z + 14d12h = 2025-12-15T05:00:00Z.
+      expect(range.previous.end.toISOString()).toBe('2025-12-15T05:00:00.000Z');
+    });
+
+    it('month 29/2 năm nhuận: kỳ hiện tại tính tới 29/2, kỳ trước canh theo giờ đã trôi', () => {
+      // 2028 là năm nhuận; now = 2028-02-29 12:00 VN = 2028-02-29T05:00:00Z
+      const leapDay = new Date('2028-02-29T05:00:00.000Z');
+      const range = service.computePeriodRange(AnalyticsPeriod.MONTH, leapDay);
+
+      // 2028-02-01 00:00 +07:00 = 2028-01-31T17:00:00Z
+      expect(range.current.start.toISOString()).toBe(
+        '2028-01-31T17:00:00.000Z',
+      );
+      expect(range.current.end.toISOString()).toBe('2028-02-29T05:00:00.000Z');
+      // 2028-01-01 00:00 +07:00 = 2027-12-31T17:00:00Z
+      expect(range.previous.start.toISOString()).toBe(
+        '2027-12-31T17:00:00.000Z',
+      );
+      // Đã trôi 28d12h -> kỳ trước = 2027-12-31T17:00Z + 28d12h = 2028-01-29T05:00:00Z (chưa clamp).
+      expect(range.previous.end.toISOString()).toBe('2028-01-29T05:00:00.000Z');
+    });
+
+    it('year: đầu năm giờ VN tới now; kỳ trước = đoạn cùng độ dài đã trôi qua từ đầu năm trước', () => {
       const range = service.computePeriodRange(AnalyticsPeriod.YEAR, now);
 
       // 2026-01-01 00:00 +07:00 = 2025-12-31T17:00:00Z
@@ -65,7 +154,9 @@ describe('AnalyticsService', () => {
       expect(range.previous.start.toISOString()).toBe(
         '2024-12-31T17:00:00.000Z',
       );
-      expect(range.previous.end.toISOString()).toBe('2025-12-31T17:00:00.000Z');
+      // Khoảng đã trôi của 2026 (2025 thường, 365 ngày) đặt lên đầu năm 2025:
+      // now - 365 ngày = 2025-03-15T05:00:00Z.
+      expect(range.previous.end.toISOString()).toBe('2025-03-15T05:00:00.000Z');
     });
   });
 

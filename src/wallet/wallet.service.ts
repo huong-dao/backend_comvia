@@ -128,12 +128,29 @@ export class WalletService {
   private async computeMonthlyStats(
     workspaceId: string,
   ): Promise<MonthlyStats> {
+    const now = new Date();
     const { startOfThisMonth, startOfLastMonth, startOfNextMonth } =
-      this.getVnMonthBoundaries(new Date());
+      this.getVnMonthBoundaries(now);
+
+    // Previous month is compared over the SAME elapsed length as the current
+    // month so far: [startOfLastMonth, startOfLastMonth + (now - startOfThisMonth)),
+    // clamped at startOfThisMonth so it never spills past the end of last month
+    // (e.g. Mar 31 vs a 28-day February clamps to the whole of February).
+    const elapsedMs = now.getTime() - startOfThisMonth.getTime();
+    const endOfLastMonthWindow = new Date(
+      Math.min(
+        startOfLastMonth.getTime() + elapsedMs,
+        startOfThisMonth.getTime(),
+      ),
+    );
 
     const [thisMonth, lastMonth] = await Promise.all([
       this.sumByTypeInRange(workspaceId, startOfThisMonth, startOfNextMonth),
-      this.sumByTypeInRange(workspaceId, startOfLastMonth, startOfThisMonth),
+      this.sumByTypeInRange(
+        workspaceId,
+        startOfLastMonth,
+        endOfLastMonthWindow,
+      ),
     ]);
 
     const toppedUpThis = thisMonth.get(WalletTransactionType.TOPUP_CREDIT) ?? 0;

@@ -9,7 +9,8 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { MemberRole } from '@prisma/client';
+import { MemberRole, WorkspaceStatus } from '@prisma/client';
+import { AllowWorkspaceStatuses } from '../common/decorators/allow-workspace-statuses.decorator';
 import { WorkspaceRoles } from '../common/decorators/workspace-roles.decorator';
 import { WorkspaceContextGuard } from '../common/guards/workspace-context.guard';
 import { WorkspaceRolesGuard } from '../common/guards/workspace-roles.guard';
@@ -45,6 +46,11 @@ export class WorkspacesController {
   @Get(':workspaceId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
+  @AllowWorkspaceStatuses(
+    WorkspaceStatus.ACTIVE,
+    WorkspaceStatus.DISABLED,
+    WorkspaceStatus.SUSPENDED,
+  )
   async getDetail(
     @Request() req: { workspaceMember?: { role: MemberRole } },
     @Param('workspaceId') workspaceId: string,
@@ -56,6 +62,11 @@ export class WorkspacesController {
   @Patch(':workspaceId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
+  @AllowWorkspaceStatuses(
+    WorkspaceStatus.ACTIVE,
+    WorkspaceStatus.DISABLED,
+    WorkspaceStatus.SUSPENDED,
+  )
   updateOwner(
     @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,

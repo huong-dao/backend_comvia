@@ -157,6 +157,19 @@ describe('GET /workspaces/:workspaceId (e2e)', () => {
     expect(body.billingProfile.updatedAt).toBeUndefined();
   });
 
+  // ISSUE-007 / TICKET-002: OWNER can still READ a DISABLED or SUSPENDED
+  // workspace (detail route opts into these via @AllowWorkspaceStatuses).
+  it.each(['DISABLED', 'SUSPENDED'])(
+    'OWNER gets 200 when the workspace is %s',
+    async (status) => {
+      currentWorkspaceRow = { ...workspaceRow, status };
+
+      const res = await request(app.getHttpServer()).get(path).expect(200);
+
+      expect((res.body as { status: string }).status).toBe(status);
+    },
+  );
+
   it('MEMBER (ACTIVE) gets 403 from WorkspaceRolesGuard', async () => {
     prismaMock.workspaceMember.findUnique.mockResolvedValue({
       id: 'wm-2',
@@ -169,6 +182,15 @@ describe('GET /workspaces/:workspaceId (e2e)', () => {
 
   it('non-member gets 403 from WorkspaceContextGuard', async () => {
     prismaMock.workspaceMember.findUnique.mockResolvedValue(null);
+
+    await request(app.getHttpServer()).get(path).expect(403);
+  });
+
+  // ISSUE-007 / TICKET-002: a DELETED workspace is not readable via GET detail.
+  // The existing WorkspaceContextGuard rejects any non-ACTIVE status, so GET
+  // detail stays consistent with PATCH without changing getDetail itself.
+  it('OWNER gets 403 when the workspace is DELETED', async () => {
+    currentWorkspaceRow = { ...workspaceRow, status: 'DELETED' };
 
     await request(app.getHttpServer()).get(path).expect(403);
   });
