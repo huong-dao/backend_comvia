@@ -155,12 +155,22 @@ async function processOwner(prisma, ownerUserId, apply) {
     return;
   }
 
-  if (!running.equals(wallet.balance)) {
+  // VND không có phần thập phân, nên chênh lệch nhỏ hơn 1đ chắc chắn chỉ là
+  // nhiễu dấu phẩy động từ bug tính VAT cũ (đã sửa ở topups.service.ts),
+  // không phải có giao dịch thật bị thiếu/thừa — cho phép dung sai đó.
+  const diff = running.sub(wallet.balance).abs();
+  const balanceChanged = !diff.isZero();
+  if (diff.greaterThanOrEqualTo(1)) {
     console.error(
-      `  DỪNG: số dư tính lại (${running.toString()}) khác số dư hiện tại (${wallet.balance.toString()}) — ` +
-        'có khả năng có hoạt động khác xen vào lúc chạy script, cần xem tay, không ghi gì.',
+      `  DỪNG: số dư tính lại (${running.toString()}) khác số dư hiện tại (${wallet.balance.toString()}) ` +
+        `quá 1đ (chênh ${diff.toString()}) — có khả năng có hoạt động khác xen vào lúc chạy script, cần xem tay, không ghi gì.`,
     );
     return;
+  }
+  if (balanceChanged) {
+    console.log(
+      `  Số dư hiện tại có nhiễu dấu phẩy động (${wallet.balance.toString()}) sẽ được làm sạch về ${running.toString()}.`,
+    );
   }
 
   console.log(`  Sẽ xóa ${adjustmentsForOwner.length} dòng điều chỉnh.`);
@@ -172,7 +182,7 @@ async function processOwner(prisma, ownerUserId, apply) {
       );
     }
   }
-  console.log(`  Số dư cuối cùng không đổi: ${running.toString()}`);
+  console.log(`  Số dư cuối cùng: ${running.toString()}`);
 
   if (!apply) {
     return;
@@ -194,6 +204,13 @@ async function processOwner(prisma, ownerUserId, apply) {
             ? { note: `Nạp tiền từ Pay2S: ${u.transactionCode.replace('TX_', '')}` }
             : {}),
         },
+      });
+    }
+
+    if (balanceChanged) {
+      await tx.walletAccount.update({
+        where: { ownerUserId },
+        data: { balance: running },
       });
     }
 
