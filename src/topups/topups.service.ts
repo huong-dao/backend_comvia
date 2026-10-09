@@ -317,9 +317,11 @@ export class TopupsService {
       topupCode: topup.topupCode,
       status: topup.status,
       paidAt: topup.paidAt,
-      amountExclVat: topup.amountExclVat,
-      vatAmount: topup.vatAmount,
-      amountInclVat: topup.amountInclVat,
+      // Prisma.Decimal.toJSON() trả về string — ép về number để đúng hợp đồng
+      // với FE (TopupStatusResponse khai báo amount* là number).
+      amountExclVat: Number(topup.amountExclVat),
+      vatAmount: Number(topup.vatAmount),
+      amountInclVat: Number(topup.amountInclVat),
     };
   }
 
