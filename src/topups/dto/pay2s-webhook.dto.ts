@@ -44,5 +44,5 @@ export class Pay2SWebhookDto {
 
   @IsOptional()
   @IsString()
-  signature?: string;
+  m2signature?: string;
 }

@@ -17,7 +17,24 @@ import {
 import * as QRCode from 'qrcode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { Pay2SWebhookDto } from './dto/pay2s-webhook.dto';
+import {
+  Pay2sBankTransactionDto,
+  Pay2sBankTransactionWebhookDto,
+} from './dto/pay2s-bank-transaction-webhook.dto';
+
+type TopupRequestRecord = {
+  id: string;
+  topupCode: string;
+  ownerUserId: string;
+  workspaceId: string;
+  status: TopupStatus;
+  amountExclVat: Prisma.Decimal;
+  vatAmount: Prisma.Decimal;
+  amountInclVat: Prisma.Decimal;
+};
 
 @Injectable()
 export class TopupsService {
@@ -358,36 +375,60 @@ export class TopupsService {
     };
   }
 
-  async handlePay2sWebhook(dto: Pay2SWebhookDto) {
-    // 0. Xác thực chữ ký — bắt buộc, vì route này public, không có bước này
-    //    ai cũng có thể giả webhook để tự cộng tiền vào ví.
-    const pay2sConfig = this.configService.get('pay2s');
-    if (!pay2sConfig) {
-      console.error('Pay2S Webhook: cấu hình Pay2S không được tìm thấy');
-      return { status: 'error', message: 'Pay2S config not found' };
+  /**
+   * Nhánh 1: "Instant Payment Notification" gắn với Collection Link —
+   * body phẳng (orderId/resultCode/m2signature). Xem
+   * https://docs.pay2s.vn/api/instant-payment-notification.html
+   */
+  async handlePay2sWebhook(rawBody: Record<string, unknown>) {
+    const dto = plainToInstance(Pay2SWebhookDto, rawBody);
+    const errors = await validate(dto, { whitelist: true });
+    if (errors.length > 0) {
+      console.error('Pay2S IPN: payload không hợp lệ', errors);
+      return { success: false, message: 'Invalid payload' };
     }
 
-    const { signature, ...signedFields } = dto;
-    const signatureParams = Object.fromEntries(
-      Object.entries(signedFields)
-        .filter(([, value]) => value !== undefined && value !== null)
-        .map(([key, value]) => [key, String(value)]),
-    );
+    const pay2sConfig = this.configService.get('pay2s');
+    if (!pay2sConfig) {
+      console.error('Pay2S IPN: cấu hình Pay2S không được tìm thấy');
+      return { success: false, message: 'Pay2S config not found' };
+    }
+
+    // 0. Xác thực chữ ký m2signature — bắt buộc, vì route này public, không
+    //    có bước này ai cũng có thể giả webhook để tự cộng tiền vào ví.
+    // Công thức theo tài liệu Pay2S: nối accessKey + toàn bộ field của IPN
+    // (trừ m2signature), sort theo tên key, rồi HMAC-SHA256 bằng apiSecret.
+    const { m2signature, ...signedFields } = dto;
+    const signatureParams: Record<string, string> = {
+      accessKey: pay2sConfig.apiKey,
+      amount: signedFields.amount,
+      extraData: signedFields.extraData ?? '',
+      message: signedFields.message,
+      orderId: signedFields.orderId,
+      orderInfo: signedFields.orderInfo,
+      orderType: signedFields.orderType,
+      partnerCode: signedFields.partnerCode,
+      payType: signedFields.payType,
+      requestId: signedFields.requestId,
+      responseTime: signedFields.responseTime,
+      resultCode: String(signedFields.resultCode),
+      transId: signedFields.transId,
+    };
 
     if (
-      !signature ||
-      !verifyPay2sSignature(signatureParams, signature, pay2sConfig.apiSecret)
+      !m2signature ||
+      !verifyPay2sSignature(signatureParams, m2signature, pay2sConfig.apiSecret)
     ) {
       console.error(
-        `Pay2S Webhook: chữ ký không hợp lệ cho orderId=${dto.orderId}`,
+        `Pay2S IPN: chữ ký không hợp lệ cho orderId=${dto.orderId}`,
       );
-      return { status: 'error', message: 'Invalid signature' };
+      return { success: false, message: 'Invalid signature' };
     }
 
     // 1. Kiểm tra trạng thái giao dịch từ Pay2S
     if (dto.resultCode !== 0) {
-      console.error(`Pay2S Webhook báo lỗi: ${dto.message}`);
-      return { status: 'error', message: 'Transaction failed from provider' };
+      console.error(`Pay2S IPN báo lỗi: ${dto.message}`);
+      return { success: true }; // Nhận đã biết, không cần Pay2S gửi lại
     }
 
     // 2. Tìm topup request trong DB (orderId từ Pay2S = topupCode đã gửi khi tạo link)
@@ -395,32 +436,121 @@ export class TopupsService {
       where: { topupCode: dto.orderId },
     });
 
-    if (!topup) throw new NotFoundException('Topup request không tồn tại');
-    if (topup.status === 'PAID')
-      return { status: 'success', message: 'Already processed' };
+    if (!topup) {
+      console.error(`Pay2S IPN: không tìm thấy topup orderId=${dto.orderId}`);
+      return { success: false, message: 'Order not found' };
+    }
 
     const amountPaid = new Prisma.Decimal(dto.amount);
 
     // 2b. Đối chiếu số tiền Pay2S báo về với số tiền thực tế của đơn nạp,
     //     tránh trường hợp webhook (giả hoặc lỗi) báo sai số tiền.
-    if (!amountPaid.equals(topup.amountInclVat)) {
+    if (topup.status !== 'PAID' && !amountPaid.equals(topup.amountInclVat)) {
       console.error(
-        `Pay2S Webhook: số tiền không khớp cho orderId=${dto.orderId}. ` +
+        `Pay2S IPN: số tiền không khớp cho orderId=${dto.orderId}. ` +
           `Nhận ${amountPaid.toString()}, mong đợi ${topup.amountInclVat.toString()}`,
       );
-      return { status: 'error', message: 'Amount mismatch' };
+      return { success: false, message: 'Amount mismatch' };
     }
 
-    // 3. Thực hiện Transaction (chỉ cộng ví một lần — trước đây có 2 lần update → nhân đôi số dư)
+    await this.creditTopupIfPending(topup, amountPaid, dto.transId);
+    return { success: true };
+  }
+
+  /**
+   * Nhánh 2: "WebHook" báo biến động tài khoản ngân hàng — body có mảng
+   * `transactions`, xác thực bằng header Authorization: Bearer <token>
+   * (không phải field `checksum` trong body — Pay2S không công bố công
+   * thức tính checksum này). Xem mục WebHook > Tài liệu kỹ thuật.
+   */
+  async handlePay2sBankTransactionWebhook(
+    rawTransactions: unknown[],
+    authorization?: string,
+  ) {
+    const pay2sConfig = this.configService.get('pay2s');
+    const expectedTokens: string[] = pay2sConfig?.webhookTokens || [];
+
+    const token = authorization?.replace(/^Bearer\s+/i, '').trim();
+    if (!token || !expectedTokens.includes(token)) {
+      console.error('Pay2S WebHook: token xác thực không hợp lệ');
+      return { success: false, message: 'Invalid webhook token' };
+    }
+
+    const payload = plainToInstance(Pay2sBankTransactionWebhookDto, {
+      transactions: rawTransactions,
+    });
+    const errors = await validate(payload, { whitelist: true });
+    if (errors.length > 0) {
+      console.error('Pay2S WebHook: payload không hợp lệ', errors);
+      return { success: false, message: 'Invalid payload' };
+    }
+
+    for (const transaction of payload.transactions) {
+      await this.processPay2sBankTransaction(transaction);
+    }
+
+    return { success: true };
+  }
+
+  private async processPay2sBankTransaction(tx: Pay2sBankTransactionDto) {
+    if (tx.transferType !== 'IN') return; // chỉ quan tâm tiền vào
+
+    const content = tx.content?.trim() ?? '';
+    const CODE_PREFIX = 'COMVIA';
+    if (!content.startsWith(CODE_PREFIX)) {
+      console.error(
+        `Pay2S WebHook: content không đúng định dạng đơn nạp: "${content}"`,
+      );
+      return;
+    }
+
+    // orderInfo lúc tạo Collection Link = topupCode bỏ ký tự đặc biệt và
+    // chữ "TOPUP" (xem createTopupWithPay2s) → suy ngược lại topupCode gốc.
+    const topupCode = `COMVIA_TOPUP_${content.slice(CODE_PREFIX.length)}`;
+
+    const topup = await this.prismaService.topupRequest.findUnique({
+      where: { topupCode },
+    });
+    if (!topup) {
+      console.error(
+        `Pay2S WebHook: không tìm thấy topup cho content="${content}" (topupCode=${topupCode})`,
+      );
+      return;
+    }
+
+    const amountPaid = new Prisma.Decimal(tx.transferAmount);
+    if (topup.status !== 'PAID' && !amountPaid.equals(topup.amountInclVat)) {
+      console.error(
+        `Pay2S WebHook: số tiền không khớp cho topupCode=${topupCode}. ` +
+          `Nhận ${amountPaid.toString()}, mong đợi ${topup.amountInclVat.toString()}`,
+      );
+      return;
+    }
+
+    await this.creditTopupIfPending(
+      topup,
+      amountPaid,
+      tx.transactionNumber ?? String(tx.id),
+    );
+  }
+
+  /**
+   * Cộng ví + sinh Order/Invoice cho 1 topup, chỉ thực hiện đúng 1 lần dù
+   * được gọi nhiều lần (IPN và WebHook có thể cùng báo về 1 giao dịch,
+   * hoặc Pay2S tự retry) nhờ update có điều kiện `status: { not: 'PAID' }`.
+   */
+  private async creditTopupIfPending(
+    topup: TopupRequestRecord,
+    amountPaid: Prisma.Decimal,
+    paymentRef: string,
+  ) {
     return await this.prismaService.$transaction(async (tx) => {
-      // Cập nhật có điều kiện (chỉ chuyển trạng thái nếu chưa PAID) để tránh
-      // cộng ví 2 lần khi Pay2S gọi IPN trùng lặp gần như đồng thời.
       const updateResult = await tx.topupRequest.updateMany({
         where: { id: topup.id, status: { not: 'PAID' } },
         data: {
           status: 'PAID',
           paidAt: new Date(),
-          paymentRef: dto.transId,
+          paymentRef,
         },
       });
 
