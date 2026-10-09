@@ -24,6 +24,11 @@ import {
   Pay2sBankTransactionDto,
   Pay2sBankTransactionWebhookDto,
 } from './dto/pay2s-bank-transaction-webhook.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
 
 type TopupRequestRecord = {
   id: string;
@@ -41,6 +46,7 @@ export class TopupsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   private generateCode(prefix: string) {
@@ -455,7 +461,12 @@ export class TopupsService {
       return { success: false, message: 'Amount mismatch' };
     }
 
-    await this.creditTopupIfPending(topup, amountPaid, dto.transId);
+    await this.creditTopupIfPending(
+      topup,
+      amountPaid,
+      dto.transId,
+      'pay2s_ipn',
+    );
     return { success: true };
   }
 
@@ -533,6 +544,7 @@ export class TopupsService {
       topup,
       amountPaid,
       tx.transactionNumber ?? String(tx.id),
+      'pay2s_bank_webhook',
     );
   }
 
@@ -545,6 +557,7 @@ export class TopupsService {
     topup: TopupRequestRecord,
     amountPaid: Prisma.Decimal,
     paymentRef: string,
+    source: 'pay2s_ipn' | 'pay2s_bank_webhook',
   ) {
     return await this.prismaService.$transaction(async (tx) => {
       const updateResult = await tx.topupRequest.updateMany({
@@ -559,6 +572,21 @@ export class TopupsService {
       if (updateResult.count === 0) {
         return { status: 'success', message: 'Already processed' };
       }
+
+      await this.auditLogService.write({
+        actorUserId: topup.ownerUserId,
+        workspaceId: topup.workspaceId,
+        action: AUDIT_ACTIONS.TOPUP_PAID,
+        resourceType: AUDIT_RESOURCE_TYPES.TOPUP_REQUEST,
+        resourceId: topup.id,
+        metadataJson: {
+          topupCode: topup.topupCode,
+          amount: amountPaid.toNumber(),
+          paymentRef,
+          source,
+        },
+        tx,
+      });
 
       const walletBefore = await tx.walletAccount.findUnique({
         where: { ownerUserId: topup.ownerUserId },
