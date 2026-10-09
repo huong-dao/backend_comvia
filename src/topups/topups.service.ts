@@ -184,8 +184,8 @@ export class TopupsService {
             32,
           ), // Giới hạn 10-32 ký tự, chỉ chấp nhậ ký tự chữ + số, không dấu gạch ngang hoặc đặc biêt.
         bankAccounts,
-        redirectUrl: `${process.env.FRONTEND_URL || 'https://localhost:3000'}/topup/success`, // URL chuyển hướng sau khi thanh toán trên màn hình pay2s
-        ipnUrl: `${process.env.BACKEND_URL || 'https://localhost:3001'}/api/v1/webhooks/pay2s`, // API nhận kết quả thanh toán của đối tác.
+        redirectUrl: `${process.env.FRONTEND_URL}/topup/success`, // URL chuyển hướng sau khi thanh toán trên màn hình pay2s
+        ipnUrl: `${process.env.BACKEND_URL}/api/v1/webhooks/pay2s`, // API nhận kết quả thanh toán của đối tác.
         requestType: 'pay2s',
         pay2sConfigData: {
           partner_code: pay2sConfig.partnerCode,
