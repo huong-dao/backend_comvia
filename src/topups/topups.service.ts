@@ -125,8 +125,10 @@ export class TopupsService {
   ) {
     const vatRate = dto.vatRate ?? 10;
     const amountExcl = dto.amountExclVat;
-    const amountIncl = amountExcl * (1 + vatRate / 100);
-    const vatAmount = amountIncl - amountExcl;
+    // Tính vatAmount trước bằng round() rồi cộng dồn, tránh lỗi làm tròn dấu
+    // phẩy động của JS khi nhân trực tiếp (vd 1500000 * 1.1 = 1650000.0000000002).
+    const vatAmount = Math.round((amountExcl * vatRate) / 100);
+    const amountIncl = amountExcl + vatAmount;
 
     // Ensure wallet exists
     await this.prismaService.walletAccount.upsert({
