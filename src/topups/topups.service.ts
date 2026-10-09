@@ -368,8 +368,9 @@ export class TopupsService {
       data: topups.map((topup) => ({
         id: topup.id,
         topupCode: topup.topupCode,
-        amountExclVat: topup.amountExclVat,
-        amountInclVat: topup.amountInclVat,
+        amountExclVat: Number(topup.amountExclVat),
+        vatAmount: Number(topup.vatAmount),
+        amountInclVat: Number(topup.amountInclVat),
         status: topup.status,
         paidAt: topup.paidAt,
         createdAt: topup.createdAt,
