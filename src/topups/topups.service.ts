@@ -11,6 +11,7 @@ import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
 import {
   createPay2sCollectionLink,
   Pay2sBankAccount,
+  verifyPay2sSignature,
 } from '../integrations/pay2s/pay2s.util';
 
 import * as QRCode from 'qrcode';
@@ -358,6 +359,31 @@ export class TopupsService {
   }
 
   async handlePay2sWebhook(dto: Pay2SWebhookDto) {
+    // 0. Xác thực chữ ký — bắt buộc, vì route này public, không có bước này
+    //    ai cũng có thể giả webhook để tự cộng tiền vào ví.
+    const pay2sConfig = this.configService.get('pay2s');
+    if (!pay2sConfig) {
+      console.error('Pay2S Webhook: cấu hình Pay2S không được tìm thấy');
+      return { status: 'error', message: 'Pay2S config not found' };
+    }
+
+    const { signature, ...signedFields } = dto;
+    const signatureParams = Object.fromEntries(
+      Object.entries(signedFields)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => [key, String(value)]),
+    );
+
+    if (
+      !signature ||
+      !verifyPay2sSignature(signatureParams, signature, pay2sConfig.apiSecret)
+    ) {
+      console.error(
+        `Pay2S Webhook: chữ ký không hợp lệ cho orderId=${dto.orderId}`,
+      );
+      return { status: 'error', message: 'Invalid signature' };
+    }
+
     // 1. Kiểm tra trạng thái giao dịch từ Pay2S
     if (dto.resultCode !== 0) {
       console.error(`Pay2S Webhook báo lỗi: ${dto.message}`);
@@ -375,8 +401,33 @@ export class TopupsService {
 
     const amountPaid = new Prisma.Decimal(dto.amount);
 
+    // 2b. Đối chiếu số tiền Pay2S báo về với số tiền thực tế của đơn nạp,
+    //     tránh trường hợp webhook (giả hoặc lỗi) báo sai số tiền.
+    if (!amountPaid.equals(topup.amountInclVat)) {
+      console.error(
+        `Pay2S Webhook: số tiền không khớp cho orderId=${dto.orderId}. ` +
+          `Nhận ${amountPaid.toString()}, mong đợi ${topup.amountInclVat.toString()}`,
+      );
+      return { status: 'error', message: 'Amount mismatch' };
+    }
+
     // 3. Thực hiện Transaction (chỉ cộng ví một lần — trước đây có 2 lần update → nhân đôi số dư)
     return await this.prismaService.$transaction(async (tx) => {
+      // Cập nhật có điều kiện (chỉ chuyển trạng thái nếu chưa PAID) để tránh
+      // cộng ví 2 lần khi Pay2S gọi IPN trùng lặp gần như đồng thời.
+      const updateResult = await tx.topupRequest.updateMany({
+        where: { id: topup.id, status: { not: 'PAID' } },
+        data: {
+          status: 'PAID',
+          paidAt: new Date(),
+          paymentRef: dto.transId,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        return { status: 'success', message: 'Already processed' };
+      }
+
       const walletBefore = await tx.walletAccount.findUnique({
         where: { ownerUserId: topup.ownerUserId },
       });
@@ -386,15 +437,6 @@ export class TopupsService {
 
       const balanceBefore = walletBefore.balance;
       const balanceAfter = balanceBefore.add(amountPaid);
-
-      await tx.topupRequest.update({
-        where: { id: topup.id },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-          paymentRef: dto.transId,
-        },
-      });
 
       await tx.walletAccount.update({
         where: { ownerUserId: topup.ownerUserId },
