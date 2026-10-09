@@ -573,6 +573,12 @@ export class TopupsService {
         return { status: 'success', message: 'Already processed' };
       }
 
+      // Số tiền khách thực chuyển (amountPaid) = amountInclVat, đã bao gồm VAT.
+      // Phần VAT công ty phải giữ lại để nộp thuế, KHÔNG đưa vào số dư khả
+      // dụng của khách — nếu không thì VAT chỉ còn là con số trên hóa đơn,
+      // còn thực chất công ty tự bỏ tiền ra bù phần thuế đó.
+      const creditAmount = topup.amountExclVat;
+
       await this.auditLogService.write({
         actorUserId: topup.ownerUserId,
         workspaceId: topup.workspaceId,
@@ -581,7 +587,8 @@ export class TopupsService {
         resourceId: topup.id,
         metadataJson: {
           topupCode: topup.topupCode,
-          amount: amountPaid.toNumber(),
+          amountPaid: amountPaid.toNumber(),
+          creditedToWallet: creditAmount.toNumber(),
           paymentRef,
           source,
         },
@@ -596,13 +603,13 @@ export class TopupsService {
       }
 
       const balanceBefore = walletBefore.balance;
-      const balanceAfter = balanceBefore.add(amountPaid);
+      const balanceAfter = balanceBefore.add(creditAmount);
 
       await tx.walletAccount.update({
         where: { ownerUserId: topup.ownerUserId },
         data: {
           balance: balanceAfter,
-          totalTopup: { increment: amountPaid },
+          totalTopup: { increment: creditAmount },
         },
       });
 
@@ -612,12 +619,12 @@ export class TopupsService {
           ownerUserId: topup.ownerUserId,
           workspaceId: topup.workspaceId,
           type: 'TOPUP_CREDIT',
-          amount: amountPaid,
+          amount: creditAmount,
           balanceBefore,
           balanceAfter,
           sourceType: 'TOPUP_REQUEST',
           sourceId: topup.id,
-          note: `Nạp tiền từ Pay2S: ${topup.topupCode}`,
+          note: `Nạp tiền từ Pay2S: ${topup.topupCode} (đã chuyển khoản ${amountPaid.toString()}, gồm ${topup.vatAmount.toString()} VAT)`,
         },
       });
 
