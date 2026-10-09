@@ -31,7 +31,7 @@ export class EmailService {
     const smtpPass = this.configService.get<string>('email.smtpPass');
 
     if (!smtpUser || !smtpPass) {
-      throw new InternalServerErrorException('SMTP is not configured');
+      throw new InternalServerErrorException('SMTP chưa được cấu hình');
     }
 
     this.transporter = nodemailer.createTransport({
@@ -76,7 +76,7 @@ export class EmailService {
       this.logger.error(
         `[Email] Failed to send OTP to ${input.to}: ${String(error)}`,
       );
-      throw new InternalServerErrorException('Failed to send OTP email');
+      throw new InternalServerErrorException('Gửi email OTP thất bại');
     }
   }
 }

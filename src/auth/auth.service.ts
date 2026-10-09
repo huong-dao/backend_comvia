@@ -31,7 +31,7 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Email is already registered');
+      throw new ConflictException('Email đã được đăng ký');
     }
 
     const passwordHash = await bcrypt.hash(registerDto.password, SALT_ROUNDS);
@@ -88,7 +88,7 @@ export class AuthService {
     });
 
     if (!user || !user.credential) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -97,11 +97,11 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('User is not verified');
+      throw new UnauthorizedException('Tài khoản chưa được xác thực');
     }
 
     const payload: JwtPayload = {
@@ -141,7 +141,7 @@ export class AuthService {
   async verifyOtp(dto: OtpVerifyDto) {
     // only REGISTER flow is handled now
     if (dto.purpose !== 'REGISTER') {
-      throw new UnauthorizedException('Unsupported OTP purpose');
+      throw new UnauthorizedException('Mục đích OTP không được hỗ trợ');
     }
 
     const user = await this.otpService.verifyOtp(

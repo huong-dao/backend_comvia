@@ -61,10 +61,10 @@ export class OtpService {
   private formatCooldownMessage(remainingSeconds: number): string {
     if (remainingSeconds >= 60) {
       const minutes = Math.ceil(remainingSeconds / 60);
-      return `OTP resend cooldown: wait ${minutes} minute(s)`;
+      return `Vui lòng đợi ${minutes} phút trước khi gửi lại OTP`;
     }
 
-    return `OTP resend cooldown: wait ${Math.ceil(remainingSeconds)}s`;
+    return `Vui lòng đợi ${Math.ceil(remainingSeconds)} giây trước khi gửi lại OTP`;
   }
 
   private async assertResendAllowed(
@@ -85,9 +85,7 @@ export class OtpService {
     const elapsedSeconds = (Date.now() - last.createdAt.getTime()) / 1000;
     if (elapsedSeconds < this.resendCooldownSeconds) {
       throw new BadRequestException(
-        this.formatCooldownMessage(
-          this.resendCooldownSeconds - elapsedSeconds,
-        ),
+        this.formatCooldownMessage(this.resendCooldownSeconds - elapsedSeconds),
       );
     }
   }
@@ -186,7 +184,7 @@ export class OtpService {
     });
 
     if (!otpRequest) {
-      throw new BadRequestException('OTP not found or expired');
+      throw new BadRequestException('Không tìm thấy OTP hoặc OTP đã hết hạn');
     }
 
     if (otpRequest.expiredAt.getTime() < Date.now()) {
@@ -194,12 +192,14 @@ export class OtpService {
         where: { id: otpRequest.id },
         data: { status: 'EXPIRED' as OtpStatus },
       });
-      throw new BadRequestException('OTP expired');
+      throw new BadRequestException('OTP đã hết hạn');
     }
 
     const isLocked = otpRequest.status === 'LOCKED';
     if (isLocked) {
-      throw new BadRequestException('OTP verification temporarily locked');
+      throw new BadRequestException(
+        'OTP đang tạm thời bị khóa do nhập sai quá nhiều lần',
+      );
     }
 
     const otpCodeHash = sha256Hex(otpCode);
@@ -217,7 +217,9 @@ export class OtpService {
       });
 
       throw new UnauthorizedException(
-        shouldLock ? 'Too many attempts' : 'Invalid OTP',
+        shouldLock
+          ? 'Nhập sai quá nhiều lần, OTP đã bị khóa'
+          : 'Mã OTP không đúng',
       );
     }
 
@@ -247,7 +249,9 @@ export class OtpService {
     });
 
     if (!user) {
-      throw new BadRequestException('User not found for OTP');
+      throw new BadRequestException(
+        'Không tìm thấy người dùng tương ứng với OTP',
+      );
     }
 
     return user;
