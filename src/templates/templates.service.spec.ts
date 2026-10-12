@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { Prisma, TemplateType } from '@prisma/client';
+import { TemplateType } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from './templates.service';
@@ -127,11 +127,12 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
     expect(template.create).not.toHaveBeenCalled();
   });
 
-  it('creates an OTP template with null content/placeholders and keeps otpExpiryMinutes', async () => {
+  it('creates an OTP template with fixed placeholders and keeps otpExpiryMinutes', async () => {
     const dto: CreateTemplateDto = {
       name: 'OTP verify',
       type: TemplateType.OTP,
       otpExpiryMinutes: 5,
+      placeholdersJson: { otp: 'string', phut: 'number' },
     };
 
     await service.create('ws-1', 'user-1', dto);
@@ -140,7 +141,7 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
     const data = template.create.mock.calls[0][0].data;
     expect(data.type).toBe(TemplateType.OTP);
     expect(data.content).toBeNull();
-    expect(data.placeholdersJson).toBe(Prisma.DbNull);
+    expect(data.placeholdersJson).toEqual({ otp: 'string', phut: 'number' });
     expect(data.otpExpiryMinutes).toBe(5);
     expect(data.secondaryContent).toBeNull();
   });
@@ -149,6 +150,20 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
     const dto: CreateTemplateDto = {
       name: 'OTP missing expiry',
       type: TemplateType.OTP,
+    };
+
+    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(template.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects OTP placeholders other than otp and phut', async () => {
+    const dto: CreateTemplateDto = {
+      name: 'OTP invalid placeholders',
+      type: TemplateType.OTP,
+      otpExpiryMinutes: 5,
+      placeholdersJson: { otp: 'string', code: 'string' },
     };
 
     await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(

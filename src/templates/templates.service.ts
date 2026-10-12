@@ -19,6 +19,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
+import { assertOtpPlaceholderDefinition } from './otp-template.util';
 import { ApproveTemplateDto } from './dto/approve-template.dto';
 import { RejectTemplateDto } from './dto/reject-template.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
@@ -55,7 +56,7 @@ export class TemplatesService {
   /**
    * Enforce BR-TPL-01 content-structure rules per template type:
    * - TEXT / TABLE: `content` (>=1 char) and `placeholdersJson` are required.
-   * - OTP: `content`/`placeholdersJson` are ignored; `otpExpiryMinutes` is required.
+   * - OTP: `otpExpiryMinutes` and exactly `otp`/`phut` placeholders are required.
    */
   private validateTemplateByTypeOrThrow(input: {
     type: TemplateType;
@@ -69,6 +70,7 @@ export class TemplatesService {
           'otpExpiryMinutes is required for OTP templates',
         );
       }
+      assertOtpPlaceholderDefinition(input.placeholdersJson);
       return;
     }
 
@@ -216,11 +218,9 @@ export class TemplatesService {
             code,
             title: dto.title ?? null,
             trackingId: dto.trackingId ?? null,
-            // OTP templates omit free-text content/placeholders.
+            // OTP templates omit free-text content but retain their fixed placeholders.
             content: isOtp ? null : dto.content,
-            placeholdersJson: isOtp
-              ? Prisma.DbNull
-              : (dto.placeholdersJson as Prisma.InputJsonValue),
+            placeholdersJson: dto.placeholdersJson as Prisma.InputJsonValue,
             // secondaryContent only applies to TABLE templates.
             secondaryContent:
               type === TemplateType.TABLE
@@ -275,6 +275,7 @@ export class TemplatesService {
         trackingId: true,
         secondaryContent: true,
         otpExpiryMinutes: true,
+        placeholdersJson: true,
         status: true,
         createdAt: true,
         updatedAt: true,
@@ -367,6 +368,7 @@ export class TemplatesService {
         trackingId: true,
         secondaryContent: true,
         otpExpiryMinutes: true,
+        placeholdersJson: true,
         status: true,
         providerTemplateId: true,
         rejectedReason: true,
@@ -558,7 +560,7 @@ export class TemplatesService {
         secondaryContent: adminPriceOnly ? undefined : dto.secondaryContent,
         otpExpiryMinutes: adminPriceOnly ? undefined : dto.otpExpiryMinutes,
         placeholdersJson:
-          adminPriceOnly || !dto.placeholdersJson
+          adminPriceOnly || dto.placeholdersJson === undefined
             ? undefined
             : (dto.placeholdersJson as Prisma.InputJsonValue),
         unitPricePerMessage:

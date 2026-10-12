@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { MessageStatus, Prisma, SendType } from '@prisma/client';
 import { OaMessagingService } from '../oa/oa-messaging.service';
+import { assertOtpPayloadData } from '../templates/otp-template.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 type PublicRequestContext = {
@@ -22,9 +23,10 @@ export class PublicApiService {
       },
       select: {
         id: true,
+        type: true,
+        placeholdersJson: true,
         name: true,
         code: true,
-        placeholdersJson: true,
         status: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -40,6 +42,7 @@ export class PublicApiService {
       },
       select: {
         id: true,
+        type: true,
         name: true,
         code: true,
         placeholdersJson: true,
@@ -71,6 +74,7 @@ export class PublicApiService {
       },
       select: {
         id: true,
+        type: true,
         workspaceId: true,
         status: true,
         oaConnectionId: true,
@@ -87,6 +91,10 @@ export class PublicApiService {
       throw new BadRequestException(
         'Template is missing Zalo providerTemplateId',
       );
+    }
+
+    if (template.type === 'OTP') {
+      assertOtpPayloadData(dto.data);
     }
 
     // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo

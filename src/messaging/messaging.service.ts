@@ -9,6 +9,7 @@ import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { SendSingleDto } from './dto/send-single.dto';
+import { assertOtpPayloadData } from '../templates/otp-template.util';
 
 @Injectable()
 export class MessagingService {
@@ -27,6 +28,8 @@ export class MessagingService {
       where: { id: dto.templateId, workspaceId, status: 'APPROVED' },
       select: {
         id: true,
+        type: true,
+        placeholdersJson: true,
         oaConnectionId: true,
         status: true,
         providerTemplateId: true,
@@ -42,6 +45,10 @@ export class MessagingService {
       throw new BadRequestException(
         'Template is missing Zalo providerTemplateId',
       );
+    }
+
+    if (template.type === 'OTP') {
+      assertOtpPayloadData(dto.data);
     }
 
     // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
