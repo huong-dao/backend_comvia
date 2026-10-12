@@ -497,34 +497,47 @@ model WorkspaceOa {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  connection  WorkspaceOaConnection?
-  templates   Template[]
-  messageLogs MessageLog[]
-  campaigns   Campaign[]
+  workspace       Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection      WorkspaceOaConnection?
+  oauthAttempts   OaOAuthAttempt[]
+  templates       Template[]
+  messageLogs     MessageLog[]
+  campaigns       Campaign[]
 }
 
 model WorkspaceOaConnection {
-  id                  String             @id @default(cuid())
-  workspaceOaId       String             @unique
-  oaId                String
-  oaName              String?
-  oaAvatarLight       String?
-  oaAvatarDark        String?
-  accessToken         String?
-  refreshToken        String?
-  tokenExpiredAt      DateTime?
-  oauthState          String?
-  oauthCodeVerifier   String?
-  oauthStateExpiresAt DateTime?
-  status              OaConnectionStatus @default(NOT_CONNECTED)
-  connectedAt         DateTime?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  id             String             @id @default(cuid())
+  workspaceOaId  String             @unique
+  oaId           String
+  oaName         String?
+  oaAvatarLight  String?
+  oaAvatarDark   String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiredAt DateTime?
+  status         OaConnectionStatus @default(NOT_CONNECTED)
+  connectedAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  workspaceOa WorkspaceOa @relation(fields: [workspaceOaId], references: [id], onDelete: Cascade)
+}
+
+// Mỗi lần bấm "Kết nối" tạo 1 row riêng (thay vì ghi đè state/verifier trên
+// WorkspaceOaConnection) — các authorizationUrl cũ vẫn dùng được độc lập,
+// không bị link mới làm mất hiệu lực trước hạn TTL.
+model OaOAuthAttempt {
+  id            String    @id @default(cuid())
+  workspaceOaId String
+  state         String    @unique
+  codeVerifier  String
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
 
   workspaceOa WorkspaceOa @relation(fields: [workspaceOaId], references: [id], onDelete: Cascade)
 
-  @@index([oauthState])
+  @@index([workspaceOaId])
 }
 
 enum TemplateStatus {
