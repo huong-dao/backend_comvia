@@ -21,9 +21,15 @@ export class ZaloOAuthClient {
   }
 
   buildPermissionUrl(params: { codeChallenge: string; state: string }): string {
+    const callbackUrl = new URL(this.redirectUri);
+    callbackUrl.searchParams.set(
+      'source',
+      this.configService.getOrThrow<string>('zalo.oauthRelaySource'),
+    );
+
     const query = new URLSearchParams({
       app_id: this.appId,
-      redirect_uri: this.redirectUri,
+      redirect_uri: callbackUrl.toString(),
       code_challenge: params.codeChallenge,
       state: params.state,
     });

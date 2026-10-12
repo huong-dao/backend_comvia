@@ -12,6 +12,13 @@ describe('OaConnectionsService (workspaceOaId refactor)', () => {
     where: Record<string, unknown>;
     data: Record<string, unknown>;
   };
+  type FindFirstArg = {
+    where: {
+      oauthState: string;
+      oauthStateExpiresAt: { gt: Date };
+    };
+    include: Record<string, unknown>;
+  };
 
   const workspaceOa = {
     findUnique: jest.fn(),
@@ -19,7 +26,7 @@ describe('OaConnectionsService (workspaceOaId refactor)', () => {
   };
   const workspaceOaConnection = {
     findUnique: jest.fn(),
-    findFirst: jest.fn(),
+    findFirst: jest.fn<unknown, [FindFirstArg]>(),
     update: jest.fn<unknown, [UpdateArg]>(),
   };
   const tx = {
@@ -192,6 +199,65 @@ describe('OaConnectionsService (workspaceOaId refactor)', () => {
       await expect(
         service.handleOAuthCallback({ code: 'c', state: 's' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('handleTokenWebhook', () => {
+    beforeEach(() => {
+      workspaceOaConnection.findFirst.mockResolvedValue({
+        id: 'conn-1',
+        oaId: 'pending',
+        oaName: null,
+        oauthCodeVerifier: 'verifier',
+        workspaceOa: { workspaceId: 'ws-1' },
+      });
+      zaloOAuthClient.getOaInfo.mockResolvedValue({
+        data: { oa_id: 'OA_REAL', name: 'Zalo Shop' },
+      });
+      workspaceOaConnection.update.mockResolvedValue({
+        id: 'conn-1',
+        oaId: 'OA_REAL',
+        workspaceOa: { workspaceId: 'ws-1' },
+      });
+    });
+
+    it('maps the relay payload by state and clears the one-time OAuth values', async () => {
+      await service.handleTokenWebhook({
+        access_token: 'at',
+        refresh_token: 'rt',
+        state: 'state',
+        expires_in: 3600,
+      });
+
+      const findArg = workspaceOaConnection.findFirst.mock.calls[0][0];
+      expect(findArg.where.oauthState).toBe('state');
+      expect(findArg.where.oauthStateExpiresAt.gt).toBeInstanceOf(Date);
+      const updateArg = workspaceOaConnection.update.mock.calls[0][0];
+      expect(updateArg.data).toMatchObject({
+        accessToken: 'at',
+        refreshToken: 'rt',
+        status: 'CONNECTED',
+        oauthState: null,
+        oauthCodeVerifier: null,
+        oauthStateExpiresAt: null,
+      });
+      expect(workspaceOa.update).not.toHaveBeenCalled();
+      expect(auditLogService.write).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'ws-1' }),
+      );
+    });
+
+    it('rejects a state that is missing, expired, or already consumed', async () => {
+      workspaceOaConnection.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.handleTokenWebhook({
+          access_token: 'at',
+          refresh_token: 'rt',
+          state: 'bad-state',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(workspaceOaConnection.update).not.toHaveBeenCalled();
     });
   });
 

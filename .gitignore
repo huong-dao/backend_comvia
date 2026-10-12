@@ -7,6 +7,10 @@ public
 
 .env
 
+# Local Codex agent workflows
+.agents/
+AGENTS.md
+
 .claude
 
 # Internal docs (business rules, architecture, FE integration guides) — not published to GitHub

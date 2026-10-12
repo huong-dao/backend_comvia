@@ -10,6 +10,7 @@ import {
   createPkcePair,
 } from '../integrations/zalo/zalo-pkce.util';
 import { ZaloOAuthClient } from '../integrations/zalo/zalo-oauth.client';
+import type { ZaloTokenResponse } from '../integrations/zalo/zalo.types';
 import { PrismaService } from '../prisma/prisma.service';
 
 const OAUTH_STATE_TTL_MS = 60 * 60 * 1000;
@@ -136,12 +137,61 @@ export class OaConnectionsService {
       throw new BadRequestException('Invalid or expired OAuth state');
     }
 
-    const workspaceId = connection.workspaceOa.workspaceId;
-
     const tokenResponse = await this.zaloOAuthClient.exchangeAuthorizationCode({
       authCode: code,
       codeVerifier: connection.oauthCodeVerifier,
     });
+
+    return this.completeOAuthConnection({
+      connection,
+      tokenResponse,
+      oaIdFromQuery,
+    });
+  }
+
+  /** Complete an OAuth flow whose token exchange was performed by id.onweb.asia. */
+  async handleTokenWebhook(params: {
+    access_token: string;
+    refresh_token: string;
+    state: string;
+    expires_in?: number;
+  }) {
+    const connection = await this.prismaService.workspaceOaConnection.findFirst(
+      {
+        where: {
+          oauthState: params.state,
+          oauthStateExpiresAt: { gt: new Date() },
+        },
+        include: { workspaceOa: { select: { workspaceId: true } } },
+      },
+    );
+
+    if (!connection || !connection.oauthCodeVerifier) {
+      throw new BadRequestException('Invalid or expired OAuth state');
+    }
+
+    return this.completeOAuthConnection({
+      connection,
+      tokenResponse: {
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+        expires_in: params.expires_in,
+      },
+    });
+  }
+
+  private async completeOAuthConnection(params: {
+    connection: {
+      id: string;
+      oaId: string;
+      oaName: string | null;
+      workspaceOa: { workspaceId: string };
+    };
+    tokenResponse: ZaloTokenResponse;
+    oaIdFromQuery?: string;
+  }) {
+    const { connection, tokenResponse, oaIdFromQuery } = params;
+    const workspaceId = connection.workspaceOa.workspaceId;
 
     // Zalo-provided oaId/oaName live only on the connection row; the manually
     // managed WorkspaceOa profile is never overwritten here (ADR-001).
