@@ -81,6 +81,7 @@ export class OaConnectionsService {
 
     const authorizationUrl = this.zaloOAuthClient.buildPermissionUrl({
       codeChallenge,
+      codeVerifier,
       state,
     });
 

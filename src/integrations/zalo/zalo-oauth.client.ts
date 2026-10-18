@@ -20,12 +20,20 @@ export class ZaloOAuthClient {
     return this.configService.getOrThrow<string>('zalo.oauthRedirectUri');
   }
 
-  buildPermissionUrl(params: { codeChallenge: string; state: string }): string {
+  buildPermissionUrl(params: {
+    codeChallenge: string;
+    codeVerifier: string;
+    state: string;
+  }): string {
     const callbackUrl = new URL(this.redirectUri);
     callbackUrl.searchParams.set(
       'source',
       this.configService.getOrThrow<string>('zalo.oauthRelaySource'),
     );
+    // id.onweb.asia tự đổi code lấy access_token thay Comvia (xem oa-auth.controller.ts
+    // token-webhook) — nó cần đúng code_verifier khớp code_challenge dưới đây để Zalo
+    // chấp nhận PKCE; Comvia là nơi duy nhất giữ verifier nên phải chuyển qua redirect_uri.
+    callbackUrl.searchParams.set('code_verifier', params.codeVerifier);
 
     const query = new URLSearchParams({
       app_id: this.appId,

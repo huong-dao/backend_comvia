@@ -22,6 +22,7 @@ describe('ZaloOAuthClient', () => {
     const url = new URL(
       client.buildPermissionUrl({
         codeChallenge: 'challenge',
+        codeVerifier: 'verifier',
         state: 'state',
       }),
     );
@@ -30,6 +31,9 @@ describe('ZaloOAuthClient', () => {
     expect(callbackUrl.origin).toBe('https://id.onweb.asia');
     expect(callbackUrl.pathname).toBe('/v1/zalo/auth/call-back');
     expect(callbackUrl.searchParams.get('source')).toBe('comvia');
+    // id.onweb.asia tự đổi code lấy token thay Comvia nên cần code_verifier
+    // khớp code_challenge đã gửi, không thể tự sinh được.
+    expect(callbackUrl.searchParams.get('code_verifier')).toBe('verifier');
     expect(url.searchParams.get('state')).toBe('state');
   });
 });
