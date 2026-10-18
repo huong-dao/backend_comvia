@@ -179,6 +179,7 @@ export class OaConnectionsService {
     access_token: string;
     refresh_token: string;
     state: string;
+    oa_id?: string;
     expires_in?: number;
   }) {
     const resolved = await this.resolveActiveAttempt(params.state);
@@ -200,6 +201,7 @@ export class OaConnectionsService {
         refresh_token: params.refresh_token,
         expires_in: params.expires_in,
       },
+      oaIdFromQuery: params.oa_id,
     });
   }
 

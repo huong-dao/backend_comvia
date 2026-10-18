@@ -11,10 +11,23 @@ export class ZaloTokenWebhookDto {
   @IsNotEmpty()
   refresh_token: string;
 
-  /** Zalo application ID; it is validated, not used to find an OA connection. */
+  /**
+   * Zalo application ID; validated against config when present, but
+   * id.onweb.asia's actual relay payload does not always include it
+   * (it sends `oa_id` instead) — kept optional so that shape still validates.
+   */
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  app_id: string;
+  app_id?: string;
+
+  /** Zalo OA ID returned by the token exchange; not used to find the
+   * connection (state is), but forwarded to completeOAuthConnection the
+   * same way the direct /callback flow does. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  oa_id?: string;
 
   /** OAuth state issued by Comvia when the user pressed Connect. */
   @IsString()

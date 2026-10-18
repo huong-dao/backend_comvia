@@ -42,9 +42,15 @@ export class OaAuthController {
   ) {
     this.assertWebhookAuthorized(authorization);
 
-    const configuredAppId = this.configService.getOrThrow<string>('zalo.appId');
-    if (dto.app_id !== configuredAppId) {
-      throw new BadRequestException('Unexpected Zalo app_id');
+    // id.onweb.asia's actual payload doesn't always include app_id (it sends
+    // oa_id instead) — only enforce the match when the caller bothers to send
+    // it. The real auth gate is the Bearer token above, not this field.
+    if (dto.app_id) {
+      const configuredAppId =
+        this.configService.getOrThrow<string>('zalo.appId');
+      if (dto.app_id !== configuredAppId) {
+        throw new BadRequestException('Unexpected Zalo app_id');
+      }
     }
 
     await this.oaConnectionsService.handleTokenWebhook(dto);
