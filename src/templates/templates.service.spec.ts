@@ -274,3 +274,65 @@ describe('TemplatesService CTA buttons', () => {
     ).rejects.toThrow('Only platform admin can set CTA unit price');
   });
 });
+
+describe('TemplatesService.list', () => {
+  let service: TemplatesService;
+  const template = { findMany: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: { template } },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('returns an empty list for a workspace without templates', async () => {
+    template.findMany.mockResolvedValue([]);
+
+    await expect(
+      service.list('workspace-empty', UserRole.USER),
+    ).resolves.toEqual([]);
+    expect(template.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-empty' },
+      }),
+    );
+  });
+
+  it('keeps the list available while the CTA-table migration is pending', async () => {
+    template.findMany
+      .mockRejectedValueOnce({
+        code: 'P2021',
+        meta: { table: 'public.TemplateCtaButton' },
+      })
+      .mockResolvedValueOnce([
+        {
+          id: 'template-1',
+          name: 'Welcome',
+          code: '100001',
+          type: TemplateType.TEXT,
+        },
+      ]);
+
+    await expect(service.list('workspace-1', UserRole.USER)).resolves.toEqual([
+      {
+        id: 'template-1',
+        name: 'Welcome',
+        code: '100001',
+        type: TemplateType.TEXT,
+        ctaButtons: [],
+      },
+    ]);
+    expect(template.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1' },
+      }),
+    );
+  });
+});

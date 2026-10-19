@@ -174,6 +174,27 @@ export class TemplatesService {
     };
   }
 
+  /**
+   * The CTA-button table was introduced after templates had already been in
+   * production.  During a rolling deployment, an API instance can therefore
+   * be newer than the database migration for a short period.  Listing
+   * templates must remain read-only and available in that state: the legacy
+   * templates simply have no CTA buttons yet.
+   */
+  private isMissingCtaButtonsTableError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) return false;
+
+    const prismaError = error as {
+      code?: unknown;
+      meta?: { table?: unknown };
+    };
+    return (
+      prismaError.code === 'P2021' &&
+      typeof prismaError.meta?.table === 'string' &&
+      prismaError.meta.table.includes('TemplateCtaButton')
+    );
+  }
+
   private async getTemplateForInternalReviewOrThrow(templateId: string) {
     const template = await this.prismaService.template.findUnique({
       where: { id: templateId },
@@ -368,7 +389,7 @@ export class TemplatesService {
   }
 
   async list(workspaceId: string, actorRole: UserRole) {
-    return this.prismaService.template.findMany({
+    const query: Prisma.TemplateFindManyArgs = {
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -389,7 +410,35 @@ export class TemplatesService {
           select: this.ctaSelect(actorRole === UserRole.ADMIN),
         },
       },
-    });
+    };
+
+    try {
+      return await this.prismaService.template.findMany(query);
+    } catch (error) {
+      if (!this.isMissingCtaButtonsTableError(error)) throw error;
+
+      // Keep Dashboard and Templates available until the CTA migration has
+      // been applied.  Preserve the current response shape for clients.
+      const templates = await this.prismaService.template.findMany({
+        where: query.where,
+        orderBy: query.orderBy,
+        select: {
+          id: true,
+          type: true,
+          name: true,
+          code: true,
+          title: true,
+          trackingId: true,
+          secondaryContent: true,
+          otpExpiryMinutes: true,
+          placeholdersJson: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      return templates.map((template) => ({ ...template, ctaButtons: [] }));
+    }
   }
 
   async get(workspaceId: string, templateId: string, actorRole: UserRole) {
