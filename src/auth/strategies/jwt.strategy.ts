@@ -29,13 +29,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ): Promise<Pick<User, 'id' | 'email' | 'role'>> {
     const user = await this.prismaService.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, tokenVersion: true },
     });
 
-    if (!user) {
+    if (!user || (payload.tokenVersion ?? 0) !== user.tokenVersion) {
       throw new UnauthorizedException('Token không hợp lệ');
     }
 
-    return user;
+    return { id: user.id, email: user.email, role: user.role };
   }
 }

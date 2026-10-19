@@ -94,16 +94,22 @@ export class OtpService {
     targetType: OtpTargetType,
     targetValue: string,
     otpCode: string,
+    purpose: OtpPurpose,
   ): Promise<void> {
     if (targetType !== 'EMAIL' || this.demoMode) {
       return;
     }
 
-    await this.emailService.sendOtpVerificationEmail({
+    const input = {
       to: targetValue,
       otpCode,
       expiresInMinutes: Math.ceil(this.ttlSeconds / 60),
-    });
+    };
+    if (purpose === 'FORGOT_PASSWORD') {
+      await this.emailService.sendPasswordResetOtpEmail(input);
+      return;
+    }
+    await this.emailService.sendOtpVerificationEmail(input);
   }
 
   async createOtp(
@@ -139,7 +145,7 @@ export class OtpService {
       select: { id: true, expiredAt: true },
     });
 
-    await this.sendOtpEmailIfNeeded(targetType, targetValue, otpCode);
+    await this.sendOtpEmailIfNeeded(targetType, targetValue, otpCode, purpose);
 
     if (this.demoMode) {
       return {
@@ -245,6 +251,7 @@ export class OtpService {
         fullName: true,
         role: true,
         status: true,
+        tokenVersion: true,
       },
     });
 

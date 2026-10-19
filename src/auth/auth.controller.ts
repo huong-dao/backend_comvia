@@ -5,6 +5,8 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { OtpResendDto } from './dto/otp-resend.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
+import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
+import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -37,5 +39,17 @@ export class AuthController {
   @Post('otp/resend')
   resendOtp(@Body() dto: OtpResendDto) {
     return this.authService.resendOtp(dto);
+  }
+
+  @Public()
+  @Post('forgot-password/request')
+  requestPasswordReset(@Body() dto: ForgotPasswordRequestDto) {
+    return this.authService.requestPasswordReset(dto);
+  }
+
+  @Public()
+  @Post('forgot-password/reset')
+  resetPassword(@Body() dto: ForgotPasswordResetDto) {
+    return this.authService.resetPassword(dto);
   }
 }

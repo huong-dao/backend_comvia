@@ -49,6 +49,7 @@ export class EmailService {
 
   async sendOtpVerificationEmail(
     input: SendOtpVerificationEmailInput,
+    subjectOverride?: string,
   ): Promise<void> {
     const fromName =
       this.configService.get<string>('email.fromName') || 'COMVIA';
@@ -56,6 +57,7 @@ export class EmailService {
       this.configService.get<string>('email.fromEmail') ||
       this.configService.get<string>('email.smtpUser');
     const subject =
+      subjectOverride ||
       this.configService.get<string>('email.otpSubject') ||
       'comvia - OTP xác thực';
 
@@ -78,5 +80,11 @@ export class EmailService {
       );
       throw new InternalServerErrorException('Gửi email OTP thất bại');
     }
+  }
+
+  async sendPasswordResetOtpEmail(
+    input: SendOtpVerificationEmailInput,
+  ): Promise<void> {
+    return this.sendOtpVerificationEmail(input, 'COMVIA - Password reset OTP');
   }
 }

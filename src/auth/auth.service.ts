@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -13,11 +14,16 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { OtpResendDto } from './dto/otp-resend.dto';
 import { OtpService } from './otp/otp.service';
+import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
+import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
+import { sha256Hex } from '../common/utils/sha256';
 
 const SALT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
@@ -108,6 +114,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.tokenVersion,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
@@ -155,6 +162,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.tokenVersion,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
@@ -178,5 +186,112 @@ export class AuthService {
       dto.targetValue,
       dto.purpose,
     );
+  }
+
+  /** Return the same result whether or not the email belongs to an account. */
+  async requestPasswordReset(dto: ForgotPasswordRequestDto) {
+    const user = await this.prismaService.user.findUnique({
+      where: { email: dto.email },
+      select: { id: true, email: true },
+    });
+
+    if (user) {
+      // Deliberately do not expose OTP metadata (including demo OTP) from a
+      // password-reset request; that would reveal whether the user exists.
+      try {
+        await this.otpService.resendOtp('EMAIL', user.email, 'FORGOT_PASSWORD');
+      } catch (error) {
+        // The endpoint must not disclose a delivery or cooldown difference to
+        // callers. Operators still receive the failure in application logs.
+        this.logger.error(
+          `Password-reset OTP request failed for user ${user.id}: ${String(error)}`,
+        );
+      }
+    }
+
+    return {
+      message:
+        'Nếu email này thuộc một tài khoản, hướng dẫn đặt lại mật khẩu đã được gửi.',
+    };
+  }
+
+  async resetPassword(dto: ForgotPasswordResetDto) {
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+    const now = new Date();
+
+    const result = await this.prismaService.$transaction(async (tx) => {
+      const otpRequest = await tx.otpRequest.findFirst({
+        where: {
+          targetType: 'EMAIL',
+          targetValue: dto.email,
+          purpose: 'FORGOT_PASSWORD',
+          status: 'ACTIVE',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!otpRequest) {
+        return { error: 'INVALID_OTP' as const };
+      }
+
+      if (otpRequest.expiredAt.getTime() < now.getTime()) {
+        await tx.otpRequest.update({
+          where: { id: otpRequest.id },
+          data: { status: 'EXPIRED' },
+        });
+        return { error: 'EXPIRED_OTP' as const };
+      }
+
+      if (sha256Hex(dto.otpCode) !== otpRequest.otpCodeHash) {
+        const nextAttempt = otpRequest.attemptCount + 1;
+        await tx.otpRequest.update({
+          where: { id: otpRequest.id },
+          data: {
+            attemptCount: nextAttempt,
+            status: nextAttempt >= 5 ? 'LOCKED' : 'ACTIVE',
+          },
+        });
+        return { error: 'INVALID_OTP' as const };
+      }
+
+      // Conditional update makes concurrent resets single-use: only one
+      // transaction can turn this active, unexpired OTP into USED.
+      const consumed = await tx.otpRequest.updateMany({
+        where: {
+          id: otpRequest.id,
+          status: 'ACTIVE',
+          expiredAt: { gte: now },
+        },
+        data: { status: 'USED', usedAt: now },
+      });
+      if (consumed.count !== 1) {
+        return { error: 'USED_OTP' as const };
+      }
+
+      const user = await tx.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+      if (!user) {
+        return { error: 'INVALID_OTP' as const };
+      }
+
+      await tx.userCredential.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, passwordHash },
+        update: { passwordHash },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      return { success: true as const };
+    });
+
+    if ('error' in result) {
+      throw new UnauthorizedException('OTP không hợp lệ hoặc đã hết hạn');
+    }
+
+    return { message: 'Mật khẩu đã được đặt lại thành công.' };
   }
 }
