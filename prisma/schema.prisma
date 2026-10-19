@@ -571,6 +571,7 @@ enum TemplateCtaType {
 model SystemConfig {
   id                      String   @id @default("singleton")
   defaultMessageUnitPrice Decimal  @default(400)
+  ctaPricingJson          Json?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -614,6 +615,7 @@ model TemplateCtaButton {
   label     String?
   target    String?
   unitPrice Int?
+  defaultUnitPrice Int?
   position  Int
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt

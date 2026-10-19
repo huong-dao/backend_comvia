@@ -34,6 +34,9 @@ export class MessagingService {
         status: true,
         providerTemplateId: true,
         unitPricePerMessage: true,
+        ctaButtons: {
+          select: { unitPrice: true, defaultUnitPrice: true },
+        },
       },
     });
 
@@ -78,9 +81,15 @@ export class MessagingService {
       throw new BadRequestException('Wallet not initialized');
     }
 
-    const unitCost = await this.systemConfigService.resolveTemplateUnitPrice(
-      template.unitPricePerMessage,
-    );
+    const unitCost =
+      (await this.systemConfigService.resolveTemplateUnitPrice(
+        template.unitPricePerMessage,
+      )) +
+      template.ctaButtons.reduce(
+        (sum, button) =>
+          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
+        0,
+      );
     const walletBefore = Number(wallet.balance);
     if (walletBefore < unitCost) {
       throw new BadRequestException('Insufficient credit');

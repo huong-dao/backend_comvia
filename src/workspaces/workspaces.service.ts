@@ -3,6 +3,7 @@ import {
   BillingType,
   MemberRole,
   Prisma,
+  UserRole,
   WorkspaceStatus,
 } from '@prisma/client';
 import {
@@ -118,7 +119,24 @@ export class WorkspacesService {
     return workspace;
   }
 
-  async listForUser(userId: string) {
+  async listForUser(userId: string, role?: UserRole) {
+    if (role === UserRole.ADMIN) {
+      const workspaces = await this.prismaService.workspace.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+      return workspaces.map((workspace) => ({
+        ...workspace,
+        role: 'ADMIN',
+        joinedAt: null,
+      }));
+    }
     const memberships = await this.prismaService.workspaceMember.findMany({
       where: { userId },
       include: {
@@ -139,7 +157,19 @@ export class WorkspacesService {
     }));
   }
 
-  async switchWorkspace(userId: string, workspaceId: string) {
+  async switchWorkspace(userId: string, workspaceId: string, role?: UserRole) {
+    if (role === UserRole.ADMIN) {
+      const workspace = await this.prismaService.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { id: true },
+      });
+      if (!workspace) throw new BadRequestException('Workspace not found');
+      return this.prismaService.user.update({
+        where: { id: userId },
+        data: { lastActiveWorkspaceId: workspaceId },
+        select: { id: true, lastActiveWorkspaceId: true },
+      });
+    }
     const membership = await this.prismaService.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } },
       select: { id: true },
@@ -160,6 +190,7 @@ export class WorkspacesService {
     userId: string,
     workspaceId: string,
     dto: UpdateWorkspaceDto,
+    actorRole?: UserRole,
   ) {
     const workspace = await this.prismaService.workspace.findUnique({
       where: { id: workspaceId },
@@ -169,7 +200,7 @@ export class WorkspacesService {
     if (!workspace) {
       throw new BadRequestException('Workspace not found');
     }
-    if (workspace.ownerUserId !== userId) {
+    if (actorRole !== UserRole.ADMIN && workspace.ownerUserId !== userId) {
       throw new BadRequestException('Only workspace owner can update');
     }
     // PO decision (ISSUE-007): a DELETED workspace is immutable; ACTIVE,
@@ -268,7 +299,7 @@ export class WorkspacesService {
     };
   }
 
-  async softDelete(userId: string, workspaceId: string) {
+  async softDelete(userId: string, workspaceId: string, actorRole?: UserRole) {
     const workspace = await this.prismaService.workspace.findUnique({
       where: { id: workspaceId },
       select: { ownerUserId: true },
@@ -277,7 +308,7 @@ export class WorkspacesService {
     if (!workspace) {
       throw new BadRequestException('Workspace not found');
     }
-    if (workspace.ownerUserId !== userId) {
+    if (actorRole !== UserRole.ADMIN && workspace.ownerUserId !== userId) {
       throw new BadRequestException('Only workspace owner can delete');
     }
 

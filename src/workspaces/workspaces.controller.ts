@@ -9,7 +9,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { MemberRole, WorkspaceStatus } from '@prisma/client';
+import { MemberRole, UserRole, WorkspaceStatus } from '@prisma/client';
 import { AllowWorkspaceStatuses } from '../common/decorators/allow-workspace-statuses.decorator';
 import { WorkspaceRoles } from '../common/decorators/workspace-roles.decorator';
 import { WorkspaceContextGuard } from '../common/guards/workspace-context.guard';
@@ -31,16 +31,20 @@ export class WorkspacesController {
   }
 
   @Get()
-  list(@Request() req: { user: { id: string } }) {
-    return this.workspacesService.listForUser(req.user.id);
+  list(@Request() req: { user: { id: string; role: UserRole } }) {
+    return this.workspacesService.listForUser(req.user.id, req.user.role);
   }
 
   @Post(':workspaceId/switch')
   switchWorkspace(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: { id: string; role: UserRole } },
     @Param('workspaceId') workspaceId: string,
   ) {
-    return this.workspacesService.switchWorkspace(req.user.id, workspaceId);
+    return this.workspacesService.switchWorkspace(
+      req.user.id,
+      workspaceId,
+      req.user.role,
+    );
   }
 
   @Get(':workspaceId')
@@ -52,11 +56,16 @@ export class WorkspacesController {
     WorkspaceStatus.SUSPENDED,
   )
   async getDetail(
-    @Request() req: { workspaceMember?: { role: MemberRole } },
+    @Request()
+    req: { user: { role: UserRole }; workspaceMember?: { role: MemberRole } },
     @Param('workspaceId') workspaceId: string,
   ) {
     const detail = await this.workspacesService.getDetail(workspaceId);
-    return { ...detail, role: req.workspaceMember?.role };
+    return {
+      ...detail,
+      role:
+        req.user.role === UserRole.ADMIN ? 'ADMIN' : req.workspaceMember?.role,
+    };
   }
 
   @Patch(':workspaceId')
@@ -68,20 +77,29 @@ export class WorkspacesController {
     WorkspaceStatus.SUSPENDED,
   )
   updateOwner(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: { id: string; role: UserRole } },
     @Param('workspaceId') workspaceId: string,
     @Body() dto: UpdateWorkspaceDto,
   ) {
-    return this.workspacesService.updateOwner(req.user.id, workspaceId, dto);
+    return this.workspacesService.updateOwner(
+      req.user.id,
+      workspaceId,
+      dto,
+      req.user.role,
+    );
   }
 
   @Delete(':workspaceId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER)
   softDelete(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: { id: string; role: UserRole } },
     @Param('workspaceId') workspaceId: string,
   ) {
-    return this.workspacesService.softDelete(req.user.id, workspaceId);
+    return this.workspacesService.softDelete(
+      req.user.id,
+      workspaceId,
+      req.user.role,
+    );
   }
 }

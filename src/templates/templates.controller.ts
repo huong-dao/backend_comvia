@@ -126,25 +126,25 @@ export class InternalTemplatesController {
   constructor(private readonly service: TemplatesService) {}
 
   @Get()
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   list(@Query() query: InternalTemplatesQueryDto) {
     return this.service.staffListTemplates(query);
   }
 
   @Get(':templateId')
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   get(@Param('templateId') templateId: string) {
     return this.service.staffGetTemplate(templateId);
   }
 
   @Post(':templateId/mark-pending-zalo-approval')
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   markPendingZaloApproval(@Param('templateId') templateId: string) {
     return this.service.staffMarkPendingZaloApproval(templateId);
   }
 
   @Post(':templateId/approve')
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   approve(
     @Request() req: { user: { id: string } },
     @Param('templateId') templateId: string,
@@ -154,7 +154,7 @@ export class InternalTemplatesController {
   }
 
   @Post(':templateId/reject')
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   reject(
     @Request() req: { user: { id: string } },
     @Param('templateId') templateId: string,
@@ -164,7 +164,7 @@ export class InternalTemplatesController {
   }
 
   @Post(':templateId/disable')
-  @Roles(UserRole.STAFF)
+  @Roles(UserRole.STAFF, UserRole.ADMIN)
   disable(@Param('templateId') templateId: string) {
     return this.service.staffDisable(templateId);
   }

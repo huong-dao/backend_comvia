@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
 
 @Injectable()
 export class AdminService {
@@ -59,5 +60,81 @@ export class AdminService {
     limit?: number;
   }) {
     return this.auditLogService.list(params);
+  }
+
+  async listOaConnections(query: ListOaConnectionsQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 50;
+    const where = {
+      ...(query.workspaceId ? { workspaceId: query.workspaceId } : {}),
+      ...(query.status ? { connection: { status: query.status } } : {}),
+      ...(query.keyword
+        ? {
+            OR: [
+              {
+                name: { contains: query.keyword, mode: 'insensitive' as const },
+              },
+              {
+                code: { contains: query.keyword, mode: 'insensitive' as const },
+              },
+              {
+                workspace: {
+                  name: {
+                    contains: query.keyword,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                connection: {
+                  oaName: {
+                    contains: query.keyword,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                connection: {
+                  oaId: {
+                    contains: query.keyword,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const [total, items] = await this.prismaService.$transaction([
+      this.prismaService.workspaceOa.count({ where }),
+      this.prismaService.workspaceOa.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          workspace: {
+            select: {
+              id: true,
+              name: true,
+              owner: { select: { id: true, email: true, fullName: true } },
+            },
+          },
+          connection: {
+            select: {
+              oaId: true,
+              oaName: true,
+              status: true,
+              connectedAt: true,
+              tokenExpiredAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+    return { items, page, limit, total };
   }
 }

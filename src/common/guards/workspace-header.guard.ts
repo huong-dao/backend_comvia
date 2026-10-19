@@ -5,9 +5,10 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UserRole } from '@prisma/client';
 
 type WorkspaceHeaderRequest = {
-  user?: { id?: string };
+  user?: { id?: string; role?: UserRole };
   headers?: { 'x-workspace-id'?: string };
   workspace?: { id: string; status: string; ownerUserId: string };
   workspaceMember?: { id: string; role: string; status?: string };
@@ -31,17 +32,19 @@ export class WorkspaceHeaderGuard implements CanActivate {
     }
 
     const [workspaceMember, workspace] = await Promise.all([
-      this.prismaService.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId, userId } },
-        select: { id: true, role: true, status: true },
-      }),
+      req.user?.role === UserRole.ADMIN
+        ? Promise.resolve(null)
+        : this.prismaService.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId, userId } },
+            select: { id: true, role: true, status: true },
+          }),
       this.prismaService.workspace.findUnique({
         where: { id: workspaceId },
         select: { id: true, status: true, ownerUserId: true },
       }),
     ]);
 
-    if (!workspaceMember || !workspace) {
+    if (!workspace || (req.user?.role !== UserRole.ADMIN && !workspaceMember)) {
       throw new ForbiddenException('Access denied: workspace not found');
     }
 
@@ -51,15 +54,18 @@ export class WorkspaceHeaderGuard implements CanActivate {
       );
     }
 
-    if (workspaceMember.status !== 'ACTIVE') {
+    if (
+      req.user?.role !== UserRole.ADMIN &&
+      workspaceMember?.status !== 'ACTIVE'
+    ) {
       throw new ForbiddenException(
-        `Workspace membership is not active (${workspaceMember.status})`,
+        `Workspace membership is not active (${workspaceMember?.status})`,
       );
     }
 
     // Attach workspace context to request
     req.workspace = workspace;
-    req.workspaceMember = workspaceMember;
+    req.workspaceMember = workspaceMember ?? undefined;
 
     return true;
   }

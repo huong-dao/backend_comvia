@@ -35,6 +35,7 @@ type CampaignContext = {
     providerTemplateId: string | null;
     placeholdersJson: Prisma.JsonValue;
     unitPricePerMessage: Prisma.Decimal | null;
+    ctaButtons: { unitPrice: number | null; defaultUnitPrice: number | null }[];
     oaConnectionId: string;
   };
   workspace: {
@@ -60,9 +61,7 @@ export class CampaignsService {
       workspaceId,
       dto.templateId,
     );
-    const unitPrice = await this.systemConfigService.resolveTemplateUnitPrice(
-      template.unitPricePerMessage,
-    );
+    const unitPrice = await this.resolveTemplateDispatchUnitPrice(template);
 
     const campaign = await this.prismaService.campaign.create({
       data: {
@@ -163,8 +162,8 @@ export class CampaignsService {
       });
     }
 
-    const unitPrice = await this.systemConfigService.resolveTemplateUnitPrice(
-      campaign.template.unitPricePerMessage,
+    const unitPrice = await this.resolveTemplateDispatchUnitPrice(
+      campaign.template,
     );
     const estimatedTotal = unitPrice * parsed.rows.length;
 
@@ -400,8 +399,8 @@ export class CampaignsService {
     isRetry?: boolean;
   }) {
     const { campaign, rows, operatorUserId, note, isRetry } = params;
-    const unitPrice = await this.systemConfigService.resolveTemplateUnitPrice(
-      campaign.template.unitPricePerMessage,
+    const unitPrice = await this.resolveTemplateDispatchUnitPrice(
+      campaign.template,
     );
     const totalCharge = unitPrice * rows.length;
 
@@ -731,6 +730,7 @@ export class CampaignsService {
             providerTemplateId: true,
             placeholdersJson: true,
             unitPricePerMessage: true,
+            ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
             oaConnectionId: true,
           },
         },
@@ -768,6 +768,7 @@ export class CampaignsService {
         oaConnectionId: true,
         providerTemplateId: true,
         unitPricePerMessage: true,
+        ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
       },
     });
 
@@ -791,6 +792,22 @@ export class CampaignsService {
     }
 
     return template;
+  }
+
+  private async resolveTemplateDispatchUnitPrice(template: {
+    unitPricePerMessage: Prisma.Decimal | null;
+    ctaButtons: { unitPrice: number | null; defaultUnitPrice: number | null }[];
+  }): Promise<number> {
+    return (
+      (await this.systemConfigService.resolveTemplateUnitPrice(
+        template.unitPricePerMessage,
+      )) +
+      template.ctaButtons.reduce(
+        (sum, button) =>
+          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
+        0,
+      )
+    );
   }
 
   private assertCanImport(campaign: CampaignContext) {
@@ -851,6 +868,7 @@ export class CampaignsService {
           code: true,
           status: true,
           unitPricePerMessage: true,
+          ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
         },
       },
       // oaConnection is the WorkspaceOa profile (ADR-001); Zalo identifiers live

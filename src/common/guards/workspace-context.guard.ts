@@ -5,12 +5,12 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { WorkspaceStatus } from '@prisma/client';
+import { UserRole, WorkspaceStatus } from '@prisma/client';
 import { ALLOW_WORKSPACE_STATUSES_KEY } from '../decorators/allow-workspace-statuses.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type WorkspaceContextRequest = {
-  user?: { id?: string };
+  user?: { id?: string; role?: UserRole };
   params?: { workspaceId?: string };
   workspace?: { id: string; status: WorkspaceStatus; ownerUserId: string };
   workspaceMember?: { id: string; role: string; status?: string };
@@ -44,17 +44,19 @@ export class WorkspaceContextGuard implements CanActivate {
     }
 
     const [workspaceMember, workspace] = await Promise.all([
-      this.prismaService.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId, userId } },
-        select: { id: true, role: true, status: true },
-      }),
+      req.user?.role === UserRole.ADMIN
+        ? Promise.resolve(null)
+        : this.prismaService.workspaceMember.findUnique({
+            where: { workspaceId_userId: { workspaceId, userId } },
+            select: { id: true, role: true, status: true },
+          }),
       this.prismaService.workspace.findUnique({
         where: { id: workspaceId },
         select: { id: true, status: true, ownerUserId: true },
       }),
     ]);
 
-    if (!workspaceMember || !workspace) {
+    if (!workspace || (req.user?.role !== UserRole.ADMIN && !workspaceMember)) {
       throw new ForbiddenException('Access denied: workspace not found');
     }
 
@@ -64,12 +66,16 @@ export class WorkspaceContextGuard implements CanActivate {
       );
     }
 
-    if (workspaceMember.status && workspaceMember.status !== 'ACTIVE') {
+    if (
+      req.user?.role !== UserRole.ADMIN &&
+      workspaceMember?.status &&
+      workspaceMember.status !== 'ACTIVE'
+    ) {
       throw new ForbiddenException('Workspace member is not active');
     }
 
     req.workspace = workspace;
-    req.workspaceMember = workspaceMember;
+    req.workspaceMember = workspaceMember ?? undefined;
 
     return true;
   }

@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { MemberRole } from '@prisma/client';
+import { MemberRole, UserRole } from '@prisma/client';
 import { WORKSPACE_ROLES_KEY } from '../decorators/workspace-roles.decorator';
 
 @Injectable()
@@ -23,10 +23,12 @@ export class WorkspaceRolesGuard implements CanActivate {
     }
 
     type WorkspaceRolesRequest = {
+      user?: { role?: UserRole };
       workspaceMember?: { role?: MemberRole };
     };
 
     const req = context.switchToHttp().getRequest<WorkspaceRolesRequest>();
+    if (req.user?.role === UserRole.ADMIN) return true;
     const memberRole = req.workspaceMember?.role;
 
     if (!memberRole || !requiredRoles.includes(memberRole)) {

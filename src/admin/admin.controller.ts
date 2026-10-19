@@ -1,10 +1,23 @@
-import { Body, Controller, Get, Patch, Param, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Query,
+  Request,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { ListAuditLogsQueryDto } from '../audit-log/dto/list-audit-logs-query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { AdminService } from './admin.service';
 import { UpdateMessagePricingConfigDto } from './dto/update-message-pricing-config.dto';
+import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
+import { UpdateCtaPricingConfigDto } from './dto/update-cta-pricing-config.dto';
+import { UpdateAdminCtaButtonPriceDto } from './dto/update-admin-cta-button-price.dto';
+import { TemplatesService } from '../templates/templates.service';
+import { InternalTemplatesQueryDto } from '../templates/dto/internal-templates-query.dto';
 
 @Controller('admin')
 @Roles(UserRole.ADMIN)
@@ -12,6 +25,7 @@ export class AdminController {
   constructor(
     private readonly service: AdminService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly templatesService: TemplatesService,
   ) {}
 
   @Get('users')
@@ -27,6 +41,36 @@ export class AdminController {
   @Get('workspaces')
   listWorkspaces() {
     return this.service.listWorkspaces();
+  }
+
+  @Get('oa-connections')
+  listOaConnections(@Query() query: ListOaConnectionsQueryDto) {
+    return this.service.listOaConnections(query);
+  }
+
+  @Get('templates')
+  listTemplates(@Query() query: InternalTemplatesQueryDto) {
+    return this.templatesService.staffListTemplates(query);
+  }
+
+  @Get('templates/:templateId')
+  getTemplate(@Param('templateId') templateId: string) {
+    return this.templatesService.staffGetTemplate(templateId);
+  }
+
+  @Patch('templates/:templateId/cta-buttons/:ctaButtonId/unit-price')
+  updateTemplateCtaPrice(
+    @Request() req: { user: { id: string } },
+    @Param('templateId') templateId: string,
+    @Param('ctaButtonId') ctaButtonId: string,
+    @Body() dto: UpdateAdminCtaButtonPriceDto,
+  ) {
+    return this.templatesService.updateCtaUnitPriceForAdmin(
+      req.user.id,
+      templateId,
+      ctaButtonId,
+      dto.unitPrice,
+    );
   }
 
   @Patch('workspaces/:workspaceId/disable')
@@ -53,5 +97,15 @@ export class AdminController {
     return this.systemConfigService.updateDefaultMessageUnitPrice(
       dto.defaultMessageUnitPrice,
     );
+  }
+
+  @Get('config/cta-pricing')
+  getCtaPricingConfig() {
+    return this.systemConfigService.getCtaPricing();
+  }
+
+  @Patch('config/cta-pricing')
+  updateCtaPricingConfig(@Body() dto: UpdateCtaPricingConfigDto) {
+    return this.systemConfigService.updateCtaPricing(dto.prices);
   }
 }

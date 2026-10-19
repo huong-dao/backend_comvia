@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { TemplateCtaType, TemplateType, UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from './templates.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -29,6 +30,12 @@ describe('TemplatesService.create OA-connection gate', () => {
         TemplatesService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: auditLogService },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     }).compile();
 
@@ -95,6 +102,12 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
         TemplatesService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: auditLogService },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     }).compile();
 
@@ -221,6 +234,12 @@ describe('TemplatesService CTA buttons', () => {
         TemplatesService,
         { provide: PrismaService, useValue: { workspaceOa, template } },
         { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     }).compile();
     service = module.get(TemplatesService);
@@ -286,6 +305,12 @@ describe('TemplatesService.list', () => {
         TemplatesService,
         { provide: PrismaService, useValue: { template } },
         { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
       ],
     }).compile();
     service = module.get(TemplatesService);

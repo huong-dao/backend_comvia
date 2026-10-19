@@ -18,6 +18,7 @@ import {
 } from '../audit-log/audit-log.constants';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { assertOtpPlaceholderDefinition } from './otp-template.util';
@@ -31,6 +32,7 @@ export class TemplatesService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   private static readonly SIX_DIGIT_CODE_ATTEMPTS = 64;
@@ -170,6 +172,7 @@ export class TemplatesService {
       label: true,
       target: true,
       position: true,
+      defaultUnitPrice: true,
       ...(includeUnitPrice ? { unitPrice: true } : {}),
     };
   }
@@ -312,6 +315,17 @@ export class TemplatesService {
     const isOtp = type === TemplateType.OTP;
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
     this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
+    const ctaButtonsWithSnapshot = dto.ctaButtons
+      ? await Promise.all(
+          dto.ctaButtons.map(async (button) => ({
+            ...button,
+            defaultUnitPrice:
+              await this.systemConfigService.resolveCtaDefaultUnitPrice(
+                button.type,
+              ),
+          })),
+        )
+      : undefined;
 
     for (let i = 0; i < TemplatesService.SIX_DIGIT_CODE_ATTEMPTS; i++) {
       const code = this.randomSixDigitCode();
@@ -334,9 +348,9 @@ export class TemplatesService {
                 ? (dto.secondaryContent ?? null)
                 : null,
             otpExpiryMinutes: isOtp ? dto.otpExpiryMinutes : null,
-            ctaButtons: dto.ctaButtons
+            ctaButtons: ctaButtonsWithSnapshot
               ? {
-                  create: dto.ctaButtons.map((button) => ({
+                  create: ctaButtonsWithSnapshot.map((button) => ({
                     type: button.type,
                     label: button.label ?? null,
                     target: button.target ?? null,
@@ -346,6 +360,7 @@ export class TemplatesService {
                       button.unitPrice !== undefined
                         ? button.unitPrice
                         : undefined,
+                    defaultUnitPrice: button.defaultUnitPrice,
                   })),
                 }
               : undefined,
@@ -610,6 +625,18 @@ export class TemplatesService {
             },
           },
         },
+        ctaButtons: {
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            type: true,
+            label: true,
+            target: true,
+            position: true,
+            defaultUnitPrice: true,
+            unitPrice: true,
+          },
+        },
         submissions: {
           orderBy: { createdAt: 'desc' },
           select: {
@@ -777,6 +804,10 @@ export class TemplatesService {
           label: button.label ?? null,
           target: button.target ?? null,
           position: button.position,
+          defaultUnitPrice:
+            await this.systemConfigService.resolveCtaDefaultUnitPrice(
+              button.type,
+            ),
           unitPrice:
             actorRole === UserRole.ADMIN ? button.unitPrice : undefined,
         };
@@ -823,6 +854,46 @@ export class TemplatesService {
         unitPrice: true,
         updatedAt: true,
       },
+    });
+  }
+
+  async updateCtaUnitPriceForAdmin(
+    actorUserId: string,
+    templateId: string,
+    ctaButtonId: string,
+    unitPrice: number | null,
+  ) {
+    const button = await this.prismaService.templateCtaButton.findFirst({
+      where: { id: ctaButtonId, templateId },
+      select: { id: true, template: { select: { workspaceId: true } } },
+    });
+    if (!button) throw new BadRequestException('CTA button not found');
+
+    return this.prismaService.$transaction(async (tx) => {
+      const updated = await tx.templateCtaButton.update({
+        where: { id: button.id },
+        data: { unitPrice },
+        select: {
+          id: true,
+          type: true,
+          label: true,
+          target: true,
+          position: true,
+          defaultUnitPrice: true,
+          unitPrice: true,
+          updatedAt: true,
+        },
+      });
+      await this.auditLogService.write({
+        actorUserId,
+        workspaceId: button.template.workspaceId,
+        action: 'template.cta_price_overridden',
+        resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
+        resourceId: templateId,
+        metadataJson: { ctaButtonId, unitPrice },
+        tx,
+      });
+      return updated;
     });
   }
 
