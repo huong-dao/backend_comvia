@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { TemplateType } from '@prisma/client';
 import {
+  IsArray,
   IsEnum,
   IsInt,
   IsNumber,
@@ -10,6 +11,8 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { ValidateNested } from 'class-validator';
+import { TemplateCtaButtonDto } from './template-cta-button.dto';
 
 export class UpdateTemplateDto {
   @IsOptional()
@@ -57,4 +60,12 @@ export class UpdateTemplateDto {
   @IsNumber()
   @Min(0)
   unitPricePerMessage?: number;
+
+  // Replaces the template CTA set. Existing rows must carry their id; omitted
+  // existing buttons are deleted and new buttons omit id.
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateCtaButtonDto)
+  ctaButtons?: TemplateCtaButtonDto[];
 }

@@ -555,6 +555,18 @@ enum TemplateType {
   OTP
 }
 
+enum TemplateCtaType {
+  OA_PROFILE
+  ZALO_MINI_APP
+  OA_ARTICLE
+  BUSINESS_WEBSITE
+  PHONE_CALL
+  EXTERNAL_WEB_OR_MINI_APP
+  APP_DOWNLOAD
+  DISTRIBUTION_PAGE
+  EXTERNAL_APP
+}
+
 model SystemConfig {
   id                      String   @id @default("singleton")
   defaultMessageUnitPrice Decimal  @default(400)
@@ -586,11 +598,29 @@ model Template {
   oaConnection WorkspaceOa @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
 
   submissions TemplateSubmissionLog[]
+  ctaButtons  TemplateCtaButton[]
   messageLogs MessageLog[]
   campaigns   Campaign[]
 
   @@unique([workspaceId, code])
   @@index([workspaceId, status])
+}
+
+model TemplateCtaButton {
+  id        String          @id @default(uuid())
+  templateId String
+  type      TemplateCtaType
+  label     String?
+  target    String?
+  unitPrice Int?
+  position  Int
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+  @@index([templateId])
 }
 
 model TemplateSubmissionLog {

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { MembersService } from '../members/members.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -42,7 +43,10 @@ export class QuickChatToolExecutorService {
       case 'templates.list':
         if (!input.workspaceId)
           throw new BadRequestException('workspaceId is required');
-        return this.templatesService.list(input.workspaceId);
+        return this.templatesService.list(
+          input.workspaceId,
+          this.toUserRole(input.role),
+        );
 
       case 'members.list':
         if (!input.workspaceId)
@@ -52,12 +56,17 @@ export class QuickChatToolExecutorService {
       case 'templates.create':
         if (!input.workspaceId)
           throw new BadRequestException('workspaceId is required');
-        return this.templatesService.create(input.workspaceId, input.userId, {
-          name: String(input.args.name ?? ''),
-          content: String(input.args.content ?? ''),
-          placeholdersJson:
-            (input.args.placeholdersJson as Record<string, unknown>) ?? {},
-        });
+        return this.templatesService.create(
+          input.workspaceId,
+          input.userId,
+          this.toUserRole(input.role),
+          {
+            name: String(input.args.name ?? ''),
+            content: String(input.args.content ?? ''),
+            placeholdersJson:
+              (input.args.placeholdersJson as Record<string, unknown>) ?? {},
+          },
+        );
 
       case 'messaging.sendSingle':
         if (!input.workspaceId)
@@ -75,6 +84,12 @@ export class QuickChatToolExecutorService {
       default:
         return this.executeGenericEntityTool(input);
     }
+  }
+
+  private toUserRole(role: QuickChatRole): UserRole {
+    if (role === 'ADMIN') return UserRole.ADMIN;
+    if (role === 'STAFF') return UserRole.STAFF;
+    return UserRole.USER;
   }
 
   private async executeGenericEntityTool(input: ExecuteInput) {

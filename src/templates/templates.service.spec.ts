@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { TemplateType } from '@prisma/client';
+import { TemplateCtaType, TemplateType, UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TemplatesService } from './templates.service';
@@ -41,18 +41,18 @@ describe('TemplatesService.create OA-connection gate', () => {
       connection: { status: 'NOT_CONNECTED' },
     });
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
   it('throws when no OA profile exists', async () => {
     workspaceOa.findUnique.mockResolvedValue(null);
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
@@ -63,7 +63,7 @@ describe('TemplatesService.create OA-connection gate', () => {
     });
     template.create.mockResolvedValue({ id: 'tpl-1', oaConnectionId: 'oa-1' });
 
-    await service.create('ws-1', 'user-1', dto);
+    await service.create('ws-1', 'user-1', UserRole.USER, dto);
 
     expect(template.create).toHaveBeenCalledTimes(1);
     expect(template.create.mock.calls[0][0].data.oaConnectionId).toBe('oa-1');
@@ -108,9 +108,9 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       placeholdersJson: {},
     };
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
@@ -121,9 +121,9 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       content: 'Hello',
     };
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
@@ -135,7 +135,7 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       placeholdersJson: { otp: 'string', phut: 'number' },
     };
 
-    await service.create('ws-1', 'user-1', dto);
+    await service.create('ws-1', 'user-1', UserRole.USER, dto);
 
     expect(template.create).toHaveBeenCalledTimes(1);
     const data = template.create.mock.calls[0][0].data;
@@ -152,9 +152,9 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       type: TemplateType.OTP,
     };
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
@@ -166,9 +166,9 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       placeholdersJson: { otp: 'string', code: 'string' },
     };
 
-    await expect(service.create('ws-1', 'user-1', dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, dto),
+    ).rejects.toThrow(BadRequestException);
     expect(template.create).not.toHaveBeenCalled();
   });
 
@@ -181,7 +181,7 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       placeholdersJson: { orderId: 'string' },
     };
 
-    await service.create('ws-1', 'user-1', dto);
+    await service.create('ws-1', 'user-1', UserRole.USER, dto);
 
     expect(template.create).toHaveBeenCalledTimes(1);
     const data = template.create.mock.calls[0][0].data;
@@ -197,9 +197,80 @@ describe('TemplatesService.create type-based validation (BR-TPL-01)', () => {
       placeholdersJson: {},
     };
 
-    await service.create('ws-1', 'user-1', dto);
+    await service.create('ws-1', 'user-1', UserRole.USER, dto);
 
     expect(template.create).toHaveBeenCalledTimes(1);
     expect(template.create.mock.calls[0][0].data.type).toBe(TemplateType.TEXT);
+  });
+});
+
+describe('TemplatesService CTA buttons', () => {
+  let service: TemplatesService;
+  const workspaceOa = { findUnique: jest.fn() };
+  const template = { create: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    workspaceOa.findUnique.mockResolvedValue({
+      id: 'oa-1',
+      connection: { status: 'CONNECTED' },
+    });
+    template.create.mockImplementation(({ data }) => Promise.resolve(data));
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: { workspaceOa, template } },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('stores up to two CTA buttons in their declared positions', async () => {
+    await service.create('ws-1', 'user-1', UserRole.USER, {
+      name: 'CTA template',
+      content: 'Hello',
+      placeholdersJson: {},
+      ctaButtons: [
+        {
+          type: TemplateCtaType.OA_PROFILE,
+          position: 0,
+        },
+        {
+          type: TemplateCtaType.BUSINESS_WEBSITE,
+          target: 'https://example.com',
+          position: 1,
+        },
+      ],
+    });
+
+    expect(template.create.mock.calls[0][0].data.ctaButtons.create).toEqual([
+      expect.objectContaining({
+        type: TemplateCtaType.OA_PROFILE,
+        position: 0,
+      }),
+      expect.objectContaining({
+        type: TemplateCtaType.BUSINESS_WEBSITE,
+        target: 'https://example.com',
+        position: 1,
+      }),
+    ]);
+  });
+
+  it('rejects a CTA unit price from a workspace user', async () => {
+    await expect(
+      service.create('ws-1', 'user-1', UserRole.USER, {
+        name: 'Priced CTA',
+        content: 'Hello',
+        placeholdersJson: {},
+        ctaButtons: [
+          {
+            type: TemplateCtaType.OA_PROFILE,
+            position: 0,
+            unitPrice: 100,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Only platform admin can set CTA unit price');
   });
 });

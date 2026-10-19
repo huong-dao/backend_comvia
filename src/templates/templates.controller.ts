@@ -20,6 +20,7 @@ import { SubmitTemplateDto } from './dto/submit-template.dto';
 import { ApproveTemplateDto } from './dto/approve-template.dto';
 import { RejectTemplateDto } from './dto/reject-template.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
+import { UpdateTemplateCtaButtonPriceDto } from './dto/template-cta-button.dto';
 import { TemplatesService } from './templates.service';
 
 @Controller('workspaces/:workspaceId/templates')
@@ -30,28 +31,32 @@ export class TemplatesController {
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
   create(
-    @Request() req: { user: { id: string } },
+    @Request() req: { user: { id: string; role: UserRole } },
     @Param('workspaceId') workspaceId: string,
     @Body() dto: CreateTemplateDto,
   ) {
-    return this.service.create(workspaceId, req.user.id, dto);
+    return this.service.create(workspaceId, req.user.id, req.user.role, dto);
   }
 
   @Get()
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
-  list(@Param('workspaceId') workspaceId: string) {
-    return this.service.list(workspaceId);
+  list(
+    @Request() req: { user: { role: UserRole } },
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.service.list(workspaceId, req.user.role);
   }
 
   @Get(':templateId')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
   @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
   get(
+    @Request() req: { user: { role: UserRole } },
     @Param('workspaceId') workspaceId: string,
     @Param('templateId') templateId: string,
   ) {
-    return this.service.get(workspaceId, templateId);
+    return this.service.get(workspaceId, templateId, req.user.role);
   }
 
   @Patch(':templateId')
@@ -69,6 +74,25 @@ export class TemplatesController {
       req.user.id,
       req.user.role,
       dto,
+    );
+  }
+
+  @Patch(':templateId/cta-buttons/:ctaButtonId/unit-price')
+  @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
+  updateCtaUnitPrice(
+    @Request() req: { user: { role: UserRole } },
+    @Param('workspaceId') workspaceId: string,
+    @Param('templateId') templateId: string,
+    @Param('ctaButtonId') ctaButtonId: string,
+    @Body() dto: UpdateTemplateCtaButtonPriceDto,
+  ) {
+    return this.service.updateCtaUnitPrice(
+      workspaceId,
+      templateId,
+      ctaButtonId,
+      dto.unitPrice,
+      req.user.role,
     );
   }
 

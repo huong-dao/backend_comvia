@@ -1,5 +1,6 @@
 import { TemplateType } from '@prisma/client';
 import {
+  IsArray,
   IsEnum,
   IsInt,
   IsObject,
@@ -8,6 +9,9 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { TemplateCtaButtonDto } from './template-cta-button.dto';
 
 export class CreateTemplateDto {
   @IsString()
@@ -46,4 +50,10 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsObject()
   placeholdersJson?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateCtaButtonDto)
+  ctaButtons?: TemplateCtaButtonDto[];
 }

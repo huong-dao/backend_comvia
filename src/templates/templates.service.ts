@@ -7,6 +7,7 @@ import { randomInt } from 'crypto';
 import {
   OaConnectionStatus,
   Prisma,
+  TemplateCtaType,
   TemplateStatus,
   TemplateType,
   UserRole,
@@ -23,6 +24,7 @@ import { assertOtpPlaceholderDefinition } from './otp-template.util';
 import { ApproveTemplateDto } from './dto/approve-template.dto';
 import { RejectTemplateDto } from './dto/reject-template.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
+import { TemplateCtaButtonDto } from './dto/template-cta-button.dto';
 
 @Injectable()
 export class TemplatesService {
@@ -89,6 +91,87 @@ export class TemplatesService {
 
   private canEditTemplateCode(role: UserRole): boolean {
     return role === UserRole.ADMIN || role === UserRole.STAFF;
+  }
+
+  private validateCtaButtonsOrThrow(ctaButtons?: TemplateCtaButtonDto[]) {
+    if (!ctaButtons) return;
+    if (ctaButtons.length > 2) {
+      throw new BadRequestException(
+        'A template can have at most two CTA buttons',
+      );
+    }
+    if (
+      new Set(ctaButtons.map((button) => button.position)).size !==
+      ctaButtons.length
+    ) {
+      throw new BadRequestException('CTA button positions must be unique');
+    }
+
+    for (const button of ctaButtons) {
+      if (button.type === TemplateCtaType.OA_PROFILE) {
+        if (
+          button.target !== undefined &&
+          !this.isValidHttpUrl(button.target)
+        ) {
+          throw new BadRequestException(
+            'OA_PROFILE target must be a valid http(s) URL when supplied',
+          );
+        }
+        continue;
+      }
+      if (!button.target) {
+        throw new BadRequestException(
+          `CTA target is required for ${button.type}`,
+        );
+      }
+      if (button.type === TemplateCtaType.PHONE_CALL) {
+        if (
+          !/^(?:\+84|84|0)\d{9,10}$/.test(button.target.replace(/[.\s-]/g, ''))
+        ) {
+          throw new BadRequestException(
+            'PHONE_CALL target must be a valid Vietnamese phone number',
+          );
+        }
+      } else if (!this.isValidHttpUrl(button.target)) {
+        throw new BadRequestException(
+          `CTA target must be a valid http(s) URL for ${button.type}`,
+        );
+      }
+    }
+  }
+
+  private isValidHttpUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  private assertCtaPricesAllowed(
+    ctaButtons: TemplateCtaButtonDto[] | undefined,
+    actorRole: UserRole,
+  ) {
+    if (
+      ctaButtons?.some((button) => button.unitPrice !== undefined) &&
+      actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Only platform admin can set CTA unit price',
+      );
+    }
+  }
+
+  private ctaSelect(includeUnitPrice: boolean) {
+    return {
+      id: true,
+      type: true,
+      label: true,
+      target: true,
+      position: true,
+      ...(includeUnitPrice ? { unitPrice: true } : {}),
+    };
   }
 
   private async getTemplateForInternalReviewOrThrow(templateId: string) {
@@ -192,6 +275,7 @@ export class TemplatesService {
   async create(
     workspaceId: string,
     _actorUserId: string,
+    actorRole: UserRole,
     dto: CreateTemplateDto,
   ) {
     const oa = await this.getConnectedOaConnectionOrThrow(workspaceId);
@@ -205,6 +289,8 @@ export class TemplatesService {
     });
 
     const isOtp = type === TemplateType.OTP;
+    this.validateCtaButtonsOrThrow(dto.ctaButtons);
+    this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
 
     for (let i = 0; i < TemplatesService.SIX_DIGIT_CODE_ATTEMPTS; i++) {
       const code = this.randomSixDigitCode();
@@ -227,6 +313,21 @@ export class TemplatesService {
                 ? (dto.secondaryContent ?? null)
                 : null,
             otpExpiryMinutes: isOtp ? dto.otpExpiryMinutes : null,
+            ctaButtons: dto.ctaButtons
+              ? {
+                  create: dto.ctaButtons.map((button) => ({
+                    type: button.type,
+                    label: button.label ?? null,
+                    target: button.target ?? null,
+                    position: button.position,
+                    unitPrice:
+                      actorRole === UserRole.ADMIN &&
+                      button.unitPrice !== undefined
+                        ? button.unitPrice
+                        : undefined,
+                  })),
+                }
+              : undefined,
             status: 'DRAFT' satisfies TemplateStatus,
           },
           select: {
@@ -243,6 +344,10 @@ export class TemplatesService {
             status: true,
             rejectedReason: true,
             oaConnectionId: true,
+            ctaButtons: {
+              orderBy: { position: 'asc' },
+              select: this.ctaSelect(actorRole === UserRole.ADMIN),
+            },
             createdAt: true,
           },
         });
@@ -262,7 +367,7 @@ export class TemplatesService {
     );
   }
 
-  async list(workspaceId: string) {
+  async list(workspaceId: string, actorRole: UserRole) {
     return this.prismaService.template.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
@@ -279,13 +384,23 @@ export class TemplatesService {
         status: true,
         createdAt: true,
         updatedAt: true,
+        ctaButtons: {
+          orderBy: { position: 'asc' },
+          select: this.ctaSelect(actorRole === UserRole.ADMIN),
+        },
       },
     });
   }
 
-  async get(workspaceId: string, templateId: string) {
+  async get(workspaceId: string, templateId: string, actorRole: UserRole) {
     const template = await this.prismaService.template.findFirst({
       where: { workspaceId, id: templateId },
+      include: {
+        ctaButtons: {
+          orderBy: { position: 'asc' },
+          select: this.ctaSelect(actorRole === UserRole.ADMIN),
+        },
+      },
     });
 
     if (!template) {
@@ -480,7 +595,8 @@ export class TemplatesService {
       dto.title === undefined &&
       dto.trackingId === undefined &&
       dto.secondaryContent === undefined &&
-      dto.otpExpiryMinutes === undefined
+      dto.otpExpiryMinutes === undefined &&
+      dto.ctaButtons === undefined
     );
   }
 
@@ -530,6 +646,8 @@ export class TemplatesService {
         'Only platform admin can set template unit price per message',
       );
     }
+    this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
+    this.validateCtaButtonsOrThrow(dto.ctaButtons);
 
     // Validate the merged (existing + patch) template against its type rules,
     // unless this is the admin price-only branch (nothing structural changes).
@@ -548,25 +666,113 @@ export class TemplatesService {
       });
     }
 
-    return this.prismaService.template.update({
-      where: { id: templateId },
-      data: {
-        name: adminPriceOnly ? undefined : dto.name,
-        code: this.canEditTemplateCode(actorRole) ? dto.code : undefined,
-        type: adminPriceOnly ? undefined : dto.type,
-        title: adminPriceOnly ? undefined : dto.title,
-        trackingId: adminPriceOnly ? undefined : dto.trackingId,
-        content: adminPriceOnly ? undefined : dto.content,
-        secondaryContent: adminPriceOnly ? undefined : dto.secondaryContent,
-        otpExpiryMinutes: adminPriceOnly ? undefined : dto.otpExpiryMinutes,
-        placeholdersJson:
-          adminPriceOnly || dto.placeholdersJson === undefined
-            ? undefined
-            : (dto.placeholdersJson as Prisma.InputJsonValue),
-        unitPricePerMessage:
-          dto.unitPricePerMessage !== undefined
-            ? new Prisma.Decimal(dto.unitPricePerMessage)
-            : undefined,
+    const updateData = {
+      name: adminPriceOnly ? undefined : dto.name,
+      code: this.canEditTemplateCode(actorRole) ? dto.code : undefined,
+      type: adminPriceOnly ? undefined : dto.type,
+      title: adminPriceOnly ? undefined : dto.title,
+      trackingId: adminPriceOnly ? undefined : dto.trackingId,
+      content: adminPriceOnly ? undefined : dto.content,
+      secondaryContent: adminPriceOnly ? undefined : dto.secondaryContent,
+      otpExpiryMinutes: adminPriceOnly ? undefined : dto.otpExpiryMinutes,
+      placeholdersJson:
+        adminPriceOnly || dto.placeholdersJson === undefined
+          ? undefined
+          : (dto.placeholdersJson as Prisma.InputJsonValue),
+      unitPricePerMessage:
+        dto.unitPricePerMessage !== undefined
+          ? new Prisma.Decimal(dto.unitPricePerMessage)
+          : undefined,
+    };
+
+    if (dto.ctaButtons === undefined) {
+      await this.prismaService.template.update({
+        where: { id: templateId },
+        data: updateData,
+      });
+      return this.get(workspaceId, templateId, actorRole);
+    }
+
+    await this.prismaService.$transaction(async (tx) => {
+      const existing = await tx.templateCtaButton.findMany({
+        where: { templateId },
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((button) => button.id));
+      const suppliedIds = dto
+        .ctaButtons!.map((button) => button.id)
+        .filter((id): id is string => !!id);
+      if (
+        new Set(suppliedIds).size !== suppliedIds.length ||
+        suppliedIds.some((id) => !existingIds.has(id))
+      ) {
+        throw new BadRequestException(
+          'CTA button id does not belong to this template',
+        );
+      }
+      const suppliedIdSet = new Set(suppliedIds);
+      await tx.templateCtaButton.deleteMany({
+        where: { templateId, id: { notIn: suppliedIds } },
+      });
+      // Move retained rows outside the valid 0/1 range first so swapping the
+      // two displayed positions cannot violate the unique DB constraint.
+      if (suppliedIds.length > 0) {
+        await tx.templateCtaButton.updateMany({
+          where: { templateId, id: { in: suppliedIds } },
+          data: { position: { increment: 2 } },
+        });
+      }
+      for (const button of dto.ctaButtons!) {
+        const data = {
+          type: button.type,
+          label: button.label ?? null,
+          target: button.target ?? null,
+          position: button.position,
+          unitPrice:
+            actorRole === UserRole.ADMIN ? button.unitPrice : undefined,
+        };
+        if (button.id && suppliedIdSet.has(button.id)) {
+          await tx.templateCtaButton.update({ where: { id: button.id }, data });
+        } else {
+          await tx.templateCtaButton.create({ data: { templateId, ...data } });
+        }
+      }
+      return tx.template.update({
+        where: { id: templateId },
+        data: updateData,
+      });
+    });
+    return this.get(workspaceId, templateId, actorRole);
+  }
+
+  async updateCtaUnitPrice(
+    workspaceId: string,
+    templateId: string,
+    ctaButtonId: string,
+    unitPrice: number,
+    actorRole: UserRole,
+  ) {
+    if (actorRole !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only platform admin can set CTA unit price',
+      );
+    }
+    const button = await this.prismaService.templateCtaButton.findFirst({
+      where: { id: ctaButtonId, templateId, template: { workspaceId } },
+      select: { id: true },
+    });
+    if (!button) throw new BadRequestException('CTA button not found');
+    return this.prismaService.templateCtaButton.update({
+      where: { id: button.id },
+      data: { unitPrice },
+      select: {
+        id: true,
+        type: true,
+        label: true,
+        target: true,
+        position: true,
+        unitPrice: true,
+        updatedAt: true,
       },
     });
   }
