@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -23,7 +24,7 @@ import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { assertOtpPlaceholderDefinition } from './otp-template.util';
 import { ApproveTemplateDto } from './dto/approve-template.dto';
-import { RejectTemplateDto } from './dto/reject-template.dto';
+import { ReturnTemplateToSubmittedDto } from './dto/return-template-to-submitted.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
 import { TemplateCtaButtonDto } from './dto/template-cta-button.dto';
 
@@ -206,6 +207,7 @@ export class TemplatesService {
         workspaceId: true,
         oaConnectionId: true,
         status: true,
+        requiresOwnerRevision: true,
       },
     });
 
@@ -222,10 +224,26 @@ export class TemplatesService {
     options?: {
       actorUserId?: string;
       providerTemplateId?: string | null;
-      rejectedReason?: string | null;
+      revisionReason?: string | null;
+      requiresOwnerRevision?: boolean;
+      returnedForRevisionAt?: Date | null;
+      expectedStatus?: TemplateStatus;
+      expectedRequiresOwnerRevision?: boolean;
     },
   ) {
     const template = await this.getTemplateForInternalReviewOrThrow(templateId);
+
+    if (options?.expectedStatus && template.status !== options.expectedStatus) {
+      throw new ConflictException(
+        `Template must be ${options.expectedStatus} before this operation`,
+      );
+    }
+    if (
+      options?.expectedRequiresOwnerRevision !== undefined &&
+      template.requiresOwnerRevision !== options.expectedRequiresOwnerRevision
+    ) {
+      throw new ConflictException('Template is not ready for this operation');
+    }
 
     return this.prismaService.$transaction(async (tx) => {
       await tx.templateSubmissionLog.create({
@@ -238,7 +256,7 @@ export class TemplatesService {
                   providerTemplateId: options.providerTemplateId,
                 } as Prisma.InputJsonValue)
               : undefined,
-          reason: options?.rejectedReason ?? undefined,
+          reason: options?.revisionReason ?? undefined,
         },
       });
 
@@ -250,16 +268,17 @@ export class TemplatesService {
             options?.providerTemplateId !== undefined
               ? options.providerTemplateId
               : undefined,
-          rejectedReason:
-            options?.rejectedReason !== undefined
-              ? options.rejectedReason
-              : undefined,
+          requiresOwnerRevision: options?.requiresOwnerRevision,
+          revisionReason: options?.revisionReason,
+          returnedForRevisionAt: options?.returnedForRevisionAt,
         },
         select: {
           id: true,
           status: true,
           providerTemplateId: true,
-          rejectedReason: true,
+          requiresOwnerRevision: true,
+          revisionReason: true,
+          returnedForRevisionAt: true,
           updatedAt: true,
         },
       });
@@ -278,15 +297,15 @@ export class TemplatesService {
         });
       }
 
-      if (status === 'REJECTED' && options?.actorUserId) {
+      if (options?.requiresOwnerRevision && options.actorUserId) {
         await this.auditLogService.write({
           actorUserId: options.actorUserId,
           workspaceId: template.workspaceId,
-          action: AUDIT_ACTIONS.TEMPLATE_REJECTED,
+          action: AUDIT_ACTIONS.TEMPLATE_RETURNED_FOR_REVISION,
           resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
           resourceId: templateId,
           metadataJson: {
-            reason: options.rejectedReason,
+            reason: options.revisionReason,
           },
           tx,
         });
@@ -378,7 +397,9 @@ export class TemplatesService {
             otpExpiryMinutes: true,
             placeholdersJson: true,
             status: true,
-            rejectedReason: true,
+            requiresOwnerRevision: true,
+            revisionReason: true,
+            returnedForRevisionAt: true,
             oaConnectionId: true,
             ctaButtons: {
               orderBy: { position: 'asc' },
@@ -420,6 +441,9 @@ export class TemplatesService {
         status: true,
         createdAt: true,
         updatedAt: true,
+        requiresOwnerRevision: true,
+        revisionReason: true,
+        returnedForRevisionAt: true,
         ctaButtons: {
           orderBy: { position: 'asc' },
           select: this.ctaSelect(actorRole === UserRole.ADMIN),
@@ -550,7 +574,9 @@ export class TemplatesService {
         placeholdersJson: true,
         status: true,
         providerTemplateId: true,
-        rejectedReason: true,
+        requiresOwnerRevision: true,
+        revisionReason: true,
+        returnedForRevisionAt: true,
         createdAt: true,
         updatedAt: true,
         workspace: {
@@ -599,7 +625,9 @@ export class TemplatesService {
         placeholdersJson: true,
         providerTemplateId: true,
         status: true,
-        rejectedReason: true,
+        requiresOwnerRevision: true,
+        revisionReason: true,
+        returnedForRevisionAt: true,
         createdAt: true,
         updatedAt: true,
         workspace: {
@@ -688,6 +716,7 @@ export class TemplatesService {
       select: {
         id: true,
         status: true,
+        requiresOwnerRevision: true,
         type: true,
         content: true,
         placeholdersJson: true,
@@ -699,16 +728,22 @@ export class TemplatesService {
       throw new BadRequestException('Template not found');
     }
 
-    if (template.status === 'DISABLED') {
-      throw new ForbiddenException('Template is disabled');
-    }
-
     const adminPriceOnly =
       template.status === 'APPROVED' &&
       this.isAdminOnlyTemplatePriceUpdate(dto);
 
-    if (template.status === 'APPROVED' && !adminPriceOnly) {
-      throw new ForbiddenException('Approved template is read-only');
+    if (
+      !adminPriceOnly &&
+      template.status !== 'DRAFT' &&
+      !(template.status === 'SUBMITTED' && template.requiresOwnerRevision)
+    ) {
+      throw new ConflictException(
+        'Template content can only be edited while DRAFT or returned for owner revision',
+      );
+    }
+
+    if (actorRole === UserRole.STAFF && !adminPriceOnly) {
+      throw new ForbiddenException('Staff cannot edit template content');
     }
 
     if (dto.code !== undefined && !this.canEditTemplateCode(actorRole)) {
@@ -903,6 +938,7 @@ export class TemplatesService {
       select: {
         id: true,
         status: true,
+        requiresOwnerRevision: true,
         oaConnectionId: true,
         name: true,
         code: true,
@@ -912,24 +948,31 @@ export class TemplatesService {
     if (!template) {
       throw new BadRequestException('Template not found');
     }
-    if (template.status === 'DISABLED') {
-      throw new ForbiddenException('Template is disabled');
-    }
-    if (template.status === 'APPROVED') {
-      throw new ForbiddenException('Template already approved');
+    if (
+      template.status !== 'DRAFT' &&
+      !(template.status === 'SUBMITTED' && template.requiresOwnerRevision)
+    ) {
+      throw new ConflictException(
+        'Template cannot be submitted in its current state',
+      );
     }
 
     return this.prismaService.$transaction(async (tx) => {
       await tx.templateSubmissionLog.create({
         data: {
           templateId,
-          status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
+          status: 'SUBMITTED' satisfies TemplateStatus,
         },
       });
 
       const updated = await tx.template.update({
         where: { id: templateId },
-        data: { status: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus },
+        data: {
+          status: 'SUBMITTED' satisfies TemplateStatus,
+          requiresOwnerRevision: false,
+          revisionReason: null,
+          returnedForRevisionAt: null,
+        },
       });
 
       await this.auditLogService.write({
@@ -976,23 +1019,26 @@ export class TemplatesService {
       'APPROVED' satisfies TemplateStatus,
       {
         actorUserId,
-        providerTemplateId: dto.providerTemplateId ?? null,
-        rejectedReason: null,
+        providerTemplateId: dto.providerTemplateId,
+        expectedStatus: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
       },
     );
   }
 
-  async staffReject(
+  async staffReturnToSubmitted(
     templateId: string,
     actorUserId: string,
-    dto: RejectTemplateDto,
+    dto: ReturnTemplateToSubmittedDto,
   ) {
     return this.updateTemplateInternalStatus(
       templateId,
-      'REJECTED' satisfies TemplateStatus,
+      'SUBMITTED' satisfies TemplateStatus,
       {
         actorUserId,
-        rejectedReason: dto.reason,
+        expectedStatus: 'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
+        requiresOwnerRevision: true,
+        revisionReason: dto.reason,
+        returnedForRevisionAt: new Date(),
       },
     );
   }
@@ -1001,6 +1047,10 @@ export class TemplatesService {
     return this.updateTemplateInternalStatus(
       templateId,
       'PENDING_ZALO_APPROVAL' satisfies TemplateStatus,
+      {
+        expectedStatus: 'SUBMITTED' satisfies TemplateStatus,
+        expectedRequiresOwnerRevision: false,
+      },
     );
   }
 

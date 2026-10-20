@@ -1,6 +1,6 @@
 import { IsString, MinLength } from 'class-validator';
 
-export class RejectTemplateDto {
+export class ReturnTemplateToSubmittedDto {
   @IsString()
   @MinLength(1)
   reason!: string;

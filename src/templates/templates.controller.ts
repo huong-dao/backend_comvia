@@ -18,7 +18,7 @@ import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SubmitTemplateDto } from './dto/submit-template.dto';
 import { ApproveTemplateDto } from './dto/approve-template.dto';
-import { RejectTemplateDto } from './dto/reject-template.dto';
+import { ReturnTemplateToSubmittedDto } from './dto/return-template-to-submitted.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
 import { UpdateTemplateCtaButtonPriceDto } from './dto/template-cta-button.dto';
 import { TemplatesService } from './templates.service';
@@ -98,7 +98,7 @@ export class TemplatesController {
 
   @Post(':templateId/submit')
   @UseGuards(WorkspaceContextGuard, WorkspaceRolesGuard)
-  @WorkspaceRoles(MemberRole.OWNER, MemberRole.MEMBER)
+  @WorkspaceRoles(MemberRole.OWNER)
   submit(
     @Request() req: { user: { id: string } },
     @Param('workspaceId') workspaceId: string,
@@ -153,14 +153,14 @@ export class InternalTemplatesController {
     return this.service.staffApprove(templateId, req.user.id, dto);
   }
 
-  @Post(':templateId/reject')
+  @Post(':templateId/return-to-submitted')
   @Roles(UserRole.STAFF, UserRole.ADMIN)
-  reject(
+  returnToSubmitted(
     @Request() req: { user: { id: string } },
     @Param('templateId') templateId: string,
-    @Body() dto: RejectTemplateDto,
+    @Body() dto: ReturnTemplateToSubmittedDto,
   ) {
-    return this.service.staffReject(templateId, req.user.id, dto);
+    return this.service.staffReturnToSubmitted(templateId, req.user.id, dto);
   }
 
   @Post(':templateId/disable')

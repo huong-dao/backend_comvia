@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { TemplateCtaType, TemplateType, UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -358,6 +358,107 @@ describe('TemplatesService.list', () => {
       expect.objectContaining({
         where: { workspaceId: 'workspace-1' },
       }),
+    );
+  });
+});
+
+describe('TemplatesService revision workflow', () => {
+  let service: TemplatesService;
+  const template = { findFirst: jest.fn(), findUnique: jest.fn() };
+  const tx = {
+    templateSubmissionLog: { create: jest.fn() },
+    template: { update: jest.fn() },
+  };
+  const prisma = {
+    template,
+    $transaction: jest.fn((callback) => callback(tx)),
+  };
+  const auditLogService = { write: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: auditLogService },
+        {
+          provide: SystemConfigService,
+          useValue: { resolveCtaDefaultUnitPrice: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('submits DRAFT to SUBMITTED and clears revision state', async () => {
+    template.findFirst.mockResolvedValue({
+      id: 'tpl-1',
+      status: 'DRAFT',
+      requiresOwnerRevision: false,
+      name: 'Welcome',
+      code: '100001',
+    });
+    tx.template.update.mockResolvedValue({ status: 'SUBMITTED' });
+
+    await service.submit('ws-1', 'tpl-1', 'owner-1');
+
+    expect(tx.template.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'SUBMITTED',
+          requiresOwnerRevision: false,
+          revisionReason: null,
+          returnedForRevisionAt: null,
+        }),
+      }),
+    );
+  });
+
+  it('rejects submit while SUBMITTED is being processed by staff', async () => {
+    template.findFirst.mockResolvedValue({
+      id: 'tpl-1',
+      status: 'SUBMITTED',
+      requiresOwnerRevision: false,
+      name: 'Welcome',
+      code: '100001',
+    });
+
+    await expect(service.submit('ws-1', 'tpl-1', 'owner-1')).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it('returns a pending template to owner revision and records an audit event', async () => {
+    template.findUnique.mockResolvedValue({
+      id: 'tpl-1',
+      workspaceId: 'ws-1',
+      oaConnectionId: 'oa-1',
+      status: 'PENDING_ZALO_APPROVAL',
+      requiresOwnerRevision: false,
+    });
+    tx.template.update.mockResolvedValue({
+      id: 'tpl-1',
+      status: 'SUBMITTED',
+      requiresOwnerRevision: true,
+    });
+
+    await service.staffReturnToSubmitted('tpl-1', 'staff-1', {
+      reason: 'Zalo requires a content correction',
+    });
+
+    expect(tx.template.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'SUBMITTED',
+          requiresOwnerRevision: true,
+          revisionReason: 'Zalo requires a content correction',
+          returnedForRevisionAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(auditLogService.write).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'template.returned_for_revision' }),
     );
   });
 });

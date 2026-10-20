@@ -546,7 +546,6 @@ enum TemplateStatus {
   SUBMITTED
   PENDING_ZALO_APPROVAL
   APPROVED
-  REJECTED
   DISABLED
 }
 
@@ -592,6 +591,9 @@ model Template {
   providerTemplateId  String?
   unitPricePerMessage Decimal?
   status              TemplateStatus @default(DRAFT)
+  requiresOwnerRevision Boolean        @default(false)
+  revisionReason        String?
+  returnedForRevisionAt DateTime?
   rejectedReason      String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
