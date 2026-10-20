@@ -16,6 +16,7 @@ import { OtpResendDto } from './dto/otp-resend.dto';
 import { OtpService } from './otp/otp.service';
 import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
 import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { sha256Hex } from '../common/utils/sha256';
 
 const SALT_ROUNDS = 10;
@@ -143,6 +144,38 @@ export class AuthService {
         createdAt: true,
       },
     });
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prismaService.user.findUnique({
+      where: { id: userId },
+      select: { id: true, credential: { select: { passwordHash: true } } },
+    });
+
+    if (!user?.credential) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.credential.passwordHash,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await this.prismaService.$transaction(async (tx) => {
+      await tx.userCredential.update({
+        where: { userId },
+        data: { passwordHash },
+      });
+      await tx.user.update({
+        where: { id: userId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    });
+
+    return { message: 'Password changed successfully. Please sign in again.' };
   }
 
   async verifyOtp(dto: OtpVerifyDto) {

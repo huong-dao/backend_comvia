@@ -133,3 +133,71 @@ describe('AuthService password reset', () => {
     expect(tx.userCredential.upsert).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthService change password', () => {
+  let service: AuthService;
+  const prisma = {
+    user: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: JwtService, useValue: { signAsync: jest.fn() } },
+        { provide: OtpService, useValue: { resendOtp: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(AuthService);
+  });
+
+  it('changes the password and revokes all active access tokens', async () => {
+    const oldPasswordHash = await bcrypt.hash('old-password', 10);
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'staff-1',
+      credential: { passwordHash: oldPasswordHash },
+    });
+    const tx = {
+      userCredential: { update: jest.fn() },
+      user: { update: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
+
+    await expect(
+      service.changePassword('staff-1', {
+        currentPassword: 'old-password',
+        newPassword: 'new-password',
+      }),
+    ).resolves.toEqual({
+      message: 'Password changed successfully. Please sign in again.',
+    });
+
+    const passwordHash =
+      tx.userCredential.update.mock.calls[0][0].data.passwordHash;
+    await expect(bcrypt.compare('new-password', passwordHash)).resolves.toBe(
+      true,
+    );
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'staff-1' },
+      data: { tokenVersion: { increment: 1 } },
+    });
+  });
+
+  it('rejects an incorrect current password without updating credentials', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'staff-1',
+      credential: { passwordHash: await bcrypt.hash('old-password', 10) },
+    });
+
+    await expect(
+      service.changePassword('staff-1', {
+        currentPassword: 'incorrect-password',
+        newPassword: 'new-password',
+      }),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

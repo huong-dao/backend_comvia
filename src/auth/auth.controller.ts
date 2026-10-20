@@ -7,6 +7,7 @@ import { OtpResendDto } from './dto/otp-resend.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
 import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -27,6 +28,14 @@ export class AuthController {
   @Get('me')
   me(@Request() req: { user: { id: string } }) {
     return this.authService.me(req.user.id);
+  }
+
+  @Post('change-password')
+  changePassword(
+    @Request() req: { user: { id: string } },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(req.user.id, dto);
   }
 
   @Public()
