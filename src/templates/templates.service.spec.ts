@@ -362,6 +362,88 @@ describe('TemplatesService.list', () => {
   });
 });
 
+describe('TemplatesService.staffGetTemplate', () => {
+  let service: TemplatesService;
+  const template = { findUnique: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: { template } },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('returns complete, position-ordered CTA buttons for internal review', async () => {
+    template.findUnique.mockResolvedValue({
+      id: 'template-1',
+      oaConnection: {
+        id: 'workspace-oa-1',
+        connection: {
+          oaId: 'oa-1',
+          oaName: 'Shop OA',
+          status: 'CONNECTED',
+          connectedAt: new Date('2026-10-20T00:00:00.000Z'),
+          tokenExpiredAt: null,
+        },
+      },
+      ctaButtons: [
+        {
+          id: 'cta-1',
+          type: TemplateCtaType.BUSINESS_WEBSITE,
+          label: 'Xem chi tiết',
+          target: 'https://example.com/order/123',
+          position: 0,
+          defaultUnitPrice: 100,
+          unitPrice: null,
+        },
+      ],
+    });
+
+    await expect(service.staffGetTemplate('template-1')).resolves.toMatchObject(
+      {
+        id: 'template-1',
+        ctaButtons: [
+          {
+            id: 'cta-1',
+            type: TemplateCtaType.BUSINESS_WEBSITE,
+            label: 'Xem chi tiết',
+            target: 'https://example.com/order/123',
+            position: 0,
+          },
+        ],
+      },
+    );
+    expect(template.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'template-1' },
+        select: expect.objectContaining({
+          ctaButtons: {
+            orderBy: { position: 'asc' },
+            select: expect.objectContaining({
+              id: true,
+              type: true,
+              label: true,
+              target: true,
+              position: true,
+            }),
+          },
+        }),
+      }),
+    );
+  });
+});
+
 describe('TemplatesService revision workflow', () => {
   let service: TemplatesService;
   const template = { findFirst: jest.fn(), findUnique: jest.fn() };

@@ -655,15 +655,10 @@ export class TemplatesService {
         },
         ctaButtons: {
           orderBy: { position: 'asc' },
-          select: {
-            id: true,
-            type: true,
-            label: true,
-            target: true,
-            position: true,
-            defaultUnitPrice: true,
-            unitPrice: true,
-          },
+          // Keep the internal-review payload aligned with the workspace
+          // template payload. Staff also needs both price values to review
+          // an override, hence the admin variant of the shared selector.
+          select: this.ctaSelect(true),
         },
         submissions: {
           orderBy: { createdAt: 'desc' },
