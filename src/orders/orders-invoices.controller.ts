@@ -21,7 +21,7 @@ import { InvoicePdfVerificationService } from './invoice-pdf-verification.servic
 import { OrdersInvoicesService } from './orders-invoices.service';
 
 @Controller('admin')
-@Roles(UserRole.ADMIN, UserRole.STAFF)
+@Roles(UserRole.ADMIN)
 export class OrdersInvoicesController {
   constructor(
     private readonly service: OrdersInvoicesService,
