@@ -3,8 +3,8 @@ import { registerAs } from '@nestjs/config';
 const DEFAULT_APP_BASE_URL = 'https://app.comvia.cloud';
 
 export default registerAs('zalo', () => ({
-  appId: process.env.ZALO_APP_ID || '4467726254333837718',
-  secretKey: process.env.ZALO_SECRET_KEY || '7H2tLUN3q9666ru14N5j',
+  appId: process.env.ZALO_APP_ID,
+  secretKey: process.env.ZALO_SECRET_KEY,
   oauthRedirectUri:
     process.env.ZALO_OAUTH_REDIRECT_URI ||
     'https://id.onweb.asia/v1/zalo/auth/call-back',
