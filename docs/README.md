@@ -2,6 +2,8 @@
 
 Tài liệu trong thư mục này do **BE sở hữu** và là bộ tài liệu duy nhất được copy sang FE. Không đưa audit, handoff, issue hay ticket lịch sử vào đây.
 
+Để trao đổi nhanh với quản lý/PO, xem [Tình trạng dự án](./project-status.md).
+
 ## Đọc theo vai trò
 
 | Vai trò | Đọc trước |
