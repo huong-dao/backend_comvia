@@ -1,0 +1,20 @@
+# Change Log — Business Rules Comvia
+
+Mỗi dòng: ngày | issue | rule đổi | trước → sau (ngắn gọn) | người duyệt.
+
+| Ngày | Issue | Rule | Trước → Sau | Người duyệt |
+|------|-------|------|-------------|-------------|
+| 2026-10-02 | ISSUE-001 | BR-WS-02, BR-CORE-02 | Cá nhân bắt buộc `tax_code` → cá nhân **không** bắt buộc `tax_code` (tổ chức vẫn bắt buộc) | PO |
+| 2026-10-02 | ISSUE-003 | BR-OA-01, BR-OA-05 (mới), BR-CORE-06 | OA = một khái niệm gộp OAuth → tách OA record nội bộ (name/code/avatar/logo 400x96, nhập tay, nguồn độc lập không đồng bộ 2 chiều) khỏi dữ liệu kết nối Zalo; 2 hành động "Tạo OA" và "Kết nối"; 1-1 cứng Workspace↔OA | PO (hướng; chi tiết kiến trúc chờ SA) |
+| 2026-10-02 | ISSUE-004 | BR-TPL-01 | Template chỉ có name/code/content/placeholder → thêm `title`, `type` (bảng/văn bản/OTP, điều khiển cấu trúc nội dung), "nội dung phụ" (type=bảng), phút hết hạn OTP (type=OTP), `tracking_id` (lưu trữ) | PO (vai trò field; tên cột + mâu thuẫn "type thuần lưu trữ" chờ làm rõ) |
+| 2026-10-02 | ISSUE-005 | BR-WALLET-05 (mới) | Ví chỉ có số lũy kế → thêm số liệu theo tháng (đã nạp/đã dùng + % so tháng trước) và filter `fromDate`/`toDate` cho transactions | PO (công thức "đã dùng" chờ chốt) |
+| 2026-10-02 | ISSUE-002 | BR-MSG-04 (mới) | Chưa có → định nghĩa 3 chỉ số dashboard workspace (tin đã gửi, mẫu tin approved, tỷ lệ thành công) theo kỳ + % so kỳ trước | PO (định nghĩa chỉ số; mốc đếm chờ làm rõ) |
+| 2026-10-02 | ISSUE-007 | BR-WS-04, BR-WS-05 | Chưa rõ → làm rõ: PATCH workspace chỉ chặn theo quyền Owner, không chặn theo trạng thái; sửa thông tin/billing không thuộc thao tác nghiệp vụ bị chặn khi disabled/suspended | PO (trạng thái DELETED chờ xác nhận) |
+| 2026-10-02 | ISSUE-008 | BR-WS-06 (mới) | Chưa có → thêm endpoint đọc chi tiết 1 workspace kèm billing đầy đủ để prefill popup Sửa Workspace | Đề xuất BA (phân quyền billing cho Member chờ PO chốt) |
+| 2026-10-02 | ISSUE-009 | BR-WALLET-03 | ~~Giao dịch ví KHÔNG có trường trạng thái; FE bỏ cột~~ (kết luận cũ) → PO **bác**; giao dịch ví **có** trường `status` cho mọi loại giao dịch | — |
+| 2026-10-02 | ISSUE-009 | BR-WALLET-03, BR-WALLET-05, BR-WALLET-06 (mới) | Không có field trạng thái → thêm `status` ∈ `{success, pending, failed}` cho `WalletTransaction` (mọi loại giao dịch); backfill dữ liệu cũ = `success`; aggregate số dư chỉ tính `success`; vòng đời `pending→success`/`pending→failed`, terminal success/failed | PO (duyệt hướng; tập trạng thái + 3 câu hỏi mở rộng ngữ nghĩa chờ PO phản hồi) |
+| 2026-10-02 | ISSUE-009 | BR-WALLET-06 | 3 câu hỏi mở rộng ngữ nghĩa ví chốt KHÔNG: (a) nạp chưa thanh toán không đổ vào bảng ví; (b) `campaign_hold` không thành giữ-tạm-thật (trừ thẳng, ghi `success`); (c) gửi tin lỗi không tạo dòng ví `failed`. `pending`/`failed` là giá trị dành sẵn, hiện toàn `success` | PO (theo đề xuất backend) |
+| 2026-10-02 | ISSUE-002 | BR-MSG-04, BR-MSG-05 (mới) | Chốt định nghĩa chỉ số: "tin đã gửi" = có `sent_at` trong kỳ (tính cả tin lỗi, loại `pending`); tỷ lệ = SUCCESS/(SUCCESS+FAILED), mẫu số 0 → null; "mẫu tin approved" = số hiện tại, `change_percent` = null. Thêm BR-MSG-05: quy tắc so kỳ (7d so 7 ngày kề trước; month/year so đoạn cùng độ dài đã trôi qua từ đầu kỳ liền trước, clamp không vượt hết kỳ trước) — áp dụng cả BR-WALLET-05 | PO (theo đề xuất backend) |
+| 2026-10-02 | ISSUE-005 | BR-WALLET-05 | Số liệu ví theo tháng + % so kỳ trước áp dụng cùng quy tắc so kỳ như analytics (BR-MSG-05) | PO (theo đề xuất backend) |
+| 2026-10-02 | ISSUE-007 | BR-WS-04, BR-WS-05, BR-WS-06 | Trạng thái `deleted` (chờ xác nhận) → chốt: workspace `deleted` KHÔNG cho PATCH và KHÔNG cho đọc chi tiết; `active`/`disabled`/`suspended` vẫn cho Owner sửa | PO (theo đề xuất backend) |
+| 2026-10-03 | ISSUE-007 | BR-WS-04, BR-WS-05, BR-WS-06 | Đính chính hành vi HTTP: `WorkspaceContextGuard` chặn mọi non-ACTIVE (403); dev dùng decorator `@AllowWorkspaceStatuses` cho PATCH + GET detail chấp nhận ACTIVE/DISABLED/SUSPENDED, DELETED → **403** "Workspace is not active (DELETED)" (không phải 4xx/400). Đã code xong, chờ deploy | Dev (hành vi cuối) |

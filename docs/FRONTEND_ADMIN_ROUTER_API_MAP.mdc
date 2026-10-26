@@ -1,0 +1,466 @@
+# Frontend Admin Router -> API Map
+
+> Bắt đầu tại [`docs/README.md`](./README.md). File này chỉ dành cho màn **admin backoffice**.
+
+> Contract do BE sở hữu và phát hành cho FE. Runtime target là `https://api.comvia.cloud/api/v1`; mọi thay đổi contract phải đi qua `business-rules.md`, board và quy trình PO-to-FE handoff.
+
+Mục tiêu:
+- Bản rút gọn để team frontend code nhanh khu vực `ADMIN`.
+- Chỉ tập trung vào: route nào gọi API nào, action nào dùng endpoint nào.
+
+Phạm vi:
+- Áp dụng cho `UserRole.ADMIN`.
+
+> Quyết định PO ngày 2026-10-26: Quick Chat đã ngừng dùng. Các route Quick Chat còn dưới đây chỉ là dấu vết code cần gỡ, không phải router active để FE triển khai. Trang webhook mock cũng ngừng dùng: webhook Pay2S là server-to-server và không được gọi từ browser.
+
+---
+
+## 1) Router map tổng quát
+
+| Router | API load chính | API action chính |
+|-------|-----------------|------------------|
+| `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
+| `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
+| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
+| `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
+| `/admin/quick-chat/agents` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
+| `/admin/quick-chat/agents/:agentId` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
+| `/admin/quick-chat/tools` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
+| `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
+| `/admin/internal-quick-chat` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
+| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
+| Trang quản lý tài khoản ngân hàng (admin; path FE tùy dự án, ví dụ `/admin/money-accounts`) | `GET /money-accounts`, `GET /money-accounts/all` | `POST /money-accounts`, `PATCH /money-accounts/:id`, `DELETE /money-accounts/:id` |
+
+---
+
+## 2) `/admin/users`
+
+### Load
+- `GET /admin/users`
+
+### Fields nên render
+- `id`
+- `email`
+- `fullName`
+- `role`
+- `status`
+- `createdAt`
+
+### Row actions
+- Lock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": true }
+```
+- Unlock user:
+  - `PATCH /admin/users/:userId/lock`
+  - body:
+```json
+{ "locked": false }
+```
+
+---
+
+## 3) `/admin/workspaces`
+
+### Load
+- `GET /admin/workspaces`
+
+### Fields nên render
+- `id`
+- `name`
+- `slug`
+- `ownerUserId`
+- `status`
+- `createdAt`
+
+### Row actions
+- Disable workspace:
+  - `PATCH /admin/workspaces/:workspaceId/disable`
+
+---
+
+## 4) `/admin/audit-logs`
+
+### Load
+- `GET /admin/audit-logs`
+
+### Query
+- `workspaceId` (optional) — không truyền = toàn hệ thống; có giá trị = chỉ workspace đó
+- `action` (optional)
+- `limit` (optional, default `50`, max `200`)
+
+Auth/Role: `UserRole.ADMIN`
+
+### Fields nên render
+- `createdAt`, `action`, `workspaceId`, `resourceType`, `resourceId`, `metadataJson`
+- `actor.email`, `actor.fullName`
+
+---
+
+## 5) `/admin/quick-chat/agents`
+
+**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
+
+### Load
+- `GET /admin/quick-chat/agents`
+
+### Fields nên render
+- `id`
+- `name`
+- `provider`
+- `systemPrompt`
+- `allowedTools`
+- `skills`
+- `active`
+- `createdAt`
+- `updatedAt`
+
+---
+
+## 6) `/admin/quick-chat/agents/:agentId`
+
+**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
+
+### Save
+- `PUT /admin/quick-chat/agents/:agentId`
+
+### Body
+```json
+{
+  "name": "John",
+  "provider": "openai",
+  "systemPrompt": "You are a workspace operations assistant.",
+  "allowedTools": ["*"],
+  "skills": ["workspace-ops", "billing-safety"],
+  "active": true
+}
+```
+
+---
+
+## 7) `/admin/quick-chat/tools`
+
+**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
+
+### Load
+- `GET /admin/quick-chat/tools`
+
+### Render
+- Danh sách string tool name
+- copy-to-clipboard
+
+---
+
+## 8) `/admin/dev/payment-webhook`
+
+**Đã ngừng dùng và cần gỡ route.** Endpoint cũ `/topups/webhook` không tồn tại. Webhook thật `POST /webhooks/pay2s` là route Public dành riêng cho Pay2S/server-to-server: IPN yêu cầu `m2signature`, nhánh biến động tài khoản yêu cầu Bearer token. FE/admin browser không có thông tin xác thực này và không được gọi endpoint.
+
+---
+
+## 9) `/admin/internal-quick-chat`
+
+**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
+
+### Tạo session
+- `POST /internal/quick-chat/sessions`
+
+### Body
+```json
+{
+  "workspaceId": "WS_ID",
+  "title": "Admin ops"
+}
+```
+
+### Lấy session
+- `GET /internal/quick-chat/sessions/:sessionId`
+
+### Gửi message
+- `POST /internal/quick-chat/sessions/:sessionId/messages`
+
+### Confirm action
+- `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
+
+---
+
+## 10) Admin: đơn hàng & hóa đơn (toàn hệ thống)
+
+Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
+
+**Auth / quyền:** JWT + `UserRole.ADMIN` (`@Roles(ADMIN)` trên controller orders/invoices). STAFF không được gọi các route tài chính này. Không cần `workspaceId` trên URL; có thể lọc theo workspace bằng query nếu cần. Đối chiếu code 2026-10-26.
+
+### Danh sách đơn hàng (phân trang + lọc tùy chọn)
+- `GET /admin/orders`
+
+**Query phân trang:**
+| Param | Bắt buộc | Mặc định | Ghi chú |
+|-------|----------|----------|---------|
+| `page` | Không | `1` | Trang từ 1 |
+| `limit` | Không | `30` | Tối đa `100` mỗi trang |
+
+**Query lọc (tất cả tùy chọn, khớp model `Order` trong Prisma):**
+| Param | Kiểu | Ghi chú |
+|-------|------|---------|
+| `workspaceId` | string | Lọc theo workspace |
+| `ownerUserId` | string | User sở hữu đơn |
+| `status` | enum | `PAID` \| `CANCELLED` |
+| `orderCode` | string | Tìm chuỗi con trong mã đơn (ILIKE / `contains`, không phân biệt hoa thường), không bắt buộc khớp full mã |
+| `topupRequestId` | string | Liên kết topup (nếu có) |
+| `paidAtFrom`, `paidAtTo` | ISO date string | Khoảng `paidAt` (gte / lte) |
+| `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |
+
+**Response (200):** Mỗi phần tử `data[]` gồm các trường đơn và kèm `workspace` (Workspace) cùng `owner` (User — người sở hữu đơn, `ownerUserId`).
+
+```json
+{
+  "data": [
+    {
+      "id": "",
+      "orderCode": "",
+      "workspaceId": "",
+      "ownerUserId": "",
+      "totalAmountExclVat": 0,
+      "totalVatAmount": 0,
+      "totalAmountInclVat": 0,
+      "status": "PAID",
+      "paidAt": null,
+      "topupRequestId": null,
+      "createdAt": "",
+      "workspace": {
+        "id": "",
+        "name": "",
+        "slug": null,
+        "status": "ACTIVE",
+        "ownerUserId": "",
+        "createdAt": ""
+      },
+      "owner": {
+        "id": "",
+        "email": "",
+        "fullName": null,
+        "role": "USER",
+        "status": "ACTIVE",
+        "createdAt": ""
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 30,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+Sắp xếp: `createdAt` giảm dần.
+
+**Ví dụ gọi (list → mở detail):**
+- Chỉ phân trang: `GET /api/v1/admin/orders?page=1&limit=30`
+- Lọc theo workspace + trạng thái: `GET /api/v1/admin/orders?workspaceId=cuId&status=PAID`
+- Lấy `orderId` từ `data[].id` rồi gọi chi tiết bên dưới.
+
+### Chi tiết đơn hàng
+- `GET /admin/orders/:orderId`
+
+**Cách dùng:** `orderId` là giá trị `id` (cuid) của đơn, thường lấy từ cột `id` trong `GET /admin/orders` hoặc từ `order.id` khi đã có object chi tiết hóa đơn.
+
+**Ví dụ:** `GET /api/v1/admin/orders/clxxxxxxxxxxxxxxxx`
+
+**Response (200):** Một object `Order` với:
+- Các trường gốc (`id`, `orderCode`, `workspaceId`, `ownerUserId`, số tiền, `status`, `paidAt`, `topupRequestId`, `createdAt`, …).
+- `items`: mảng `OrderItem` (dòng sản phẩm/dịch vụ trên đơn).
+- `invoice`: một `Invoice` liên kết 1-1, hoặc `null` nếu chưa có hóa đơn.
+- `topupRequest`: nếu đơn sinh từ nạp tiền — object `{ id, topupCode }`; nếu không có liên kết topup thì `null`.
+- `workspace`: Workspace (`id`, `name`, `slug`, `status`, `ownerUserId`, `createdAt`).
+- `owner`: User sở hữu đơn (`id`, `email`, `fullName`, `role`, `status`, `createdAt`).
+
+**Lỗi:** `404` nếu không tồn tại `orderId`.
+
+### Danh sách hóa đơn (phân trang + lọc tùy chọn)
+- `GET /admin/invoices`
+
+**Query phân trang:** giống `orders` (`page`, `limit`).
+
+**Query lọc (model `Invoice`):**
+| Param | Kiểu | Ghi chú |
+|-------|------|---------|
+| `workspaceId` | string | |
+| `orderId` | string | **Lọc theo đơn hàng:** chỉ trả hóa đơn gắn với đơn có `id` này (quan hệ 1-1 `Invoice.orderId` ↔ `Order.id`). FE truyền khi đang xem một đơn và cần danh sách hóa đơn của đơn đó (thường 0 hoặc 1 bản ghi). |
+| `status` | enum | `POSTED` \| `ISSUED` \| `CANCELLED` |
+| `billingType` | enum | `ORGANIZATION` \| `INDIVIDUAL` |
+| `invoiceCode` | string | Khớp chính xác |
+| `issueDateFrom`, `issueDateTo` | ISO date string | Khoảng `issueDate` |
+| `createdAtFrom`, `createdAtTo` | ISO date string | Khoảng `createdAt` |
+
+**Ví dụ lọc theo đơn (FE có `orderId` sau khi load đơn hoặc từ URL):**
+`GET /api/v1/admin/invoices?orderId=clxxxxxxxxxxxxxxxx`
+
+Kết hợp phân trang + lọc đơn:
+`GET /api/v1/admin/invoices?orderId=clxxxxxxxxxxxxxxxx&page=1&limit=30`
+
+**Response (200):** Cùng dạng `{ data, meta }` như list orders; mỗi phần tử `data[]` có `workspaceId`, `orderId`, `invoiceCode`, `invoiceNumber`, `status`, `issueDate`, `invoicePdfUrl`, `billingType`, `billingSnapshotJson`, `createdAt`, …
+
+Sắp xếp: `createdAt` giảm dần.
+
+**Luồng gợi ý:** Từ `GET /admin/orders/:orderId` có thể đọc `invoice.id` (nếu có) để mở thẳng chi tiết hóa đơn; hoặc gọi `GET /admin/invoices?orderId=<orderId>` để lấy hóa đơn theo đơn.
+
+### Chi tiết hóa đơn
+- `GET /admin/invoices/:invoiceId`
+
+**Cách dùng:** `invoiceId` là `id` (cuid) của hóa đơn, lấy từ `GET /admin/invoices` (`data[].id`), từ `invoice.id` trong response chi tiết đơn, hoặc từ màn hình tra cứu.
+
+**Ví dụ:** `GET /api/v1/admin/invoices/clxxxxxxxxxxxxxxxx`
+
+**Response (200):** Một object `Invoice` đầy đủ với:
+- Các trường gốc (`id`, `invoiceCode`, `invoiceNumber`, `workspaceId`, `orderId`, `billingType`, `billingSnapshotJson`, `status`, `issueDate`, `invoicePdfUrl`, `verificationJson`, `createdAt`, `updatedAt`, …).
+- `items`: mảng `InvoiceItem`.
+- `order`: tóm tắt đơn (`orderCode`, tổng tiền, `paidAt`, …).
+- `workspace`: `{ id, name, slug, status }` để staff đối chiếu.
+
+**Lỗi:** `404` nếu không tồn tại `invoiceId`.
+
+### Issue hóa đơn qua PDF (atomic verify + issue)
+
+- `POST /admin/invoices/:invoiceId/verify-issue-pdf`
+
+**Auth / quyền:** JWT + `UserRole.ADMIN`; STAFF bị từ chối. **Không** gọi Gemini từ FE.
+
+**Content-Type:** `multipart/form-data`
+
+| Field | Bắt buộc | Ghi chú |
+|-------|----------|---------|
+| `file` | Có | PDF (`application/pdf`), tối đa 10MB |
+| `invoiceNumber` | Không | Số HĐ thực sau khi kế toán xuất ngoài — backend so khớp với PDF |
+| `issueDate` | Không | ISO date `YYYY-MM-DD` |
+| `idempotencyKey` | Không | Khuyến nghị để tránh upload lặp |
+
+**Luồng server:** load invoice `POSTED` → validate PDF → Gemini trích xuất JSON → so khớp billing + tiền + line item → nếu pass: lưu PDF (`/public/invoices/...`), cập nhật `ISSUED`, ghi audit log.
+
+**Response pass (200):**
+```json
+{
+  "ok": true,
+  "invoice": {
+    "id": "",
+    "status": "ISSUED",
+    "invoiceNumber": "",
+    "issueDate": "",
+    "invoicePdfUrl": "/public/invoices/.../....pdf"
+  }
+}
+```
+
+**Response fail verify (422):**
+```json
+{
+  "ok": false,
+  "code": "INVOICE_PDF_VERIFICATION_FAILED",
+  "invoiceId": "",
+  "mismatches": [
+    {
+      "field": "billing.tax_code",
+      "severity": "error",
+      "expected": "0123456789",
+      "found": null,
+      "note": "Mã số thuế trên PDF không khớp snapshot billing"
+    }
+  ],
+  "extractedPreview": {},
+  "message": "Vui lòng kiểm tra file PDF và thử upload lại."
+}
+```
+
+**Mã lỗi khác:**
+| HTTP | code | Khi nào |
+|------|------|---------|
+| `409` | `INVOICE_ALREADY_ISSUED` | Invoice đã `ISSUED` |
+| `400` | `INVOICE_CANCELLED` | Invoice `CANCELLED` |
+| `502` | — | Gemini/upstream lỗi hoặc timeout |
+| `503` | — | Thiếu `GEMINI_API_KEY` (trừ `DEMO_MODE=true` dùng mock server-side) |
+
+**Stable keys `mismatches[].field` (map sang tiếng Việt ở FE):**
+- `billing.company_name`, `billing.tax_code`, `billing.address`, `billing.invoice_email`, `billing.representative_name`, `billing.phone`, `billing.full_name`, `billing.citizen_id`
+- `commercial.vat_rate`, `commercial.amount_excl_vat`, `commercial.vat_amount`, `commercial.amount_incl_vat`, `commercial.line_item_name`
+- `identifiers.invoice_number`, `identifiers.issue_date`
+
+**FE gọi FormData:** không set `Content-Type` thủ công; chỉ gửi `Authorization: Bearer ...`.
+
+**Env backend:** `GEMINI_API_KEY`, `GEMINI_MODEL` (optional), `GEMINI_TIMEOUT_MS` (optional), `DEMO_MODE=true` cho dev không có key.
+
+---
+
+## 11) Quản lý tài khoản ngân hàng (Money Accounts)
+
+**Module này chưa có mặt ở bản tài liệu cũ — hoàn toàn thiếu.** Đây là danh sách tài khoản ngân hàng nhận tiền qua Pay2S, **dùng chung cho toàn hệ thống** (không tách theo workspace, dù path tham số của service có tên `workspaceId` — hiện bị bỏ qua ở tầng service). Owner chọn 1 tài khoản trong danh sách này khi tạo topup (xem `FRONTEND_API_GUIDE_NEXTJS.mdc §9.3`).
+
+**Auth/quyền:** JWT + `UserRole.ADMIN` (`JwtAuthGuard` + `RolesGuard`, không theo pattern `@Controller('admin')` như các mục khác — path là `/money-accounts` trực tiếp, không có tiền tố `/admin`).
+
+### Danh sách tài khoản đang active
+- `GET /money-accounts`
+
+### Danh sách toàn bộ (kể cả inactive)
+- `GET /money-accounts/all`
+
+### Danh sách active dùng cho topup (rút gọn field)
+- `GET /money-accounts/active-for-topup` — cùng dữ liệu với bản public ở `FRONTEND_API_GUIDE_NEXTJS.mdc §9.3`, khác là route này yêu cầu `UserRole.ADMIN` thay vì JWT thường.
+
+### Chi tiết một tài khoản
+- `GET /money-accounts/:id`
+
+### Tạo tài khoản
+- `POST /money-accounts`
+
+Request:
+```json
+{
+  "accountNumber": "0123456789",
+  "bankName": "Vietcombank",
+  "bankCode": "VCB",
+  "pay2sBankId": "PAY2S_BANK_ID",
+  "isActive": true
+}
+```
+
+Ghi chú: `accountNumber` phải unique toàn hệ thống (trả `400` nếu trùng); `pay2sBankId` là ID ngân hàng theo danh mục Pay2S — **bắt buộc phải điền đúng** thì `POST /topups/create-with-pay2s` mới tạo được link thu tiền (nếu thiếu, request topup sẽ fail với "Tài khoản ngân hàng không có ID ngân hàng Pay2S được cấu hình").
+
+Response mẫu (tất cả endpoint list/detail/create/update dùng chung format bọc `{ success, data, message }`):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "MONEY_ACCOUNT_ID",
+    "accountNumber": "0123456789",
+    "bankName": "Vietcombank",
+    "bankCode": "VCB",
+    "pay2sBankId": "PAY2S_BANK_ID",
+    "isActive": true,
+    "createdAt": "...",
+    "updatedAt": "..."
+  },
+  "message": "Money account created successfully"
+}
+```
+
+### Cập nhật tài khoản
+- `PATCH /money-accounts/:id`
+
+Request: mọi field ở DTO tạo đều optional, gửi field muốn đổi (ví dụ chỉ `{ "isActive": false }` để tạm ẩn khỏi danh sách topup).
+
+### Xóa tài khoản
+- `DELETE /money-accounts/:id`
+
+Response: `{ "success": true, "message": "Money account deleted successfully" }`. Đây thực chất là **soft delete** — backend chỉ set `isActive: false` (giống hệt `PATCH { "isActive": false }`), record vẫn còn trong DB nên các topup cũ tham chiếu tài khoản này không bị ảnh hưởng.
+
+---
+
+## 12) Gợi ý code frontend
+
+- `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
+- **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).
+- Trang list invoice toàn hệ thống: `GET /admin/invoices`; detail: `GET /admin/invoices/:invoiceId`.
+- `/admin/quick-chat/agents/:agentId` có thể reuse data từ list để giảm thêm 1 request.
+- Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo, và cập nhật đúng shape Pay2S thật (mục 8) thay vì shape mock cũ.
+- Trang quản lý tài khoản ngân hàng: ưu tiên nút "Ẩn/Hiện" (`PATCH isActive`) thay vì nút "Xóa" trong UI, vì `DELETE` chỉ soft-delete — tránh gây hiểu lầm là xóa vĩnh viễn.
