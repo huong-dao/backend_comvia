@@ -30,7 +30,7 @@
 
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
-| REL-01 | FE + BE | **BE hoàn tất trên `dev2`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; hành vi URL UI cũ đã được chốt và kiểm tra sau deploy. |
+| REL-01 | FE + BE | **BE code sẵn sàng trên `dev2` tại commit `d80c5e9`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; deploy đồng bộ và kiểm tra URL API cũ `404`, hành vi URL UI cũ đã chốt. |
 | BE-01 | BE | Sửa race condition số dư ví khi topup/send/campaign chạy đồng thời (F02). | Test đồng thời chứng minh không double-credit/debit, không âm số dư và ledger/balance nhất quán. |
 | BE-02 | BE | Khóa VAT ở server theo rule đã chốt, không tin giá trị client (F03). | DTO/service không nhận VAT tùy ý; test tạo topup/order/invoice có tổng tiền đúng. |
 
