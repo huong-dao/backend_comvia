@@ -55,6 +55,7 @@ Không tự đổi page members, orders, invoices hoặc invitation trước khi
 | Invitation | Chỉ mời bằng email. Tài khoản accept phải có email trùng chính xác email được mời. Không làm UI resend/revoke; Owner remove member đã accept qua quản lý members. |
 | Template/CTA pricing | UI không tự tính/ghi đè giá gửi. Giá server trả về dùng template + CTA; `unitPrice` chỉ ADMIN được đặt. |
 | Public API | Dùng đúng `x-api-key`/`api_key` và shape ở API guide; Public send dùng giá template + CTA do BE tính. |
+| Zalo send result | Với Single, Public và Campaign, `SUCCESS` chỉ là “Zalo đã tiếp nhận yêu cầu gửi”, không phải delivered/received. Không làm UI quota, delivered/read hoặc polling vì BE chưa có webhook/contract delivery. Xem [provider conformance](../architecture/zalo-zns-provider-conformance-2026-10-27.md). |
 
 ## D. Sau deploy — INT-01 và INT-02
 

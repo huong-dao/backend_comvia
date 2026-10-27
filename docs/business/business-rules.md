@@ -286,6 +286,11 @@ approved --> disabled
 - Field: `message_log_id`, `workspace_id`, `oa_id`, `template_id`, `send_type` (test/single/campaign), `phone_number`, `payload_snapshot`, `status`, `error_code`, `error_message`, `provider_message_id`, `cost_at_time`, `sell_price_at_time`, `wallet_transaction_id`, `operator_user_id`, `sent_at`.
 - Filter theo thời gian, template, OA, status, phone, user thao tác.
 
+### BR-MSG-03A: Ngữ nghĩa phản hồi Zalo ZNS
+- `MessageStatus.SUCCESS` hiện nghĩa là Zalo trả `error = 0` cho request template và có `msg_id`; đây là trạng thái **Zalo tiếp nhận/bắt đầu xử lý gửi**, không phải bằng chứng người dùng đã nhận tin trên thiết bị.
+- Comvia chưa nhận/lưu event `user_received_message`, `delivery_time`, `sent_time` hoặc quota của Zalo. FE không được hiển thị `SUCCESS` là “đã giao/đã nhận” và không có delivery/quota contract cho tới khi BE-07 được triển khai và deploy.
+- Ba đường Single, Public API và Campaign dùng chung Zalo template endpoint. `tracking_id` provider phải tối đa 48 ký tự, không ký tự đặc biệt; việc hợp thức hóa/kiểm tra toàn diện là phạm vi BE-07.
+
 ### BR-MSG-04: Chỉ số dashboard workspace
 - Endpoint analytics/overview cấp workspace trả theo kỳ lọc (`7d`/`month`/`year`): mỗi chỉ số kèm giá trị kỳ hiện tại + % thay đổi so với kỳ liền trước (quy tắc so kỳ ở BR-MSG-05).
 - Ba chỉ số backend tính:
