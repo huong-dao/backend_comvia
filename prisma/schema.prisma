@@ -122,6 +122,7 @@ model Workspace {
   oa                 WorkspaceOa?
   walletTransactions WalletTransaction[]
   topupRequests      TopupRequest[]
+  paymentCallbackLogs PaymentCallbackLog[]
   orders             Order[]
   invoices           Invoice[]
   templates          Template[]
@@ -388,9 +389,37 @@ model TopupRequest {
 
   owner     User      @relation(fields: [ownerUserId], references: [id])
   workspace Workspace @relation(fields: [workspaceId], references: [id])
+  paymentCallbackLogs PaymentCallbackLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum PaymentCallbackStatus {
+  PAID
+  FAILED
+}
+
+// Immutable provider callback evidence. The provider/event pair is the
+// idempotency boundary for a single callback delivery.
+model PaymentCallbackLog {
+  id             String                @id @default(cuid())
+  provider       String
+  eventId        String
+  source         String
+  status         PaymentCallbackStatus
+  topupRequestId String?
+  payloadJson    Json
+  processedAt    DateTime              @default(now())
+  createdAt      DateTime              @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  topupRequest TopupRequest? @relation(fields: [topupRequestId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([topupRequestId, createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 enum OrderStatus {

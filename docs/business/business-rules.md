@@ -412,4 +412,4 @@ approved --> disabled
 - Chỉ template approved mới tạo campaign; campaign gắn cố định 1 template; file import phải đúng cấu trúc; credit không đủ thì không được chạy; chạy thì trừ trước toàn bộ; kết thúc thì refund phần failed.
 
 ### BR-CORE-09: Payment idempotency
-- Webhook lặp không được cộng tiền 2 lần; không tạo 2 order; không tạo 2 invoice; phải lưu raw callback log để audit.
+- Webhook lặp không được cộng tiền 2 lần; không tạo 2 order; không tạo 2 invoice; phải lưu raw callback log để audit. Callback Pay2S được dedupe theo cặp provider/event ID trong cùng transaction với việc chuyển topup `PENDING → PAID` hoặc `PENDING → FAILED`.

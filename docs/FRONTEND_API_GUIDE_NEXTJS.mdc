@@ -1370,6 +1370,8 @@ Base:
 - Với `POST /public/messages/send` (có body, validate bằng DTO yêu cầu field `api_key`): để tránh fail DTO, gửi cả:
   - header `x-api-key: <api_key>`
   - field `api_key` trong body.
+
+Tất cả endpoint `/public/*` chặn workspace không tồn tại hoặc khác `ACTIVE`, gồm cả list/detail template (không chỉ endpoint gửi tin).
 - Mỗi lần gọi thành công, backend cập nhật `lastUsedAt` của API key.
 
 ### 12.2 List approved templates

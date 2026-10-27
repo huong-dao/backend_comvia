@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = {
   INVOICE_ISSUED_VIA_PDF: 'invoice.issued_via_pdf',
   INVOICE_PDF_VERIFICATION_FAILED: 'invoice.pdf_verification_failed',
   TOPUP_PAID: 'topup.paid',
+  TOPUP_FAILED: 'topup.failed',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

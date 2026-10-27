@@ -441,6 +441,17 @@ export class TopupsService {
     // 1. Kiểm tra trạng thái giao dịch từ Pay2S
     if (dto.resultCode !== 0) {
       console.error(`Pay2S IPN báo lỗi: ${dto.message}`);
+      const topup = await this.prismaService.topupRequest.findUnique({
+        where: { topupCode: dto.orderId },
+      });
+      if (topup) {
+        await this.markTopupFailedIfPending(
+          topup,
+          dto.transId,
+          'pay2s_ipn',
+          rawBody as Prisma.InputJsonValue,
+        );
+      }
       return { success: true }; // Nhận đã biết, không cần Pay2S gửi lại
     }
 
@@ -471,6 +482,7 @@ export class TopupsService {
       amountPaid,
       dto.transId,
       'pay2s_ipn',
+      rawBody as Prisma.InputJsonValue,
     );
     return { success: true };
   }
@@ -550,6 +562,7 @@ export class TopupsService {
       amountPaid,
       tx.transactionNumber ?? String(tx.id),
       'pay2s_bank_webhook',
+      tx as unknown as Prisma.InputJsonValue,
     );
   }
 
@@ -563,10 +576,30 @@ export class TopupsService {
     amountPaid: Prisma.Decimal,
     paymentRef: string,
     source: 'pay2s_ipn' | 'pay2s_bank_webhook',
+    rawPayload: Prisma.InputJsonValue,
   ) {
     return await this.prismaService.$transaction(async (tx) => {
+      try {
+        await tx.paymentCallbackLog.create({
+          data: {
+            provider: 'PAY2S',
+            eventId: paymentRef,
+            source,
+            status: 'PAID',
+            topupRequestId: topup.id,
+            workspaceId: topup.workspaceId,
+            payloadJson: rawPayload,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueCallbackError(error)) {
+          return { status: 'success', message: 'Already processed' };
+        }
+        throw error;
+      }
+
       const updateResult = await tx.topupRequest.updateMany({
-        where: { id: topup.id, status: { not: 'PAID' } },
+        where: { id: topup.id, status: 'PENDING' },
         data: {
           status: 'PAID',
           paidAt: new Date(),
@@ -687,5 +720,58 @@ export class TopupsService {
 
       return { status: 'success' };
     });
+  }
+
+  private async markTopupFailedIfPending(
+    topup: TopupRequestRecord,
+    paymentRef: string,
+    source: 'pay2s_ipn',
+    rawPayload: Prisma.InputJsonValue,
+  ) {
+    return this.prismaService.$transaction(async (tx) => {
+      try {
+        await tx.paymentCallbackLog.create({
+          data: {
+            provider: 'PAY2S',
+            eventId: paymentRef,
+            source,
+            status: 'FAILED',
+            topupRequestId: topup.id,
+            workspaceId: topup.workspaceId,
+            payloadJson: rawPayload,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueCallbackError(error)) {
+          return { status: 'success', message: 'Already processed' };
+        }
+        throw error;
+      }
+
+      const updated = await tx.topupRequest.updateMany({
+        where: { id: topup.id, status: 'PENDING' },
+        data: { status: 'FAILED' },
+      });
+      if (!updated.count)
+        return { status: 'success', message: 'Already processed' };
+
+      await this.auditLogService.write({
+        actorUserId: topup.ownerUserId,
+        workspaceId: topup.workspaceId,
+        action: AUDIT_ACTIONS.TOPUP_FAILED,
+        resourceType: AUDIT_RESOURCE_TYPES.TOPUP_REQUEST,
+        resourceId: topup.id,
+        metadataJson: { topupCode: topup.topupCode, paymentRef, source },
+        tx,
+      });
+      return { status: 'success' };
+    });
+  }
+
+  private isUniqueCallbackError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
   }
 }

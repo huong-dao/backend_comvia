@@ -20,6 +20,7 @@ export class PublicApiService {
   ) {}
 
   async listApprovedTemplates(ctx: PublicRequestContext) {
+    await this.assertActiveWorkspace(ctx.workspaceId);
     return this.prismaService.template.findMany({
       where: {
         workspaceId: ctx.workspaceId,
@@ -38,6 +39,7 @@ export class PublicApiService {
   }
 
   async getApprovedTemplate(ctx: PublicRequestContext, templateId: string) {
+    await this.assertActiveWorkspace(ctx.workspaceId);
     const template = await this.prismaService.template.findFirst({
       where: {
         id: templateId,
@@ -226,5 +228,15 @@ export class PublicApiService {
       providerMessageId: dispatchResult.providerMessageId,
       messageLogId: result.messageLog.id,
     };
+  }
+
+  private async assertActiveWorkspace(workspaceId: string) {
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { status: true },
+    });
+    if (!workspace || workspace.status !== 'ACTIVE') {
+      throw new BadRequestException('Workspace is not active');
+    }
   }
 }
