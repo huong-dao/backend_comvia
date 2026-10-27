@@ -22,6 +22,12 @@ Tóm tắt các nhóm tính năng lớn: [Project Discuss](./project-discust.md)
 4. BE gửi gói thay đổi cho FE theo [PO-to-FE handoff](./planning/po-to-fe-handoff.md). FE không tự đổi business rule hoặc API contract.
 5. Sau deploy và kiểm thử, BE cập nhật board và changelog. Chỉ khi đó task mới là Done.
 
+## Workflow bàn giao task
+
+1. Sau khi xong một task code hoặc documentation, BE cập nhật `tickets/board.md` và `planning/project-closeout-plan.md` trước: commit, check đã chạy, giới hạn deploy/live verification, owner và một next action.
+2. Chỉ commit các file thuộc task sau khi đã kiểm tra diff; không gộp thay đổi khác.
+3. Push branch hiện tại lên `origin/<branch>`; không force-push. Nếu push hoặc verification fail, ghi rõ blocker thay vì đánh dấu Done.
+
 ## Runtime
 
 - Web app: `https://app.comvia.cloud`
