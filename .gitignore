@@ -7,14 +7,8 @@ public
 
 .env
 
-# Local Codex agent workflows. Version the two reusable BE continuation skills only.
-.agents/*
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/comvia-be-handoff/
-!.agents/skills/comvia-be-handoff/SKILL.md
-!.agents/skills/comvia-be-continue/
-!.agents/skills/comvia-be-continue/SKILL.md
+# Local agent workflows and skills.
+.agents/
 AGENTS.md
 
 .claude
