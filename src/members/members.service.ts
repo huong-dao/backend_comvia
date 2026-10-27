@@ -46,6 +46,7 @@ export class MembersService {
   }
 
   async invite(workspaceId: string, actorUserId: string, dto: InviteMemberDto) {
+    const inviteEmail = dto.inviteValue.trim().toLowerCase();
     const token = randomBytes(24).toString('base64url');
     const expiredAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const role = dto.role ?? MemberRole.MEMBER;
@@ -54,7 +55,7 @@ export class MembersService {
       data: {
         workspaceId,
         inviteType: dto.inviteType,
-        inviteValue: dto.inviteValue,
+        inviteValue: inviteEmail,
         role,
         status: 'PENDING',
         token,
@@ -137,6 +138,8 @@ export class MembersService {
         status: true,
         expiredAt: true,
         role: true,
+        inviteType: true,
+        inviteValue: true,
       },
     });
 
@@ -158,7 +161,31 @@ export class MembersService {
       throw new BadRequestException('Invitation expired');
     }
 
+    if (invitation.inviteType !== 'EMAIL') {
+      throw new BadRequestException('Only email invitations are supported');
+    }
+    const user = await this.prismaService.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (
+      !user ||
+      user.email.trim().toLowerCase() !==
+        invitation.inviteValue.trim().toLowerCase()
+    ) {
+      throw new BadRequestException(
+        'Invitation email does not match the signed-in user',
+      );
+    }
+
     return this.prismaService.$transaction(async (tx) => {
+      const claimed = await tx.workspaceInvitation.updateMany({
+        where: { id: invitation.id, status: 'PENDING' },
+        data: { status: 'ACCEPTED' },
+      });
+      if (!claimed.count) {
+        throw new BadRequestException('Invitation is not available');
+      }
       await tx.workspaceMember.upsert({
         where: { workspaceId_userId: { workspaceId, userId } },
         update: { role: invitation.role, status: 'ACTIVE' },
@@ -168,11 +195,6 @@ export class MembersService {
           role: invitation.role,
           status: 'ACTIVE',
         },
-      });
-
-      await tx.workspaceInvitation.update({
-        where: { id: invitation.id },
-        data: { status: 'ACCEPTED' },
       });
 
       return { ok: true };

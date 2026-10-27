@@ -123,16 +123,16 @@ approved --> disabled
 - Phase hiện tại: `Owner`, `Member`.
 
 ### BR-MEMBER-02: Mời thành viên
-- Mời bằng email hoặc phone. Owner nhập → hệ thống gửi invitation → người nhận click/đăng nhập → join workspace.
+- Chỉ mời bằng **email**. Owner nhập email → hệ thống gửi invitation → đúng tài khoản có email đó click/đăng nhập → join workspace.
 - Nếu người được mời chưa có tài khoản: chuyển qua flow đăng ký, xác thực xong thì join workspace.
 
 ### BR-MEMBER-03: Quản lý thành viên & invitation
-- Owner có thể: resend/revoke invitation, remove member, đổi role (dự kiến phase sau).
+- Không có resend/revoke invitation ở phase này. Owner có thể remove member sau khi họ đã accept; đổi role là phase sau.
 - Trạng thái invitation: `pending` / `accepted` / `expired` / `revoked` / `resent`.
 
 ### BR-MEMBER-04: Permission matrix
-- **Owner:** quản lý workspace, billing info, OA, template, campaign, API key, mời/xóa member, xem wallet/order/invoice.
-- **Member:** xem dashboard, tạo template, gửi tin, xem logs — nhưng **credit luôn trừ vào ví owner**.
+- **Owner:** quản lý workspace, billing info, OA, template, campaign, API key, mời/xóa member, xem wallet/order/invoice/PDF.
+- **Member:** xem dashboard, tạo template, gửi tin, xem logs — không xem order/invoice/PDF; **credit luôn trừ vào ví owner**.
 
 ## Module 5 — Workspace Context & Session
 

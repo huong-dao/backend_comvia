@@ -1,13 +1,11 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsIn, IsOptional } from 'class-validator';
 import { MemberRole } from '@prisma/client';
 
 export class InviteMemberDto {
-  @IsString()
-  @MinLength(3)
-  inviteType!: 'EMAIL' | 'PHONE';
+  @IsIn(['EMAIL'])
+  inviteType!: 'EMAIL';
 
-  @IsString()
-  @MinLength(5)
+  @IsEmail()
   inviteValue!: string;
 
   @IsOptional()

@@ -464,6 +464,7 @@ Response:
 
 Ghi chú audit log:
 - Backend tự ghi `member.invited` / `member.removed` khi invite / xóa member.
+- Invitation chỉ nhận `inviteType: "EMAIL"`; lúc accept, email tài khoản JWT phải trùng email được mời (không phân biệt hoa/thường). Không có resend/revoke; Owner remove member sau khi accept.
 
 ## 6) OA Connection (Zalo OAuth + ZNS)
 
