@@ -10,9 +10,18 @@ import {
   buildOtpVerificationTemplate,
   OtpVerificationTemplateInput,
 } from './templates/otp-verification.template';
+import { buildWorkspaceInvitationTemplate } from './templates/workspace-invitation.template';
 
 export type SendOtpVerificationEmailInput = OtpVerificationTemplateInput & {
   to: string;
+};
+
+export type SendWorkspaceInvitationEmailInput = {
+  to: string;
+  workspaceId: string;
+  workspaceName: string;
+  token: string;
+  expiresAt: Date;
 };
 
 @Injectable()
@@ -86,5 +95,63 @@ export class EmailService {
     input: SendOtpVerificationEmailInput,
   ): Promise<void> {
     return this.sendOtpVerificationEmail(input, 'COMVIA - Password reset OTP');
+  }
+
+  async sendWorkspaceInvitationEmail(
+    input: SendWorkspaceInvitationEmailInput,
+  ): Promise<void> {
+    const fromName =
+      this.configService.get<string>('email.fromName') || 'COMVIA';
+    const fromEmail =
+      this.configService.get<string>('email.fromEmail') ||
+      this.configService.get<string>('email.smtpUser');
+    const subject =
+      this.configService.get<string>('email.invitationSubject') ||
+      'COMVIA - Workspace invitation';
+    const acceptUrl = this.buildWorkspaceInvitationUrl(
+      input.workspaceId,
+      input.token,
+    );
+
+    try {
+      await this.getTransporter().sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: input.to,
+        subject,
+        html: buildWorkspaceInvitationTemplate({
+          workspaceName: input.workspaceName,
+          acceptUrl,
+          expiresAt: input.expiresAt,
+        }),
+      });
+    } catch (error) {
+      this.logger.error(
+        `[Email] Failed to send workspace invitation to ${input.to}: ${String(error)}`,
+      );
+      throw new InternalServerErrorException(
+        'Workspace invitation email delivery failed',
+      );
+    }
+  }
+
+  private buildWorkspaceInvitationUrl(
+    workspaceId: string,
+    token: string,
+  ): string {
+    const appBaseUrl =
+      this.configService.get<string>('email.appBaseUrl') ||
+      'https://app.comvia.cloud';
+
+    let invitationUrl: URL;
+    try {
+      invitationUrl = new URL('/app/invitations/accept', appBaseUrl);
+    } catch {
+      throw new InternalServerErrorException(
+        'COMVIA_APP_BASE_URL is invalid for invitation email',
+      );
+    }
+    invitationUrl.searchParams.set('workspaceId', workspaceId);
+    invitationUrl.searchParams.set('token', token);
+    return invitationUrl.toString();
   }
 }

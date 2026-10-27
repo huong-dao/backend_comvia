@@ -6,6 +6,7 @@ import {
   AUDIT_RESOURCE_TYPES,
 } from '../audit-log/audit-log.constants';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { EmailService } from '../integrations/email/email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -15,6 +16,7 @@ export class MembersService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly emailService: EmailService,
   ) {}
 
   async listMembers(workspaceId: string) {
@@ -69,8 +71,24 @@ export class MembersService {
         role: true,
         inviteType: true,
         inviteValue: true,
+        workspace: { select: { name: true } },
       },
     });
+
+    try {
+      await this.emailService.sendWorkspaceInvitationEmail({
+        to: invitation.inviteValue,
+        workspaceId,
+        workspaceName: invitation.workspace.name,
+        token: invitation.token,
+        expiresAt: invitation.expiredAt,
+      });
+    } catch (error) {
+      await this.prismaService.workspaceInvitation.delete({
+        where: { id: invitation.id },
+      });
+      throw error;
+    }
 
     await this.auditLogService.write({
       actorUserId,
@@ -85,7 +103,10 @@ export class MembersService {
       },
     });
 
-    return invitation;
+    return {
+      id: invitation.id,
+      expiredAt: invitation.expiredAt,
+    };
   }
 
   async removeMember(
@@ -197,7 +218,7 @@ export class MembersService {
         },
       });
 
-      return { ok: true };
+      return { ok: true, redirectPath: `/app/w/${workspaceId}` };
     });
   }
 }

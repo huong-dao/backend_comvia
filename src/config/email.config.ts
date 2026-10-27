@@ -9,4 +9,7 @@ export default registerAs('email', () => ({
   fromName: process.env.SMTP_FROM_NAME || 'COMVIA',
   fromEmail: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || '',
   otpSubject: process.env.OTP_EMAIL_SUBJECT || 'comvia - OTP xác thực',
+  invitationSubject:
+    process.env.INVITATION_EMAIL_SUBJECT || 'COMVIA - Workspace invitation',
+  appBaseUrl: process.env.COMVIA_APP_BASE_URL || 'https://app.comvia.cloud',
 }));

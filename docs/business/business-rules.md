@@ -141,7 +141,7 @@ approved --> disabled
 
 - Chỉ mời bằng **email**. Owner nhập email → hệ thống gửi invitation → đúng tài khoản có email đó click/đăng nhập → join workspace.
 - Nếu người được mời chưa có tài khoản: chuyển qua flow đăng ký, xác thực xong thì join workspace.
-- **Gap triển khai BE-08:** source hiện mới tạo invitation/token, chưa gửi email hoặc phát hành URL accept/redirect cho FE. Không được coi raw token trong response tạo invitation là delivery contract.
+- Backend gửi email invitation chứa link accept; token chỉ xuất hiện trong URL email, không trả về browser API. FE giữ `workspaceId`/`token` qua đăng nhập, gọi accept bằng JWT đúng email được mời, rồi chuyển về workspace.
 
 ### BR-MEMBER-03: Quản lý thành viên & invitation
 
