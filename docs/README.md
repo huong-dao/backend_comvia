@@ -28,7 +28,7 @@ Tóm tắt các nhóm tính năng lớn: [Project Discuss](./project-discust.md)
 - API base URL: `https://api.comvia.cloud/api/v1`
 - FE phải cấu hình `NEXT_PUBLIC_API_BASE_URL` bao gồm `/api/v1`.
 
-Quick Chat đã ngừng sử dụng; không tạo yêu cầu hoặc UI mới cho tính năng này.
+Quick Chat đã được gỡ khỏi API backend trong `REL-01`; FE phải gỡ route, component và request cũ. Model/dữ liệu Prisma lịch sử vẫn được giữ đến khi có quyết định retention.
 
 ## Gói gửi cho FE
 

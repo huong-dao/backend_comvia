@@ -19,7 +19,6 @@ import { TemplatesModule } from './templates/templates.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { AdminModule } from './admin/admin.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
-import { QuickChatModule } from './quick-chat/quick-chat.module';
 import { MoneyAccountsModule } from './money-accounts/money-accounts.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
@@ -52,7 +51,6 @@ import emailConfig from './config/email.config';
     MessagingModule,
     CampaignsModule,
     AdminModule,
-    QuickChatModule,
     MoneyAccountsModule,
     AnalyticsModule,
   ],

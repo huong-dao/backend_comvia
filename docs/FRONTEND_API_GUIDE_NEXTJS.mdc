@@ -264,7 +264,7 @@ Tất cả route workspace hiện đang theo pattern:
 
 ### 4.0 Cách backend xác định workspace (quan trọng — đọc trước khi gọi bất kỳ route nào dưới đây)
 
-- **Mặc định (hầu hết route: members, oa, templates, campaigns, messages, wallet, audit-logs, api-keys, quick-chat):** backend lấy `workspaceId` từ **path param** (`WorkspaceContextGuard`), rồi kiểm tra user hiện tại có phải thành viên `ACTIVE` của workspace đó không. **Không cần** gửi header `x-workspace-id` cho các route này — chỉ cần `Authorization: Bearer <accessToken>`.
+- **Mặc định (hầu hết route: members, oa, templates, campaigns, messages, wallet, audit-logs, api-keys):** backend lấy `workspaceId` từ **path param** (`WorkspaceContextGuard`), rồi kiểm tra user hiện tại có phải thành viên `ACTIVE` của workspace đó không. **Không cần** gửi header `x-workspace-id` cho các route này — chỉ cần `Authorization: Bearer <accessToken>`.
 - **Ngoại lệ — module Topup:** `POST /topups/*` lấy `workspaceId` từ **header `x-workspace-id`** (`WorkspaceHeaderGuard`), không từ path. Xem mục 9.3.
 - Nếu route có thêm `@WorkspaceRoles(...)`, chỉ role đó (`OWNER` hoặc `MEMBER`) mới gọi được; nếu không có, mọi thành viên `ACTIVE` (Owner lẫn Member) đều gọi được.
 
@@ -1418,75 +1418,9 @@ Ghi chú:
 - Cùng điều kiện như mục 8: OA connected, template approved + `providerTemplateId`, đủ credit.
 - Lỗi gửi tin trả `400` kèm `messageLogId` nếu đã ghi log FAILED.
 
-## 13) Quick Chat (trợ lý AI trong workspace)
+## 13) Quick Chat — đã ngừng sử dụng
 
-> PO đã chốt không dùng Quick Chat (2026-10-26). Phần này chỉ mô tả API cũ còn trong code, không triển khai UI mới. Kế hoạch tiếp theo là gỡ UI/client và ngừng route backend; không coi ẩn menu là đã ngừng API. Xem F01/F12 trong audit.
-
-Base:
-- `/workspaces/:workspaceId/quick-chat`
-
-Auth/Role: `OWNER` hoặc `MEMBER` (workspace lấy từ path param — mục 4.0).
-
-### 13.1 Tạo session
-- `POST /workspaces/:workspaceId/quick-chat/sessions`
-
-Request:
-```json
-{
-  "title": "Hỏi về đơn hàng",
-  "agentId": "default-agent"
-}
-```
-`title` và `agentId` đều optional (`agentId` mặc định `"default-agent"` nếu bỏ trống — agent này được backend tự tạo sẵn nếu chưa tồn tại).
-
-Response:
-```json
-{
-  "id": "SESSION_ID",
-  "workspaceId": "WS_ID",
-  "userId": "USER_ID",
-  "title": "Hỏi về đơn hàng",
-  "agentId": "default-agent",
-  "createdAt": "...",
-  "updatedAt": "...",
-  "messages": [],
-  "actions": []
-}
-```
-
-### 13.2 Lấy session
-- `GET /workspaces/:workspaceId/quick-chat/sessions/:sessionId`
-
-Response: cùng shape mục 13.1, kèm `messages[]` (`{ id, role: "user"|"assistant", content, createdAt }`) và `actions[]` (`{ id, toolName, args, summary, status: "pending_confirmation"|"executed"|"cancelled", createdAt, executedAt }`).
-
-### 13.3 Gửi tin nhắn
-- `POST /workspaces/:workspaceId/quick-chat/sessions/:sessionId/messages`
-
-Request:
-```json
-{
-  "message": "Cho tôi xem đơn hàng gần nhất",
-  "toolInput": {},
-  "autoExecute": false
-}
-```
-Chỉ `message` bắt buộc (tối đa 4000 ký tự); `toolInput`, `autoExecute` optional.
-
-Response — **một trong ba dạng tùy AI quyết định**:
-- Tool được thực thi ngay: `{ "sessionId": "...", "plan": {...}, "result": {...} }`
-- Tool cần xác nhận trước khi chạy: `{ "sessionId": "...", "plan": {...}, "pendingAction": { "id": "ACTION_ID", "toolName": "...", "args": {}, "summary": "...", "status": "pending_confirmation" } }`
-- Chỉ trả lời, không gọi tool: `{ "sessionId": "...", "plan": null }`
-
-FE nên: nếu response có `pendingAction`, hiển thị nút xác nhận trước khi gọi mục 13.4; nếu có `result`, coi như đã thực thi xong.
-
-### 13.4 Xác nhận action đang chờ
-- `POST /workspaces/:workspaceId/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
-
-Dùng khi 13.3 trả về `pendingAction`. Không có body. Action phải đang ở trạng thái `pending_confirmation`, nếu không sẽ trả lỗi "Action is already processed".
-
-### 13.5 Quick Chat nội bộ (Admin/Staff) và cấu hình Agent
-
-Xem `FRONTEND_ADMIN_ROUTER_API_MAP.mdc` mục `/admin/internal-quick-chat` và `/admin/quick-chat/agents`.
+Quick Chat không còn API backend kể từ `REL-01`. FE phải gỡ các route, component và request Quick Chat; URL cũ sẽ trả `404`. Các model Prisma lịch sử được giữ lại trong giai đoạn này để không xóa dữ liệu mà chưa có quyết định retention.
 
 ## 14) Admin APIs (nếu FE có màn admin)
 

@@ -1,4 +1,4 @@
-# Project Closeout Plan — Comvia — 2026-10-26
+# Project Closeout Plan — Comvia — 2026-10-27
 
 ## Quyết định áp dụng
 
@@ -13,7 +13,7 @@
 |---|---|---|
 | FE deployment | Đang vận hành | Người vận hành xác nhận mọi thay đổi được deploy để kiểm tra trên server. `HEAD https://app.comvia.cloud` trả 200. |
 | API deployment | Truy cập public được | `HEAD https://api.comvia.cloud/api/v1` trả 200. Chưa xác minh response có JWT, role, dữ liệu hay provider. |
-| Backend local | Build và regression cơ bản đạt | `npm.cmd run build` PASS; unit 125/125 PASS; HTTP e2e standalone 31/31 PASS. |
+| Backend local | Build và regression cơ bản đạt | `npm.cmd run build` PASS; unit 14/14 suites, 121/121 PASS ngày 2026-10-27 sau khi gỡ Quick Chat; `npx.cmd eslint src/app.module.ts` PASS. Chưa xác nhận hành vi trên server cho commit `dev2`. |
 | FE local static check | Còn debt kỹ thuật | Lint còn 4 errors/29 warnings. Đây không phủ định luồng FE đang vận hành. |
 | Tài liệu contract | Đã đồng bộ | Hai API guide là contract BE phát hành cho FE; mọi thay đổi theo PO-to-FE handoff. |
 
@@ -30,7 +30,7 @@
 
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
-| REL-01 | FE + BE | Gỡ Quick Chat: direct route, component, import, API module/registry/executor và tài liệu active. Có kế hoạch release/redirect cho URL cũ. | URL cũ trả 404 hoặc redirect đã chốt; không còn request Quick Chat; test/build liên quan xanh. |
+| REL-01 | FE + BE | **BE hoàn tất trên `dev2`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; hành vi URL UI cũ đã được chốt và kiểm tra sau deploy. |
 | BE-01 | BE | Sửa race condition số dư ví khi topup/send/campaign chạy đồng thời (F02). | Test đồng thời chứng minh không double-credit/debit, không âm số dư và ledger/balance nhất quán. |
 | BE-02 | BE | Khóa VAT ở server theo rule đã chốt, không tin giá trị client (F03). | DTO/service không nhận VAT tùy ý; test tạo topup/order/invoice có tổng tiền đúng. |
 
@@ -63,7 +63,7 @@
 ## Thứ tự triển khai đề nghị
 
 1. Làm `INT-01` và `INT-02`; ghi kết quả vào board và changelog.
-2. Làm `REL-01`, `BE-01`, `BE-02`; đây là đợt release an toàn đầu tiên.
+2. Hoàn tất phần FE của `REL-01`, rồi deploy đồng bộ với BE; tiếp tục `BE-01`, `BE-02` trong đợt release an toàn đầu tiên.
 3. Làm `BE-03` đến `BE-06` theo dependency tiền → campaign/analytics → topup/invoice/invitation.
 4. Làm `FE-01` và `FE-02`; `FE-03` chỉ bắt đầu khi hợp đồng runtime đã được chứng minh; PO chốt `FE-04` trước khi mở feature mới.
 5. Mỗi release cập nhật `DOC-01`, chạy smoke live theo role và thêm bằng chứng vào board.

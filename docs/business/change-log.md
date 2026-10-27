@@ -4,6 +4,7 @@ Mỗi dòng: ngày | issue | rule đổi | trước → sau (ngắn gọn) | ng�
 
 | Ngày | Issue | Rule | Trước → Sau | Người duyệt |
 |------|-------|------|-------------|-------------|
+| 2026-10-27 | REL-01 | Product scope / API contract | Quick Chat còn module, controller và API route active → gỡ toàn bộ bề mặt API backend; model/dữ liệu Prisma lịch sử giữ nguyên chờ quyết định retention; FE phải gỡ UI/route/request cũ | PO đã loại bỏ tính năng; BE triển khai trên `dev2` |
 | 2026-10-02 | ISSUE-001 | BR-WS-02, BR-CORE-02 | Cá nhân bắt buộc `tax_code` → cá nhân **không** bắt buộc `tax_code` (tổ chức vẫn bắt buộc) | PO |
 | 2026-10-02 | ISSUE-003 | BR-OA-01, BR-OA-05 (mới), BR-CORE-06 | OA = một khái niệm gộp OAuth → tách OA record nội bộ (name/code/avatar/logo 400x96, nhập tay, nguồn độc lập không đồng bộ 2 chiều) khỏi dữ liệu kết nối Zalo; 2 hành động "Tạo OA" và "Kết nối"; 1-1 cứng Workspace↔OA | PO (hướng; chi tiết kiến trúc chờ SA) |
 | 2026-10-02 | ISSUE-004 | BR-TPL-01 | Template chỉ có name/code/content/placeholder → thêm `title`, `type` (bảng/văn bản/OTP, điều khiển cấu trúc nội dung), "nội dung phụ" (type=bảng), phút hết hạn OTP (type=OTP), `tracking_id` (lưu trữ) | PO (vai trò field; tên cột + mâu thuẫn "type thuần lưu trữ" chờ làm rõ) |

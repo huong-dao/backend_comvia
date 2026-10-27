@@ -1,6 +1,6 @@
 # Tình trạng dự án Comvia
 
-_Cập nhật: 26/10/2026. Dùng để trao đổi ngắn gọn với quản lý/PO._
+_Cập nhật: 27/10/2026. Dùng để trao đổi ngắn gọn với quản lý/PO._
 
 ## Hiện có và đang vận hành
 
@@ -15,7 +15,7 @@ Các điểm trên xác nhận sản phẩm có luồng hoạt động. Một s�
 | Ưu tiên | Công việc | Kết quả cần có |
 |---|---|---|
 | P0 | Kiểm tra live theo Owner, Member, Staff và Admin | Xác nhận API/UI members, orders/invoices, invitation và quyền truy cập đúng trên server. |
-| P0 | Loại bỏ Quick Chat | Không còn route, UI hoặc API Quick Chat vì tính năng đã không dùng. |
+| P0 | Loại bỏ Quick Chat | BE đã gỡ module/API route trên `dev2`, build và 121 unit tests PASS ngày 27/10; FE cần gỡ UI, route và request cũ. Cần deploy/smoke server trước khi chốt release. Giữ model/dữ liệu Prisma lịch sử đến khi có quyết định retention. |
 | P0 | Bảo vệ dòng tiền | Số dư ví an toàn khi xử lý đồng thời; VAT do server quyết định, không nhận tùy ý từ client. |
 | P1 | Đồng nhất giá và báo cáo | Giá public/single/campaign, chi phí đã dùng, analytics và campaign recovery cho kết quả nhất quán. |
 | P1 | Hoàn tất thanh toán và chứng từ | Topup lifecycle, chống callback trùng, order/invoice, PDF access và invitation đúng người nhận. |

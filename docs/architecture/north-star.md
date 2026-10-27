@@ -43,7 +43,6 @@ flowchart TB
 | `orders/` | Order, invoice |
 | `prisma/` | PrismaService và DB client |
 | `public-api/` | Endpoint cho hệ thống ngoài dùng API key |
-| `quick-chat/` | Code chat/tool theo luật còn tồn tại; PO đã chốt bỏ ngày 2026-10-26, chờ gỡ module/route (không phát triển tiếp) |
 | `system-config/` | Cấu hình hệ thống |
 | `templates/` | Quản lý template ZNS/ZBS |
 | `users/` | Hồ sơ user |
@@ -72,7 +71,7 @@ flowchart TB
 | Payments | Pay2S |
 | Messaging | Zalo OA API |
 | Lưu trữ file | Đĩa cục bộ dưới `public/` (S3 dependency chưa dùng — ADR-002) |
-| AI | Gemini trích xuất PDF invoice; Quick Chat hiện là rule-based |
+| AI | Gemini trích xuất PDF invoice |
 | Validation | class-validator, class-transformer |
 
 ## 5. Database — nhóm entity chính (theo `prisma/schema.prisma`)
@@ -83,7 +82,7 @@ flowchart TB
 | Tổ chức | `Workspace`, `WorkspaceMember`, `WorkspaceBillingProfile` |
 | Tài chính | `WalletAccount`, `WalletTransaction`, `TopupRequest`, `Order`, `Invoice` |
 | Giao tiếp | `WorkspaceOa`, `WorkspaceOaConnection`, `Template`, `MessageLog`, `Campaign` |
-| AI/Chat | `QuickChatAgentProfile`, `QuickChatSession`, `QuickChatMessage` |
+| Dữ liệu lịch sử Quick Chat | `QuickChatAgentProfile`, `QuickChatSession`, `QuickChatMessage` (giữ lại sau REL-01, chờ quyết định retention) |
 
 Chi tiết đầy đủ entity/quan hệ: đọc trực tiếp `prisma/schema.prisma` (nguồn chính xác nhất) khi cần ERD chi tiết cho một phase/feature cụ thể — SA bổ sung `erd.md` theo yêu cầu thực tế thay vì tái tạo toàn bộ schema ở đây.
 

@@ -11,7 +11,7 @@ Mục tiêu:
 Phạm vi:
 - Áp dụng cho `UserRole.ADMIN`.
 
-> Quyết định PO ngày 2026-10-26: Quick Chat đã ngừng dùng. Các route Quick Chat còn dưới đây chỉ là dấu vết code cần gỡ, không phải router active để FE triển khai. Trang webhook mock cũng ngừng dùng: webhook Pay2S là server-to-server và không được gọi từ browser.
+> Quick Chat đã bị gỡ khỏi backend trong `REL-01`. FE phải gỡ các route/component/request tương ứng; URL Quick Chat cũ sẽ trả `404`. Trang webhook mock cũng ngừng dùng: webhook Pay2S là server-to-server và không được gọi từ browser.
 
 ---
 
@@ -23,11 +23,7 @@ Phạm vi:
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
 | `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
-| `/admin/quick-chat/agents` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
-| `/admin/quick-chat/agents/:agentId` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
-| `/admin/quick-chat/tools` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
-| `/admin/internal-quick-chat` | **Đã ngừng dùng; cần gỡ route** | Không có action mới |
 | Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
 | Trang quản lý tài khoản ngân hàng (admin; path FE tùy dự án, ví dụ `/admin/money-accounts`) | `GET /money-accounts`, `GET /money-accounts/all` | `POST /money-accounts`, `PATCH /money-accounts/:id`, `DELETE /money-accounts/:id` |
 
@@ -99,93 +95,13 @@ Auth/Role: `UserRole.ADMIN`
 
 ---
 
-## 5) `/admin/quick-chat/agents`
-
-**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
-
-### Load
-- `GET /admin/quick-chat/agents`
-
-### Fields nên render
-- `id`
-- `name`
-- `provider`
-- `systemPrompt`
-- `allowedTools`
-- `skills`
-- `active`
-- `createdAt`
-- `updatedAt`
-
----
-
-## 6) `/admin/quick-chat/agents/:agentId`
-
-**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
-
-### Save
-- `PUT /admin/quick-chat/agents/:agentId`
-
-### Body
-```json
-{
-  "name": "John",
-  "provider": "openai",
-  "systemPrompt": "You are a workspace operations assistant.",
-  "allowedTools": ["*"],
-  "skills": ["workspace-ops", "billing-safety"],
-  "active": true
-}
-```
-
----
-
-## 7) `/admin/quick-chat/tools`
-
-**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
-
-### Load
-- `GET /admin/quick-chat/tools`
-
-### Render
-- Danh sách string tool name
-- copy-to-clipboard
-
----
-
-## 8) `/admin/dev/payment-webhook`
+## 5) `/admin/dev/payment-webhook`
 
 **Đã ngừng dùng và cần gỡ route.** Endpoint cũ `/topups/webhook` không tồn tại. Webhook thật `POST /webhooks/pay2s` là route Public dành riêng cho Pay2S/server-to-server: IPN yêu cầu `m2signature`, nhánh biến động tài khoản yêu cầu Bearer token. FE/admin browser không có thông tin xác thực này và không được gọi endpoint.
 
 ---
 
-## 9) `/admin/internal-quick-chat`
-
-**Đã ngừng dùng.** Không phát triển hay nối thêm UI/API; mục này chỉ giữ để truy vết trong lúc gỡ code.
-
-### Tạo session
-- `POST /internal/quick-chat/sessions`
-
-### Body
-```json
-{
-  "workspaceId": "WS_ID",
-  "title": "Admin ops"
-}
-```
-
-### Lấy session
-- `GET /internal/quick-chat/sessions/:sessionId`
-
-### Gửi message
-- `POST /internal/quick-chat/sessions/:sessionId/messages`
-
-### Confirm action
-- `POST /internal/quick-chat/sessions/:sessionId/actions/:actionId/confirm`
-
----
-
-## 10) Admin: đơn hàng & hóa đơn (toàn hệ thống)
+## 6) Admin: đơn hàng & hóa đơn (toàn hệ thống)
 
 Global prefix: `api/v1` (ví dụ: `GET /api/v1/admin/orders`).
 
@@ -392,7 +308,7 @@ Sắp xếp: `createdAt` giảm dần.
 
 ---
 
-## 11) Quản lý tài khoản ngân hàng (Money Accounts)
+## 7) Quản lý tài khoản ngân hàng (Money Accounts)
 
 **Module này chưa có mặt ở bản tài liệu cũ — hoàn toàn thiếu.** Đây là danh sách tài khoản ngân hàng nhận tiền qua Pay2S, **dùng chung cho toàn hệ thống** (không tách theo workspace, dù path tham số của service có tên `workspaceId` — hiện bị bỏ qua ở tầng service). Owner chọn 1 tài khoản trong danh sách này khi tạo topup (xem `FRONTEND_API_GUIDE_NEXTJS.mdc §9.3`).
 
@@ -456,11 +372,10 @@ Response: `{ "success": true, "message": "Money account deleted successfully" }`
 
 ---
 
-## 12) Gợi ý code frontend
+## 8) Gợi ý code frontend
 
 - `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
 - **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).
 - Trang list invoice toàn hệ thống: `GET /admin/invoices`; detail: `GET /admin/invoices/:invoiceId`.
-- `/admin/quick-chat/agents/:agentId` có thể reuse data từ list để giảm thêm 1 request.
 - Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo, và cập nhật đúng shape Pay2S thật (mục 8) thay vì shape mock cũ.
 - Trang quản lý tài khoản ngân hàng: ưu tiên nút "Ẩn/Hiện" (`PATCH isActive`) thay vì nút "Xóa" trong UI, vì `DELETE` chỉ soft-delete — tránh gây hiểu lầm là xóa vĩnh viễn.

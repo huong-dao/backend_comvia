@@ -15,5 +15,6 @@
 - Không tự thêm endpoint, field, quyền hoặc state machine chưa có trong guide.
 - Gửi câu hỏi UX/contract lại BE theo [PO-to-FE handoff](../planning/po-to-fe-handoff.md).
 - Khi FE hoàn tất, gửi lại BE commit/deploy, test smoke và các thay đổi cần cập nhật tài liệu. BE cập nhật contract, changelog và board.
+- Quick Chat đã bị gỡ khỏi API backend; gỡ toàn bộ route, component và request Quick Chat trong FE. URL API cũ sẽ trả `404`.
 
 Runtime: `https://app.comvia.cloud` gọi `https://api.comvia.cloud/api/v1`.

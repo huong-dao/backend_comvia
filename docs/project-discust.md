@@ -15,7 +15,7 @@ Các nhóm trên đã có code và được deploy; không đồng nghĩa mọi 
 
 ## Chưa hoàn tất hoặc cần chỉnh
 
-- **Quick Chat:** đã quyết định không sử dụng nhưng code, route và tài liệu cũ vẫn cần gỡ an toàn ở cả BE và FE.
+- **Quick Chat:** BE đã gỡ code, module và API route trên `dev2` (build và 121 unit tests PASS ngày 27/10); FE còn phải gỡ UI, route và request cũ. Cần deploy/smoke server trước khi chốt release. Model/dữ liệu Prisma lịch sử được giữ đến khi có quyết định retention.
 - **An toàn tiền:** cần bảo đảm số dư ví đúng khi nhiều giao dịch chạy đồng thời và VAT chỉ do server quyết định.
 - **Giá và báo cáo:** cần thống nhất giá giữa Public API, gửi đơn lẻ và campaign; kiểm tra lại chi phí đã dùng, analytics và campaign recovery.
 - **Thanh toán/chứng từ:** cần hoàn thiện topup lifecycle, chống callback trùng, quyền xem order/invoice/PDF và invitation đúng người nhận.
@@ -25,7 +25,7 @@ Các nhóm trên đã có code và được deploy; không đồng nghĩa mọi 
 ## Cần làm tiếp
 
 1. Kiểm tra các luồng chính trên server bằng tài khoản test theo từng role.
-2. Gỡ Quick Chat.
+2. FE gỡ Quick Chat và deploy đồng bộ với BE; sau đó kiểm tra URL UI/API cũ.
 3. Hoàn thành các sửa đổi P0 về số dư ví và VAT.
 4. Hoàn thiện giá, analytics, campaign, topup, invoice và invitation.
 5. Chốt với PO các chức năng phase sau: profile mở rộng, xóa workspace, lịch sử topup, analytics chi tiết, system health, resend/revoke invitation, send-test và duplicate template.
