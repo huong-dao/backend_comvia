@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "migrate:legacy-invoice-pdfs": "node scripts/migrate-legacy-invoice-pdfs.cjs",
     "create-admin": "node scripts/create-admin-user.cjs",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
