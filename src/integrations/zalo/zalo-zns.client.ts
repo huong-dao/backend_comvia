@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import type { ZaloZnsSendResponse } from './zalo.types';
+import type { ZaloZnsSendResult, ZaloZnsSendResponse } from './zalo.types';
 
 export type SendZnsTemplateInput = {
   accessToken: string;
@@ -20,15 +20,11 @@ export class ZaloZnsClient {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async sendTemplate(
-    input: SendZnsTemplateInput,
-  ): Promise<ZaloZnsSendResponse> {
+  async sendTemplate(input: SendZnsTemplateInput): Promise<ZaloZnsSendResult> {
     const trackingId =
-      input.trackingId ??
-      `${this.configService.get<string>('zalo.znsTrackingId') ?? 'zns'}${Date.now()}${randomUUID().replaceAll('-', '')}`.slice(
-        0,
-        48,
-      );
+      input.trackingId !== undefined
+        ? this.sanitizeTrackingId(input.trackingId)
+        : this.createTrackingId();
     const phone = this.normalizePhoneNumber(input.phoneNumber);
 
     const response = await fetch(
@@ -54,7 +50,28 @@ export class ZaloZnsClient {
       throw new ZaloZnsRejectedError(payload.message || 'Zalo ZNS send failed');
     }
 
-    return payload;
+    return { response: payload, trackingId };
+  }
+
+  private createTrackingId(): string {
+    const configuredPrefix =
+      this.configService.get<string>('zalo.znsTrackingId') ?? 'zns';
+    const prefix = this.sanitizeTrackingId(configuredPrefix);
+    return `${prefix}${Date.now()}${randomUUID().replaceAll('-', '')}`.slice(
+      0,
+      48,
+    );
+  }
+
+  /** Zalo permits at most 48 alphanumeric characters in tracking_id. */
+  private sanitizeTrackingId(trackingId: string): string {
+    const sanitized = trackingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 48);
+    if (!sanitized) {
+      throw new Error(
+        'Zalo tracking ID must contain at least one alphanumeric character',
+      );
+    }
+    return sanitized;
   }
 
   private normalizePhoneNumber(phoneNumber: string): string {

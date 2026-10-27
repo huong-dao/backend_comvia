@@ -691,6 +691,11 @@ model MessageLog {
   status              MessageStatus @default(PENDING)
   errorCode           String?
   providerMessageId   String?
+  providerTrackingId  String?
+  providerSentAt      DateTime?
+  providerDeliveredAt DateTime?
+  providerQuotaDaily Int?
+  providerQuotaRemaining Int?
   costAtTime          Decimal?
   walletTransactionId String?
   operatorUserId      String?
@@ -701,10 +706,31 @@ model MessageLog {
   oaConnection WorkspaceOa   @relation(fields: [oaConnectionId], references: [id], onDelete: Cascade)
   template     Template      @relation(fields: [templateId], references: [id], onDelete: Cascade)
   campaignRows CampaignRow[]
+  deliveryEvents ZaloDeliveryEvent[]
 
   @@index([workspaceId, sentAt])
   @@index([templateId, sentAt])
   @@index([phoneNumber, sentAt])
+  @@index([providerMessageId])
+}
+
+// Immutable provider evidence. The provider message/event pair is the
+// idempotency boundary for delivery-webhook retries.
+model ZaloDeliveryEvent {
+  id                String   @id @default(cuid())
+  providerMessageId String
+  trackingId        String?
+  eventName         String
+  deliveryTime      DateTime
+  appId             String
+  payloadJson       Json
+  receivedAt        DateTime @default(now())
+  messageLogId      String?
+
+  messageLog MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
+
+  @@unique([providerMessageId, eventName])
+  @@index([messageLogId, deliveryTime])
 }
 
 enum CampaignStatus {

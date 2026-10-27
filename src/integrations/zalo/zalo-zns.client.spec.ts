@@ -69,4 +69,43 @@ describe('ZaloZnsClient', () => {
       }),
     ).rejects.toBeInstanceOf(ZaloZnsRejectedError);
   });
+
+  it('sanitizes supplied tracking IDs to Zalo alphanumeric constraints', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        error: 0,
+        message: 'Success',
+        data: { msg_id: 'msg-1' },
+      }),
+    } as unknown as Response);
+
+    const result = await client.sendTemplate({
+      accessToken: 'access-token',
+      phoneNumber: '0901234567',
+      templateId: 'template-id',
+      templateData: {},
+      trackingId: 'send_invoice/001',
+    });
+
+    expect(result.trackingId).toBe('sendinvoice001');
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(request.body as string)).toEqual(
+      expect.objectContaining({ tracking_id: 'sendinvoice001' }),
+    );
+  });
+
+  it('rejects an empty supplied tracking ID instead of silently replacing it', async () => {
+    await expect(
+      client.sendTemplate({
+        accessToken: 'access-token',
+        phoneNumber: '0901234567',
+        templateId: 'template-id',
+        templateData: {},
+        trackingId: '---',
+      }),
+    ).rejects.toThrow(
+      'Zalo tracking ID must contain at least one alphanumeric',
+    );
+  });
 });

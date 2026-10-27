@@ -7,12 +7,16 @@ import {
   Headers,
 } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
+import { ZaloDeliveryWebhookService } from '../integrations/zalo/zalo-delivery-webhook.service';
 import { TopupsService } from '../topups/topups.service';
 
 @Public()
 @Controller('webhooks') // Đường dẫn sẽ là /api/v1/webhooks (nếu có set global prefix)
 export class WebhooksController {
-  constructor(private readonly topupsService: TopupsService) {}
+  constructor(
+    private readonly topupsService: TopupsService,
+    private readonly zaloDeliveryWebhookService: ZaloDeliveryWebhookService,
+  ) {}
 
   // Pay2S có 2 cơ chế báo giao dịch khác nhau, cả hai đều có thể gọi vào
   // cùng 1 URL: "Instant Payment Notification" (gắn với Collection Link,
@@ -37,5 +41,15 @@ export class WebhooksController {
     }
 
     return await this.topupsService.handlePay2sWebhook(body);
+  }
+
+  /** Trusted relay for Zalo's user_received_message application webhook. */
+  @Post('zalo-zns/delivery')
+  @HttpCode(HttpStatus.OK)
+  async handleZaloZnsDelivery(
+    @Body() body: Record<string, unknown>,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.zaloDeliveryWebhookService.handleDelivery(body, authorization);
   }
 }

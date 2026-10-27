@@ -18,5 +18,8 @@ export default registerAs('zalo', () => ({
     `${DEFAULT_APP_BASE_URL}/app/settings/oa`,
   /** Shared bearer token used only by id.onweb.asia when relaying OAuth tokens. */
   oauthWebhookToken: process.env.ZALO_OAUTH_WEBHOOK_TOKEN,
-  znsTrackingId: process.env.ZALO_ZNS_TRACKING_ID || 'send_invoice',
+  /** Alphanumeric prefix only; Zalo rejects special characters in tracking_id. */
+  znsTrackingId: process.env.ZALO_ZNS_TRACKING_ID || 'zns',
+  /** Shared bearer token accepted only from the trusted Zalo webhook relay. */
+  deliveryWebhookToken: process.env.ZALO_ZNS_WEBHOOK_TOKEN,
 }));

@@ -17,6 +17,11 @@ export type ZaloZnsSendResponse = {
   };
 };
 
+export type ZaloZnsSendResult = {
+  response: ZaloZnsSendResponse;
+  trackingId: string;
+};
+
 export type ZaloOaInfoResponse = {
   error: number;
   message: string;
