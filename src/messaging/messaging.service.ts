@@ -8,6 +8,7 @@ import {
 import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { SendSingleDto } from './dto/send-single.dto';
 import { assertOtpPayloadData } from '../templates/otp-template.util';
 
@@ -17,6 +18,7 @@ export class MessagingService {
     private readonly prismaService: PrismaService,
     private readonly oaMessagingService: OaMessagingService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly walletLedgerService: WalletLedgerService,
   ) {}
 
   async sendSingle(
@@ -136,27 +138,15 @@ export class MessagingService {
     }
 
     return this.prismaService.$transaction(async (tx) => {
-      const walletTransaction = await tx.walletTransaction.create({
-        data: {
-          transactionCode: `WT_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-          ownerUserId: workspace.ownerUserId,
-          workspaceId: workspace.id,
-          type: 'MESSAGE_DEBIT' satisfies WalletTransactionType,
-          amount: unitCost,
-          balanceBefore: walletBefore,
-          balanceAfter: walletBefore - unitCost,
-          sourceType: 'MESSAGE_LOG',
-          sourceId: template.id,
-          createdBy: operatorUserId,
-          note: 'ZNS send single',
-        },
-      });
-
-      await tx.walletAccount.update({
-        where: { ownerUserId: workspace.ownerUserId },
-        data: {
-          balance: { decrement: unitCost },
-        },
+      const walletTransactionId = await this.walletLedgerService.debit(tx, {
+        ownerUserId: workspace.ownerUserId,
+        workspaceId: workspace.id,
+        amount: unitCost,
+        type: 'MESSAGE_DEBIT' satisfies WalletTransactionType,
+        sourceType: 'MESSAGE_LOG',
+        sourceId: template.id,
+        createdBy: operatorUserId,
+        note: 'ZNS send single',
       });
 
       const messageLog = await tx.messageLog.create({
@@ -170,7 +160,7 @@ export class MessagingService {
           status: 'SUCCESS' satisfies MessageStatus,
           providerMessageId: dispatchResult.providerMessageId,
           costAtTime: unitCost,
-          walletTransactionId: walletTransaction.id,
+          walletTransactionId,
           operatorUserId,
           sentAt: new Date(),
         },

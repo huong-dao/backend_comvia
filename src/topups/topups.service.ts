@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, TopupStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
 import {
   createPay2sCollectionLink,
@@ -47,6 +48,7 @@ export class TopupsService {
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly walletLedgerService: WalletLedgerService,
   ) {}
 
   private generateCode(prefix: string) {
@@ -598,6 +600,7 @@ export class TopupsService {
         tx,
       });
 
+      await this.walletLedgerService.lock(tx, topup.ownerUserId);
       const walletBefore = await tx.walletAccount.findUnique({
         where: { ownerUserId: topup.ownerUserId },
       });

@@ -11,6 +11,7 @@ import {
 import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import {
   buildCsvTemplateContent,
   parseCampaignCsv,
@@ -50,6 +51,7 @@ export class CampaignsService {
     private readonly prismaService: PrismaService,
     private readonly systemConfigService: SystemConfigService,
     private readonly oaMessagingService: OaMessagingService,
+    private readonly walletLedgerService: WalletLedgerService,
   ) {}
 
   async create(
@@ -593,46 +595,16 @@ export class CampaignsService {
     note: string;
   }): Promise<string> {
     return this.prismaService.$transaction(async (tx) => {
-      const wallet = await tx.walletAccount.findUnique({
-        where: { ownerUserId: params.ownerUserId },
+      return this.walletLedgerService.debit(tx, {
+        ownerUserId: params.ownerUserId,
+        workspaceId: params.workspaceId,
+        amount: params.amount,
+        type: params.type,
+        sourceType: params.sourceType,
+        sourceId: params.sourceId,
+        createdBy: params.createdBy,
+        note: params.note,
       });
-      if (!wallet) {
-        throw new BadRequestException('Wallet not initialized');
-      }
-
-      const balanceBefore = Number(wallet.balance);
-      if (balanceBefore < params.amount) {
-        throw new BadRequestException(
-          'Insufficient credit. Please top up your wallet before sending.',
-        );
-      }
-
-      const balanceAfter = balanceBefore - params.amount;
-      const walletTransaction = await tx.walletTransaction.create({
-        data: {
-          transactionCode: this.newTransactionCode(),
-          ownerUserId: params.ownerUserId,
-          workspaceId: params.workspaceId,
-          type: params.type,
-          amount: params.amount,
-          balanceBefore,
-          balanceAfter,
-          sourceType: params.sourceType,
-          sourceId: params.sourceId,
-          createdBy: params.createdBy,
-          note: params.note,
-        },
-      });
-
-      await tx.walletAccount.update({
-        where: { ownerUserId: params.ownerUserId },
-        data: {
-          balance: { decrement: params.amount },
-          totalSpent: { increment: params.amount },
-        },
-      });
-
-      return walletTransaction.id;
     });
   }
 
@@ -649,39 +621,20 @@ export class CampaignsService {
     if (params.amount <= 0) return;
 
     await this.prismaService.$transaction(async (tx) => {
-      const wallet = await tx.walletAccount.findUnique({
-        where: { ownerUserId: params.ownerUserId },
-      });
-      if (!wallet) {
-        throw new BadRequestException('Wallet not initialized');
-      }
-
-      const balanceBefore = Number(wallet.balance);
-      const balanceAfter = balanceBefore + params.amount;
-
-      await tx.walletTransaction.create({
-        data: {
-          transactionCode: this.newTransactionCode(),
+      await this.walletLedgerService.credit(
+        tx,
+        {
           ownerUserId: params.ownerUserId,
           workspaceId: params.workspaceId,
-          type: params.type,
           amount: params.amount,
-          balanceBefore,
-          balanceAfter,
+          type: params.type,
           sourceType: params.sourceType,
           sourceId: params.sourceId,
           createdBy: params.createdBy,
           note: params.note,
         },
-      });
-
-      await tx.walletAccount.update({
-        where: { ownerUserId: params.ownerUserId },
-        data: {
-          balance: { increment: params.amount },
-          totalRefund: { increment: params.amount },
-        },
-      });
+        'totalRefund',
+      );
     });
   }
 
@@ -853,10 +806,6 @@ export class CampaignsService {
       throw new BadRequestException('Wallet not initialized');
     }
     return wallet;
-  }
-
-  private newTransactionCode(): string {
-    return `WT_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
 
   private campaignInclude() {
