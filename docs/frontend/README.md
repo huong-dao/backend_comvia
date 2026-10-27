@@ -8,6 +8,7 @@
 2. [Admin router map](../FRONTEND_ADMIN_ROUTER_API_MAP.mdc): API và route admin.
 3. [Project closeout plan](../planning/project-closeout-plan.md): task hiện hành, owner và thứ tự làm.
 4. [Delivery board](../tickets/board.md): trạng thái task.
+5. [FE execution handoff — 2026-10-27](./fe-execution-handoff-2026-10-27.md): thứ tự implement, role contract, acceptance criteria và blocker deploy.
 
 ## Quy tắc nhận yêu cầu
 

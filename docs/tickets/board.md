@@ -15,6 +15,6 @@
 | FE-02 | P1 | FE + QA | Chưa bắt đầu | Tái hiện rồi mới sửa sidebar image và fallback API configuration. |
 | FE-03 | P1 | FE + QA | Chờ INT-01 | Chỉ thay integration members/orders/invoices/invitation khi runtime contract đã xác minh. |
 | FE-04 | P2 | FE + PO | Chờ PO | Scope profile, delete workspace, topup history, analytics, system health, invitation và template extension đã được quyết định. |
-| DOC-01 | P1 | BE + FE | Liên tục | Mỗi task thay đổi contract đều cập nhật guide, changelog và bằng chứng deploy/QA. |
+| DOC-01 | P1 | BE + FE | FE execution handoff published 2026-10-27; liên tục | [FE execution handoff](../frontend/fe-execution-handoff-2026-10-27.md) là điểm làm việc sau khi mirror docs. Mỗi task thay đổi contract đều cập nhật guide, changelog và bằng chứng deploy/QA. |
 
 Chi tiết phạm vi và thứ tự thực hiện: [Project closeout plan](../planning/project-closeout-plan.md).

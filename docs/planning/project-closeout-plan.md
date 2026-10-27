@@ -51,7 +51,7 @@
 | FE-02 | FE + QA | Tái hiện trước khi sửa hai finding tĩnh: `next/image` sidebar thiếu kích thước và fallback API thiếu `/api/v1` khi env không có. Deployment hiện có thể đã được cấu hình đúng. | Có reproduction trên đúng môi trường; logo render được ở sidebar liên quan và lỗi cấu hình API rõ ràng hoặc fallback đúng. |
 | FE-03 | FE + QA | Chỉ sửa các route members/orders/invoices/invitation sau INT-01. Giữ FE hiện hành nếu deployment đang phục vụ đúng contract. | Mọi thay đổi có response mẫu production/staging và test role/cross-workspace. |
 | FE-04 | FE + PO | Chốt scope còn thiếu: profile update, workspace delete UI, topup history/unified flow, detailed analytics/system health, resend/revoke invitation, send-test, duplicate template. | Mỗi mục được đánh dấu `in scope`, `deferred` hoặc `not planned`; không tạo UI/API dựa trên suy đoán. |
-| DOC-01 | BE owner + FE owner | Sau mỗi ticket, cập nhật API guide do BE phát hành, mirror sang FE, rồi cập nhật board/changelog bằng link test/deployment. | Không còn hai guide khác contract; board chỉ ghi Done khi có evidence. |
+| DOC-01 | BE owner + FE owner | FE bắt đầu từ [FE execution handoff](../frontend/fe-execution-handoff-2026-10-27.md), rồi cập nhật API guide do BE phát hành, mirror sang FE và ghi board/changelog bằng link test/deployment. | Không còn hai guide khác contract; board chỉ ghi Done khi có evidence. |
 
 ### P2 — chỉ làm sau khi PO chốt phạm vi
 
