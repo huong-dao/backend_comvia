@@ -39,7 +39,7 @@
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
 | BE-03 | BE | Đã push `dev2` tại `3fa3436`: public send dùng giá template + CTA như single/campaign; `CAMPAIGN_HOLD` là chi thực, `CAMPAIGN_REFUND` giảm monthly used và `totalSpent` (F04/F05). | Wallet regression 20/20 và build PASS ngày 2026-10-27. Cần smoke dữ liệu campaign success/failed để đối chiếu tổng chi. |
-| BE-04 | BE | Database worker uses durable campaign runs and at-most-once claims; analytics rule is unchanged and already counts failed sends by `sentAt`. | Build/test/lint locally; then apply migration and smoke success, confirmed provider failure/refund, restart recovery to `RECONCILIATION_REQUIRED`, and analytics three periods on PostgreSQL. Never auto resend/refund ambiguous rows. |
+| BE-04 | BE | Code pushed `dev2` at `e9973cd`: database worker uses durable campaign runs and at-most-once claims; analytics rule is unchanged and already counts failed sends by `sentAt`. | Apply migration and smoke success, confirmed provider failure/refund, restart recovery to `RECONCILIATION_REQUIRED`, and analytics three periods on PostgreSQL. Never auto resend/refund ambiguous rows. |
 | BE-05 | BE | Hoàn tất topup lifecycle, idempotency/audit và public template kiểm tra workspace status (F08/F09). | Callback lặp, PAID/FAILED/EXPIRED, workspace disabled và public key đều có test. |
 | BE-06 | BE | Chốt customer orders/invoices, PDF access, issue-once và invitation identity/resend/revoke (F10/F11). | Contract versioned được QA live; tài liệu nêu rõ Owner/Member/Admin được đọc gì và khách chỉ thấy dữ liệu thuộc workspace. |
 
