@@ -111,4 +111,25 @@ describe('WalletLedgerService', () => {
       },
     });
   });
+
+  it('reduces cumulative spending when refunding failed campaign rows', async () => {
+    const update = jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue({});
+    const tx = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ balance: new Prisma.Decimal(40) }]),
+      walletTransaction: {
+        create: jest.fn().mockResolvedValue({ id: 'refund-1' }),
+      },
+      walletAccount: { update },
+    } as unknown as Prisma.TransactionClient;
+
+    await new WalletLedgerService().credit(
+      tx,
+      { ...params, amount: 10, type: WalletTransactionType.CAMPAIGN_REFUND },
+      'totalRefund',
+    );
+
+    expect(update).toHaveBeenCalledTimes(1);
+  });
 });

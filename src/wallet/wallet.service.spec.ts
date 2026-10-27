@@ -258,6 +258,7 @@ describe('WalletService.getBalance monthly stats', () => {
       .mockResolvedValueOnce([
         { type: WalletTransactionType.TOPUP_CREDIT, _sum: { amount: 300 } },
         { type: WalletTransactionType.MESSAGE_DEBIT, _sum: { amount: 50 } },
+        { type: WalletTransactionType.CAMPAIGN_HOLD, _sum: { amount: 30 } },
         { type: WalletTransactionType.CAMPAIGN_REFUND, _sum: { amount: 10 } },
       ])
       .mockResolvedValueOnce([
@@ -270,8 +271,8 @@ describe('WalletService.getBalance monthly stats', () => {
     expect(result).toMatchObject(accountFields);
     expect(result?.monthly).toEqual({
       toppedUp: { value: 300, changePercent: 200 },
-      // used = 50 - 10 = 40 this month; 20 last month => (40-20)/20*100 = 100
-      used: { value: 40, changePercent: 100 },
+      // used = 50 + 30 - 10 = 70; compared with 20 last month = 250%.
+      used: { value: 70, changePercent: 250 },
     });
   });
 

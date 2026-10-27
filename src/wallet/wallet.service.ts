@@ -171,12 +171,13 @@ export class WalletService {
     };
   }
 
-  // "Đã dùng" = MESSAGE_DEBIT minus CAMPAIGN_REFUND; CAMPAIGN_HOLD (not yet
-  // finalized) is excluded. See conventions.md Giả định mặc định.
+  // CAMPAIGN_HOLD is an immediate, final debit (BR-WALLET-06), while a
+  // CAMPAIGN_REFUND reverses the cost of failed campaign rows.
   private usedAmount(sums: Map<WalletTransactionType, number>): number {
     const debit = sums.get(WalletTransactionType.MESSAGE_DEBIT) ?? 0;
+    const campaignHold = sums.get(WalletTransactionType.CAMPAIGN_HOLD) ?? 0;
     const refund = sums.get(WalletTransactionType.CAMPAIGN_REFUND) ?? 0;
-    return debit - refund;
+    return debit + campaignHold - refund;
   }
 
   private async sumByTypeInRange(

@@ -69,6 +69,9 @@ export class WalletLedgerService {
       data: {
         balance: balanceAfter,
         [counter]: { increment: amount },
+        ...(params.type === WalletTransactionType.CAMPAIGN_REFUND
+          ? { totalSpent: { decrement: amount } }
+          : {}),
       },
     });
 
