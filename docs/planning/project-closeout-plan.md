@@ -31,8 +31,8 @@
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
 | REL-01 | FE + BE | **BE code sẵn sàng trên `dev2` tại commit `d80c5e9`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; deploy đồng bộ và kiểm tra URL API cũ `404`, hành vi URL UI cũ đã chốt. |
-| BE-01 | BE | Code chuẩn bị cục bộ trên `dev2`: khóa `WalletAccount` bằng `FOR UPDATE` trước khi ghi ledger và cập nhật số dư ở topup, single/public send, campaign (F02). | Unit test mock cạnh tranh debit 2/2 PASS; build và focused lint PASS ngày 2026-10-27. Cần review/commit/push từ nhánh `dev`, chạy concurrency test có PostgreSQL, deploy và smoke để chứng minh không double-credit/debit, không âm số dư, ledger/balance nhất quán. |
-| BE-02 | BE | Khóa VAT ở server theo rule đã chốt, không tin giá trị client (F03). | DTO/service không nhận VAT tùy ý; test tạo topup/order/invoice có tổng tiền đúng. |
+| BE-01 | BE | Đã push `dev2` tại `93f191d`: khóa `WalletAccount` bằng `FOR UPDATE` trước khi ghi ledger và cập nhật số dư ở topup, single/public send, campaign (F02). | Unit test mock cạnh tranh debit 2/2, build và focused lint PASS ngày 2026-10-27. `DATABASE_URL` test không có và Docker daemon không chạy; cần chạy concurrency test có PostgreSQL, deploy và smoke để chứng minh không double-credit/debit, không âm số dư, ledger/balance nhất quán. |
+| BE-02 | BE | Code chuẩn bị cục bộ trên `dev2`: request topup không nhận `vatRate`; VAT cố định 10% do server tính cho Pay2S, order và invoice (F03). | Unit 3/3 và build PASS ngày 2026-10-27; lint DTO/helper mới PASS, `TopupsService` còn lỗi lint cũ. Cần review/commit/push, chạy topup test/smoke xác nhận request có `vatRate` bị 400 và tổng trước VAT/VAT/tổng thanh toán đúng. |
 
 ### P1 — khớp số liệu, giá và luồng tiền
 

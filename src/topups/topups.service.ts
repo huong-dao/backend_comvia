@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
+import { calculateTopupAmounts, TOPUP_VAT_RATE } from './topup-vat';
 import {
   createPay2sCollectionLink,
   Pay2sBankAccount,
@@ -125,12 +126,11 @@ export class TopupsService {
     dto: CreateTopupPay2sDto,
     moneyAccountId: string,
   ) {
-    const vatRate = dto.vatRate ?? 10;
-    const amountExcl = dto.amountExclVat;
-    // Tính vatAmount trước bằng round() rồi cộng dồn, tránh lỗi làm tròn dấu
-    // phẩy động của JS khi nhân trực tiếp (vd 1500000 * 1.1 = 1650000.0000000002).
-    const vatAmount = Math.round((amountExcl * vatRate) / 100);
-    const amountIncl = amountExcl + vatAmount;
+    const {
+      amountExclVat: amountExcl,
+      vatAmount,
+      amountInclVat: amountIncl,
+    } = calculateTopupAmounts(dto.amountExclVat);
 
     // Ensure wallet exists
     await this.prismaService.walletAccount.upsert({
@@ -651,7 +651,7 @@ export class TopupsService {
               name: `Nạp tiền vào ví - Gói ${topup.topupCode}`,
               quantity: 1,
               unitPrice: topup.amountExclVat,
-              vatRate: 10,
+              vatRate: TOPUP_VAT_RATE,
               vatAmount: topup.vatAmount,
               totalAmountInclVat: topup.amountInclVat,
             },

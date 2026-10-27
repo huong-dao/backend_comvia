@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNumber, Min } from 'class-validator';
 
 export class CreateTopupPay2sDto {
   @IsNumber()
@@ -7,8 +7,4 @@ export class CreateTopupPay2sDto {
 
   @IsString()
   moneyAccountId!: string;
-
-  @IsOptional()
-  @IsNumber()
-  vatRate?: number = 10; // default 10%
 }

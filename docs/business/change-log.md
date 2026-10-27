@@ -4,6 +4,7 @@ Mỗi dòng: ngày | issue | rule đổi | trước → sau (ngắn gọn) | ng�
 
 | Ngày | Issue | Rule | Trước → Sau | Người duyệt |
 |------|-------|------|-------------|-------------|
+| 2026-10-27 | BE-02 | BR-TOPUP-01, BR-TOPUP-03 | Client có thể gửi `vatRate` tùy ý → server cố định VAT 10%; request chỉ nhận `amountExclVat` và `moneyAccountId`, tổng Pay2S/order/invoice được tính server-side | PO rule đã chốt; BE triển khai trên `dev2` |
 | 2026-10-27 | REL-01 | Product scope / API contract | Quick Chat còn module, controller và API route active → gỡ toàn bộ bề mặt API backend; model/dữ liệu Prisma lịch sử giữ nguyên chờ quyết định retention; FE phải gỡ UI/route/request cũ | PO đã loại bỏ tính năng; BE triển khai trên `dev2` |
 | 2026-10-02 | ISSUE-001 | BR-WS-02, BR-CORE-02 | Cá nhân bắt buộc `tax_code` → cá nhân **không** bắt buộc `tax_code` (tổ chức vẫn bắt buộc) | PO |
 | 2026-10-02 | ISSUE-003 | BR-OA-01, BR-OA-05 (mới), BR-CORE-06 | OA = một khái niệm gộp OAuth → tách OA record nội bộ (name/code/avatar/logo 400x96, nhập tay, nguồn độc lập không đồng bộ 2 chiều) khỏi dữ liệu kết nối Zalo; 2 hành động "Tạo OA" và "Kết nối"; 1-1 cứng Workspace↔OA | PO (hướng; chi tiết kiến trúc chờ SA) |

@@ -1101,15 +1101,14 @@ Request:
 ```json
 {
   "amountExclVat": 100000,
-  "moneyAccountId": "MONEY_ACCOUNT_ID",
-  "vatRate": 10
+  "moneyAccountId": "MONEY_ACCOUNT_ID"
 }
 ```
 
 Ghi chú request:
 - `amountExclVat`: số tiền trước VAT, tối thiểu `10000` (yêu cầu của Pay2S).
 - `moneyAccountId`: bắt buộc, lấy từ mục 9.3.
-- `vatRate`: optional, mặc định `10` (%).
+- VAT là rule server-side cố định `10%`; request không nhận `vatRate`. Gửi field này sẽ bị từ chối bởi validation.
 
 Response (thành công):
 ```json
@@ -1209,7 +1208,7 @@ Request (do Pay2S gửi, shape thật — **khác hoàn toàn** kiểu `mock_gat
 Xử lý:
 - `orderId` = `topupCode` đã gửi lúc tạo link (mục 9.4).
 - `resultCode !== 0` → backend trả `{ "status": "error", "message": "Transaction failed from provider" }`, không cộng credit.
-- `resultCode === 0` → cộng credit = `amount` (số tiền Pay2S báo đã nhận, không tự tính lại từ `amountInclVat` đã lưu), tạo `WalletTransaction` (`TOPUP_CREDIT`), tạo `Order` (`PAID`) + `OrderItem`, tạo `Invoice` (`POSTED`) + `InvoiceItem` snapshot billing hiện tại của workspace.
+- `resultCode === 0` → cộng credit = `amountExclVat` đã lưu; `amountInclVat` chỉ là số tiền Pay2S phải thu. Backend tạo `WalletTransaction` (`TOPUP_CREDIT`), `Order` (`PAID`) + `OrderItem`, `Invoice` (`POSTED`) + `InvoiceItem` snapshot billing hiện tại của workspace với VAT server-side `10%`.
 - Response luôn `HTTP 200` (kể cả khi lỗi nghiệp vụ) để Pay2S không retry vô hạn.
 
 **Ghi chú vận hành (đúng thực trạng code hiện tại, không phải hành vi mong đợi):**
