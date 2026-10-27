@@ -41,7 +41,7 @@
 | BE-03 | BE | Đã push `dev2` tại `3fa3436`: public send dùng giá template + CTA như single/campaign; `CAMPAIGN_HOLD` là chi thực, `CAMPAIGN_REFUND` giảm monthly used và `totalSpent` (F04/F05). | Wallet regression 20/20 và build PASS ngày 2026-10-27. Cần smoke dữ liệu campaign success/failed để đối chiếu tổng chi. |
 | BE-04 | BE | Code pushed `dev2` at `e9973cd`: database worker uses durable campaign runs and at-most-once claims; analytics rule is unchanged and already counts failed sends by `sentAt`. | Apply migration and smoke success, confirmed provider failure/refund, restart recovery to `RECONCILIATION_REQUIRED`, and analytics three periods on PostgreSQL. Never auto resend/refund ambiguous rows. |
 | BE-05 | BE | Code pushed `dev2` at `c35a585`: Pay2S lifecycle/idempotency/audit and public workspace status are implemented; expiry is intentionally not added because no expiry duration was approved. | Apply migration and smoke duplicate callback, `PENDING → PAID`, verified `PENDING → FAILED`, and disabled workspace for all public endpoints. |
-| BE-06 | BE | Chốt customer orders/invoices, PDF access, issue-once và invitation identity/resend/revoke (F10/F11). | Contract versioned được QA live; tài liệu nêu rõ Owner/Member/Admin được đọc gì và khách chỉ thấy dữ liệu thuộc workspace. |
+| BE-06 | BE | Invitation identity code pushed `dev2` at `a00454f`: email-only and bound to signed-in email; no resend/revoke; Owner removes accepted members. Owner-only order/invoice/PDF routes remain. | Add protected Owner finance/PDF access, preserve ADMIN backoffice issue-once, then QA Owner/Member/Admin role matrix. |
 
 ### P1 — FE và tài liệu
 
