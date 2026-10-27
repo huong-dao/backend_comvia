@@ -30,7 +30,7 @@
 
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
-| REL-01 | FE + BE | **BE code sẵn sàng trên `dev2` tại commit `d80c5e9`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; deploy đồng bộ và kiểm tra URL API cũ `404`, hành vi URL UI cũ đã chốt. |
+| REL-01 | FE + BE | **BE code sẵn sàng trên `dev2` tại commit `d80c5e9`; FE báo code local sẵn sàng trên `dev` tại `6f9dfd7`:** BE đã gỡ module/controller/service/API route; FE đã gỡ direct route/component/request Quick Chat, Internal Quick Chat và browser mock webhook. Model/dữ liệu Prisma lịch sử giữ chờ retention. | Build/test BE xanh; FE báo lint/TypeScript/diff check pass nhưng production build bị chặn do môi trường không tải Google Fonts. Deploy đồng bộ, kiểm tra URL API cũ `404`, chốt redirect/404 URL UI cũ và smoke browser. |
 | BE-01 | BE | Đã push `dev2` tại `93f191d`: khóa `WalletAccount` bằng `FOR UPDATE` trước khi ghi ledger và cập nhật số dư ở topup, single/public send, campaign (F02). | Unit test mock cạnh tranh debit 2/2, build và focused lint PASS ngày 2026-10-27. `DATABASE_URL` test không có và Docker daemon không chạy; cần chạy concurrency test có PostgreSQL, deploy và smoke để chứng minh không double-credit/debit, không âm số dư, ledger/balance nhất quán. |
 | BE-02 | BE | Đã push `dev2` tại `6999c63`: request topup không nhận `vatRate`; VAT cố định 10% do server tính cho Pay2S, order và invoice (F03). | Unit 3/3 và build PASS ngày 2026-10-27; lint DTO/helper mới PASS, `TopupsService` còn lỗi lint cũ. Cần chạy topup test/smoke xác nhận request có `vatRate` bị 400 và tổng trước VAT/VAT/tổng thanh toán đúng. |
 
@@ -47,8 +47,8 @@
 
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
-| FE-01 | FE | Xử lý 4 lint errors: money accounts typing, OA/campaign state effect và topup Hooks. | `npm run lint` không còn errors; có regression test/smoke cho page đã sửa. |
-| FE-02 | FE + QA | Tái hiện trước khi sửa hai finding tĩnh: `next/image` sidebar thiếu kích thước và fallback API thiếu `/api/v1` khi env không có. Deployment hiện có thể đã được cấu hình đúng. | Có reproduction trên đúng môi trường; logo render được ở sidebar liên quan và lỗi cấu hình API rõ ràng hoặc fallback đúng. |
+| FE-01 | FE | FE báo hoàn tất local tại `6f9dfd7`: sửa money accounts typing, OA/campaign state effect và topup hooks. | `npm run lint` 0 errors, `tsc --noEmit` và diff check pass theo báo cáo FE; cần deploy và smoke/regression page đã sửa. |
+| FE-02 | FE + QA | FE báo hoàn tất local tại `6f9dfd7`: thêm kích thước `next/image` cho logo và fallback API tự thêm `/api/v1`. | Production build local bị chặn do environment không tải Google Fonts; cần build/tái hiện/smoke trên môi trường deploy trước khi Done. |
 | FE-03 | FE + QA | Chỉ sửa các route members/orders/invoices/invitation sau INT-01. Giữ FE hiện hành nếu deployment đang phục vụ đúng contract. | Mọi thay đổi có response mẫu production/staging và test role/cross-workspace. |
 | FE-04 | FE + PO | Chốt scope còn thiếu: profile update, workspace delete UI, topup history/unified flow, detailed analytics/system health, resend/revoke invitation, send-test, duplicate template. | Mỗi mục được đánh dấu `in scope`, `deferred` hoặc `not planned`; không tạo UI/API dựa trên suy đoán. |
 | DOC-01 | BE owner + FE owner | FE bắt đầu từ [FE execution handoff](../frontend/fe-execution-handoff-2026-10-27.md), rồi cập nhật API guide do BE phát hành, mirror sang FE và ghi board/changelog bằng link test/deployment. | Không còn hai guide khác contract; board chỉ ghi Done khi có evidence. |

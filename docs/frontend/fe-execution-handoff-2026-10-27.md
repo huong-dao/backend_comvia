@@ -6,6 +6,10 @@ Tài liệu này là thứ tự thực hiện dành cho FE sau khi đã nhận t
 
 BE code đã sẵn sàng trên branch `dev2`, nhưng chưa có bằng chứng deploy/live cho các thay đổi closeout. Vì vậy FE được làm các việc local ở phần A và B ngay; phần C chỉ thay đổi integration sau khi có kết quả `INT-01` trên staging/production.
 
+## Cập nhật FE — 2026-10-27
+
+FE báo commit `6f9dfd7` trên branch `dev`: đã gỡ Quick Chat, xử lý bốn lint errors, thêm kích thước logo và fallback `/api/v1`. `npm run lint`, `tsc --noEmit` và `git diff --check` pass theo báo cáo FE. Production build vẫn bị chặn ở môi trường local do không tải được Google Fonts; chưa có browser, deploy hoặc live verification. Bước tiếp theo của FE là deploy cùng release BE, xác minh build trong môi trường deploy, rồi chạy phần D; không mở `FE-03` trước `INT-01`.
+
 ## Tài liệu phải đọc
 
 1. [Frontend API guide](../FRONTEND_API_GUIDE_NEXTJS.mdc) — user/workspace/public API.
@@ -13,7 +17,7 @@ BE code đã sẵn sàng trên branch `dev2`, nhưng chưa có bằng chứng de
 3. [Delivery board](../tickets/board.md) — trạng thái hiện hành.
 4. [Project closeout plan](../planning/project-closeout-plan.md) — acceptance criteria và dependency.
 
-## A. Làm ngay — REL-01: retire Quick Chat
+## A. Reported complete locally — REL-01: retire Quick Chat
 
 - Gỡ tất cả route, page, component, import, navigation và request Quick Chat, kể cả direct route Admin/Internal.
 - Gỡ trang browser mock webhook Pay2S; webhook là server-to-server, không gọi từ browser.
@@ -21,22 +25,22 @@ BE code đã sẵn sàng trên branch `dev2`, nhưng chưa có bằng chứng de
 
 **Done khi:** không còn source reference/request Quick Chat; lint và smoke navigation liên quan pass. Đồng bộ release với BE để API cũ trả `404`.
 
-## B. Làm ngay — chất lượng FE
+## B. Reported complete locally — chất lượng FE
 
 ### FE-01: lint
 
 - Sửa bốn lỗi lint đã ghi trong closeout plan: money-account typing, OA/campaign state effect và topup hooks.
 - Không mở rộng thay đổi nghiệp vụ trong ticket lint.
 
-**Done khi:** `npm run lint` không còn error và có smoke/regression cho các page đã sửa.
+**Trạng thái:** lint/TypeScript/diff check được FE báo pass; deploy và smoke/regression vẫn pending.
 
-### FE-02: tái hiện trước khi sửa
+### FE-02: tái hiện và sửa
 
 - Tái hiện sidebar image dùng `next/image` thiếu kích thước.
 - Tái hiện fallback API base URL khi environment không có `/api/v1`.
 - Chỉ sửa sau khi có reproduction; deployment hiện hữu có thể đã cấu hình đúng.
 
-**Done khi:** sidebar render đúng tại page tái hiện và fallback API rõ ràng hoặc đã bao gồm `/api/v1`.
+**Trạng thái:** code local được FE báo đã sửa; cần build/smoke browser trong môi trường deploy vì local production build bị chặn bởi tải Google Fonts.
 
 ## C. Chờ INT-01 — integration có role và dữ liệu tài chính
 
