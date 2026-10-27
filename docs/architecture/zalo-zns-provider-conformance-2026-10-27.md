@@ -17,22 +17,22 @@ Zalo yêu cầu `POST https://business.openapi.zalo.me/message/template`, header
 
 `ZaloZnsClient` gửi đúng endpoint/header/body, chuẩn hóa số `0xxxxxxxxx` thành `84xxxxxxxxx`, bắt buộc template có `providerTemplateId`, và lấy/refresh token OA qua `OaTokenService`. Không có OA token, template approved, hạn mức thực hay tin nhắn nào được gửi để chứng minh live behavior trong audit này.
 
-## BE-07 — code ready on `dev2`, deploy pending
+## BE-07 — source code ready; chỉ test gửi tin ở giai đoạn hiện tại
 
 1. `SUCCESS` vẫn chỉ nghĩa Zalo trả `error = 0` và cấp `msg_id`/bắt đầu xử lý gửi; **không** tự nghĩa là người nhận đã nhận tin trên thiết bị.
 2. BE sanitize default/supplied `tracking_id` thành chữ/số, giới hạn 48 ký tự; default là `zns` thay vì `send_invoice`.
 3. `MessageLog` lưu `providerTrackingId`, `providerSentAt`, `providerQuotaDaily`, `providerQuotaRemaining` và `providerDeliveredAt`.
-4. `POST /webhooks/zalo-zns/delivery` là endpoint server-to-server của **relay tin cậy**, không phải FE. Nó yêu cầu `Authorization: Bearer <ZALO_ZNS_WEBHOOK_TOKEN>`, đối chiếu `app_id`, OA sender, `msg_id`, tracking ID với log ban đầu, rồi lưu event bất biến unique `(msg_id, user_received_message)`. Retry trả thành công idempotent.
+4. `POST /webhooks/zalo-zns/delivery` là endpoint server-to-server dự phòng cho **relay tin cậy**, không phải FE. Nó yêu cầu `Authorization: Bearer <ZALO_ZNS_WEBHOOK_TOKEN>`, đối chiếu `app_id`, OA sender, `msg_id`, tracking ID với log ban đầu, rồi lưu event bất biến unique `(msg_id, user_received_message)`. Retry trả thành công idempotent.
 
-Tài liệu Zalo công khai xác định event và payload nhưng không mô tả chữ ký callback. Vì vậy không được trỏ webhook Zalo trực tiếp vào endpoint này nếu không có relay thêm bearer hoặc một cơ chế xác thực chính thức đã được Zalo xác nhận.
+Tài liệu Zalo công khai xác định event và payload nhưng không mô tả chữ ký callback. Comvia không kiểm soát relay `id.onweb.asia`, nên theo quyết định vận hành ngày 2026-10-27: **không bật webhook delivery và chỉ test gửi tin**. Không được trỏ webhook Zalo trực tiếp vào endpoint này hoặc thêm bearer qua reverse proxy đơn thuần.
 
-## Hợp đồng FE sau BE-07
+## Hợp đồng FE hiện tại
 
 - Chỉ hiển thị `SUCCESS` là **“Zalo đã tiếp nhận yêu cầu gửi”**.
-- Dùng Message Logs hiện có để đọc `providerMessageId`, `providerTrackingId`, `providerSentAt`, `providerDeliveredAt`, `providerQuotaDaily`, `providerQuotaRemaining`.
-- Chỉ khi `providerDeliveredAt` khác `null` mới hiển thị **“Đã nhận trên thiết bị”**. `null` là chưa có event hợp lệ, không phải lỗi gửi.
+- Có thể đọc `providerMessageId`, `providerTrackingId`, `providerSentAt` và quota snapshot từ Message Logs sau test gửi.
+- Không hiển thị **“Đã nhận trên thiết bị”**, delivery/read hoặc quota UI như dữ liệu live. `providerDeliveredAt` chưa được Zalo cập nhật trong giai đoạn này.
 - Không gửi request đến webhook, không poll quota riêng và không đưa secret vào browser.
 
-## Deploy/smoke next action
+## Quyết định tương lai và next action
 
-DevOps apply migration `20261027120000_zalo_delivery_evidence`, đặt `ZALO_ZNS_WEBHOOK_TOKEN` ở relay và backend, rồi gửi một tin thử và chuyển event delivery qua relay. Xác nhận một `MessageLog` có `providerSentAt`/quota (nếu Zalo trả về), `providerDeliveredAt` đúng `delivery_time`; gửi lại cùng event phải trả `duplicate: true` và không tạo event thứ hai.
+Khi hệ thống gửi tin ổn định và có quyền quản lý đường webhook, tạo ticket vận hành mới để chuyển các webhook Zalo cần dùng về Comvia. Trước khi bật, phải xác nhận cơ chế xác thực chính thức từ Zalo; sau đó cấu hình relay/adapter an toàn, set `ZALO_ZNS_WEBHOOK_TOKEN` ngoài source, smoke `delivery_time` và duplicate callback. Không xem việc pull code/migrate do user báo là live verification của webhook.

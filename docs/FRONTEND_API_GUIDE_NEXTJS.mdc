@@ -934,7 +934,7 @@ Base:
 
 Backend gọi API Zalo `POST https://business.openapi.zalo.me/message/template`, tự refresh access token nếu sắp hết hạn.
 
-**Ngữ nghĩa provider:** response `SUCCESS`/`providerMessageId` chỉ nghĩa Zalo đã tiếp nhận request (`error = 0`, có `msg_id`); không phải xác nhận người nhận đã nhận tin. BE-07 lưu `providerSentAt`, quota và cập nhật `providerDeliveredAt` khi relay tin cậy nhận event Zalo `user_received_message`. FE lấy các field này qua danh sách logs hiện có; không gọi webhook và không có secret ở browser. Chỉ dùng nhãn “Đã nhận trên thiết bị” khi `providerDeliveredAt` khác `null`; còn lại dùng “Zalo đã tiếp nhận yêu cầu gửi”. Chi tiết: [Zalo ZNS provider conformance](./architecture/zalo-zns-provider-conformance-2026-10-27.md).
+**Ngữ nghĩa provider:** response `SUCCESS`/`providerMessageId` chỉ nghĩa Zalo đã tiếp nhận request (`error = 0`, có `msg_id`); không phải xác nhận người nhận đã nhận tin. BE-07 lưu `providerSentAt` và quota nếu Zalo trả về. Delivery webhook đang **deferred**: Comvia không kiểm soát relay `id.onweb.asia`, vì vậy chưa nhận event `user_received_message` và `providerDeliveredAt` sẽ chưa có dữ liệu live. FE chỉ hiển thị “Zalo đã tiếp nhận yêu cầu gửi”; không làm delivered/read/quota UI như dữ liệu live, không gọi webhook và không có secret ở browser. Chi tiết: [Zalo ZNS provider conformance](./architecture/zalo-zns-provider-conformance-2026-10-27.md).
 
 **Điều kiện gửi thành công:**
 - OA `CONNECTED`
@@ -998,7 +998,7 @@ Provider fields có thể dùng trong mỗi MessageLog:
 - `providerMessageId`: mã đối soát `msg_id` của Zalo.
 - `providerTrackingId`: tracking ID chữ/số do BE gửi, tối đa 48 ký tự.
 - `providerSentAt`: thời điểm server Zalo bắt đầu gửi, hoặc `null` khi Zalo không trả field này.
-- `providerDeliveredAt`: thời điểm thiết bị người nhận nhận tin, chỉ có sau webhook hợp lệ; `null` không đồng nghĩa gửi thất bại.
+- `providerDeliveredAt`: reserved cho giai đoạn delivery webhook sau này; hiện luôn có thể là `null` vì webhook Zalo đang deferred. `null` không đồng nghĩa gửi thất bại.
 - `providerQuotaDaily` và `providerQuotaRemaining`: snapshot quota Zalo lúc request được chấp nhận, có thể `null`.
 
 ## 9) Wallet & Topup (Pay2S thật — không còn mock)

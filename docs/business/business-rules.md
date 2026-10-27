@@ -339,8 +339,9 @@ approved --> disabled
 
 - `MessageStatus.SUCCESS` hiện nghĩa là Zalo trả `error = 0` cho request template và có `msg_id`; đây là trạng thái **Zalo tiếp nhận/bắt đầu xử lý gửi**, không phải bằng chứng người dùng đã nhận tin trên thiết bị.
 - Ba đường Single, Public API và Campaign dùng chung Zalo template endpoint. BE sanitize `tracking_id` thành chữ/số, tối đa 48 ký tự; đồng thời lưu `sent_time` và quota trong MessageLog khi Zalo trả thành công.
-- Relay tin cậy gọi `POST /webhooks/zalo-zns/delivery` với bearer `ZALO_ZNS_WEBHOOK_TOKEN`. Backend kiểm tra app ID, OA gửi, `msg_id` và tracking ID trước khi lưu event `user_received_message` bất biến; unique `(provider_message_id, event_name)` bảo đảm retry idempotent. `delivery_time` được lưu vào `provider_delivered_at`.
-- FE chỉ dùng nhãn “Đã nhận trên thiết bị” khi `providerDeliveredAt` có giá trị; không suy ra delivery từ `SUCCESS`. Không hiển thị/cấu hình webhook secret ở browser.
+- Endpoint relay `POST /webhooks/zalo-zns/delivery` đã có code nhưng **chưa bật vận hành** vì không có relay do Comvia kiểm soát. Không trỏ trực tiếp Zalo vào endpoint này và không cấu hình `ZALO_ZNS_WEBHOOK_TOKEN` để giả định direct webhook đã xác thực.
+- Giai đoạn hiện tại chỉ kiểm tra gửi tin. FE không hiển thị delivery/quota UI như hành vi live; `providerDeliveredAt` sẽ chưa có giá trị từ Zalo. `SUCCESS` vẫn không phải bằng chứng người dùng đã nhận tin.
+- Khi hệ thống ổn định, hạng mục vận hành mới sẽ chuyển webhook Zalo về Comvia sau khi xác nhận cơ chế xác thực chính thức của Zalo (chữ ký/header hoặc nguồn tin cậy). Khi đó endpoint phải giữ kiểm tra app ID, OA gửi, `msg_id`, tracking ID và unique `(provider_message_id, event_name)` để retry idempotent.
 
 ### BR-MSG-04: Chỉ số dashboard workspace
 
