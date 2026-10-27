@@ -65,9 +65,17 @@ FE phối hợp QA/BE kiểm tra có đăng nhập và lưu bằng chứng reque
 2. Owner được đọc/tải invoice trong workspace mình sở hữu; Member/Staff bị từ chối; cross-workspace không lộ dữ liệu.
 3. Admin tải PDF qua guarded endpoint; không dùng storage key/public URL.
 4. Smoke: đăng nhập, switch workspace, template revision/CTA, wallet/topup, campaign, order/invoice và admin finance.
+
 5. Ghi environment, ngày, role, kết quả HTTP 200/403/404 và commit FE vào board trước khi đánh dấu Done.
 
-## E. Không làm khi chưa có PO
+## E. Phản hồi yêu cầu handoff QA/release của FE — 2026-10-27
+
+- **Release evidence:** BE không có environment, thời điểm QA, release SHA hay raw HTTP response đã che dữ liệu. Vì vậy `INT-01`, `INT-02`, `REL-01` vẫn không được đánh dấu đạt chỉ dựa trên giả định deploy/QA. Khi có evidence, ghi lại environment/date/revision và matrix `200`/`403`/`404` trong board.
+- **Finance/PDF source contract:** Owner workspace dùng các route orders/invoices/PDF trong API guide; Member bị WorkspaceRolesGuard chặn; Admin-only route `/admin/orders`, `/admin/invoices`, `/admin/invoices/:invoiceId/pdf` chặn Staff. PDF chỉ stream khi invoice `ISSUED` có private storage key; `POSTED` hoặc file thiếu trả `404` (`Issued invoice PDF not found`). Cross-workspace bị query scope/guard chặn. Đây là source evidence, chưa thay thế runtime matrix.
+- **Invitation accept:** email-only và email JWT matching đã có source test; nhưng gửi email, URL accept, redirect success và email-link runtime chưa tồn tại. Đây là `BE-08`; FE không dùng raw token response, không làm phone/token-demo UI, và chờ contract email-link trước khi release accept screen.
+- **Cleanup source contract:** Quick Chat API đã retired; Pay2S webhook là server-to-server, FE không gọi `/webhooks/pay2s`; API runtime base phải có `/api/v1`. Browser/API `404` và production build vẫn cần evidence runtime.
+
+## F. Không làm khi chưa có PO
 
 Không tự mở feature cho profile update, workspace delete UI, topup history/unified flow, detailed analytics/system health, resend/revoke invitation, send-test hoặc duplicate template. Đây là `FE-04`, chờ PO chốt scope.
 

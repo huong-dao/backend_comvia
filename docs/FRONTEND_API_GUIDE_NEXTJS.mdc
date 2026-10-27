@@ -428,7 +428,7 @@ Request:
 }
 ```
 
-Response:
+Response source hiện tại (**không phải FE delivery contract**):
 ```json
 {
   "id": "INVITATION_ID",
@@ -436,6 +436,8 @@ Response:
   "expiredAt": "..."
 }
 ```
+
+**Trạng thái runtime/source hiện tại — BE-08 pending:** source hiện tạo token 7 ngày và trả raw `token` trong response, nhưng **chưa gửi email invitation, chưa có URL accept chuẩn và chưa có redirect contract**. Raw token không phải contract để FE hiển thị, copy hoặc dựng token-demo UI. Do đó FE có thể bỏ lựa chọn mời bằng phone, nhưng chưa phát hành accept screen dựa trên email/link cho tới khi BE-08 phát hành email + URL contract. Không có resend/revoke trong scope.
 
 ### 5.3 Remove member (OWNER)
 - `DELETE /workspaces/:workspaceId/members/:memberUserId`
@@ -461,6 +463,8 @@ Response:
 ```json
 { "ok": true }
 ```
+
+Contract source đang có (chưa phải email UX hoàn chỉnh): FE gọi endpoint sau khi user đã đăng nhập, với `workspaceId` và token đã được truyền vào màn hình bằng một kênh tin cậy. Backend không redirect; success chỉ trả `{ "ok": true }`, nên chưa có URL email hoặc redirect sau accept để FE dùng. Lỗi source hiện trả `400` với các message: `Invitation not found`, `Invitation does not belong to this workspace`, `Invitation is not available`, `Invitation expired`, hoặc `Invitation email does not match the signed-in user`. BE-08 sẽ chuẩn hóa delivery URL, success redirect và error contract trước khi FE triển khai flow email-link.
 
 Ghi chú audit log:
 - Backend tự ghi `member.invited` / `member.removed` khi invite / xóa member.
