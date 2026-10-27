@@ -4,6 +4,7 @@ Mỗi dòng: ngày | issue | rule đổi | trước → sau (ngắn gọn) | ng�
 
 | Ngày | Issue | Rule | Trước → Sau | Người duyệt |
 |------|-------|------|-------------|-------------|
+| 2026-10-27 | BE-06 | Admin invoice PDF API contract | Admin response storage key could be treated as a public URL → ADMIN downloads issued private PDFs only through `GET /admin/invoices/:invoiceId/pdf`; `invoicePdfUrl` remains a storage key. | BE security completion |
 | 2026-10-27 | BE-06 | BR-ORDER-03, permission matrix | Added Owner-only workspace order/invoice/PDF routes; newly issued PDFs use private storage and stream through the guarded route. Admin backoffice issue flow remains ADMIN-only. | User decision |
 | 2026-10-27 | BE-06 | BR-MEMBER-02 to BR-MEMBER-04 | Invitations are email-only and may be accepted only by the invited email; no resend/revoke; Owner removes accepted members. Owner alone will access financial records/PDF; Member has no finance access. | User decision |
 | 2026-10-27 | BE-05 | BR-CORE-09, Public API | Pay2S callback is now persisted and deduped by provider/event ID atomically with PENDING payment lifecycle; verified failed IPN moves pending topup to FAILED. Public template list/detail also rejects non-active workspace. | Closeout plan |
