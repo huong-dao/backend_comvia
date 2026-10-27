@@ -263,4 +263,38 @@ export class OrdersInvoicesService {
     }
     return invoice;
   }
+
+  listOrdersForOwner(workspaceId: string) {
+    return this.prismaService.order.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' },
+      include: { items: true, invoice: true },
+    });
+  }
+
+  async getOrderForOwner(workspaceId: string, orderId: string) {
+    const order = await this.prismaService.order.findFirst({
+      where: { id: orderId, workspaceId },
+      include: { items: true, invoice: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
+  listInvoicesForOwner(workspaceId: string) {
+    return this.prismaService.invoice.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' },
+      include: { items: true, order: true },
+    });
+  }
+
+  async getInvoiceForOwner(workspaceId: string, invoiceId: string) {
+    const invoice = await this.prismaService.invoice.findFirst({
+      where: { id: invoiceId, workspaceId },
+      include: { items: true, order: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    return invoice;
+  }
 }

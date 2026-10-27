@@ -1360,6 +1360,18 @@ Query:
 
 Ghi chú: hai action `invoice.*` cũng ghi kèm `workspaceId` (lấy từ `invoice.workspaceId`) nên hiện ở cả `GET /admin/audit-logs` lẫn `GET /workspaces/:workspaceId/audit-logs` (mục 11.1) của đúng workspace sở hữu đơn hàng đó.
 
+## 11.2 Owner finance (order, invoice, PDF)
+
+Chỉ `OWNER` của workspace được gọi; `MEMBER` không có quyền đọc order, invoice hoặc PDF. `ADMIN` vẫn dùng các route backoffice `/admin/*` riêng.
+
+- `GET /workspaces/:workspaceId/orders`
+- `GET /workspaces/:workspaceId/orders/:orderId`
+- `GET /workspaces/:workspaceId/invoices`
+- `GET /workspaces/:workspaceId/invoices/:invoiceId`
+- `GET /workspaces/:workspaceId/invoices/:invoiceId/pdf` — chỉ invoice `ISSUED`; PDF mới được stream từ private storage qua route đã guard.
+
+PDF lịch sử mang URL `/public/invoices/...` cần migration vận hành trước khi có thể tải qua route protected.
+
 ## 12) Public API (gọi bằng API key)
 
 Base:

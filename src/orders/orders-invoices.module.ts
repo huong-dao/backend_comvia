@@ -4,9 +4,10 @@ import { InvoicePdfStorageService } from './invoice-pdf-storage.service';
 import { InvoicePdfVerificationService } from './invoice-pdf-verification.service';
 import { OrdersInvoicesController } from './orders-invoices.controller';
 import { OrdersInvoicesService } from './orders-invoices.service';
+import { WorkspaceFinanceController } from './workspace-finance.controller';
 
 @Module({
-  controllers: [OrdersInvoicesController],
+  controllers: [OrdersInvoicesController, WorkspaceFinanceController],
   providers: [
     OrdersInvoicesService,
     InvoicePdfVerificationService,

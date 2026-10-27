@@ -220,7 +220,7 @@ approved --> disabled
 - Mỗi invoice topup có 1 item, copy từ order_item theo cơ chế snapshot, không phụ thuộc record order_item sau này. `vat_rate=10%`.
 
 ### BR-ORDER-03: Màn hình khách hàng & kế toán
-- Khách hàng: xem danh sách/chi tiết order, item, invoice đi kèm, download invoice nếu `issued`.
+- Owner: xem danh sách/chi tiết order, item, invoice đi kèm, download invoice nếu `issued`. Member không xem order/invoice/PDF; không có tài khoản khách độc lập ở phase này.
 - Kế toán: xem/filter invoice `posted`, xem snapshot billing info, upload PDF, nhập `invoice_number`/`issue_date`, cập nhật `issued`.
 
 ## Module 9 — Zalo OA Connection
