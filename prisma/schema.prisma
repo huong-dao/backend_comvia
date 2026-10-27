@@ -713,10 +713,41 @@ model Campaign {
   template     Template    @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   rows CampaignRow[]
+  runs CampaignRun[]
+}
+
+enum CampaignRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+// One durable execution of a campaign. A retry creates a new run, so its
+// hold/refund is never mixed with the original execution.
+model CampaignRun {
+  id                  String            @id @default(cuid())
+  campaignId          String
+  operatorUserId      String
+  unitPrice           Decimal
+  totalCharged        Decimal
+  totalRefunded       Decimal           @default(0)
+  holdTransactionId   String?
+  status              CampaignRunStatus @default(QUEUED)
+  createdAt           DateTime          @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  rows     CampaignRow[]
+
+  @@index([campaignId, status])
 }
 
 enum CampaignRowStatus {
   PENDING
+  PROCESSING
+  RECONCILIATION_REQUIRED
   SUCCESS
   FAILED
   SKIPPED
@@ -733,15 +764,19 @@ model CampaignRow {
   retryCount          Int               @default(0)
   walletTransactionId String?
   messageLogId        String?
+  campaignRunId       String?
+  dispatchStartedAt   DateTime?
   rawImportRow        Json?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
   campaign   Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignRun CampaignRun? @relation(fields: [campaignRunId], references: [id], onDelete: SetNull)
   messageLog MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
 
   @@index([campaignId, status])
   @@index([campaignId, phoneNumber])
+  @@index([campaignRunId, status])
 }
 
 enum ApiKeyStatus {

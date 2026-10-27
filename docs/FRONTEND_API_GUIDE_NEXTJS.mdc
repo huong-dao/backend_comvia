@@ -848,10 +848,10 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=`
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — gửi tuần tự, trừ ví OWNER trước, hoàn tiền tin failed
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại)
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request.
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự).
 
-Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`).
+Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`). Worker claim `PENDING → PROCESSING` trước khi gọi provider. Chính sách **at-most-once**: `PROCESSING` gặp restart hoặc request mất response trở thành `RECONCILIATION_REQUIRED`, campaign `PAUSED`; FE phải hiển thị trạng thái cần đối soát và không gọi retry cho row này. Chỉ `FAILED` do provider đã trả lỗi xác định mới được retry; refund chỉ xảy ra một lần theo từng campaign run khi run hoàn tất.
 
 ### 7.8 Staff review APIs (internal)
 Base:
@@ -1496,7 +1496,7 @@ Backend trả enum **UPPER_SNAKE_CASE** (theo Prisma). FE nên map label hiển 
 | `SendType` | `TEST`, `SINGLE`, `CAMPAIGN` — **lưu ý:** hiện chỉ `SINGLE` (mục 8.1) và `CAMPAIGN` (mục 7.7) có endpoint gửi thật; `TEST` tồn tại trong enum nhưng chưa có endpoint "gửi thử" nào dùng tới |
 | `MessageStatus` | `PENDING`, `SUCCESS`, `FAILED` |
 | `CampaignStatus` | `DRAFT`, `READY`, `RUNNING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED` |
-| `CampaignRowStatus` | `PENDING`, `SUCCESS`, `FAILED`, `SKIPPED` |
+| `CampaignRowStatus` | `PENDING`, `PROCESSING`, `RECONCILIATION_REQUIRED`, `SUCCESS`, `FAILED`, `SKIPPED` |
 | `ApiKeyStatus` | `ACTIVE`, `DISABLED`, `REVOKED` |
 
 Nguồn sự thật: `prisma/schema.prisma`.

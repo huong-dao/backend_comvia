@@ -11,6 +11,9 @@ export type SendZnsTemplateInput = {
   trackingId?: string;
 };
 
+/** A parsed Zalo rejection means the provider did not accept the send. */
+export class ZaloZnsRejectedError extends Error {}
+
 @Injectable()
 export class ZaloZnsClient {
   private readonly logger = new Logger(ZaloZnsClient.name);
@@ -48,7 +51,7 @@ export class ZaloZnsClient {
     const payload = (await response.json()) as ZaloZnsSendResponse;
     if (!response.ok || payload.error !== 0) {
       this.logger.error(`[Zalo ZNS] Send failed: ${JSON.stringify(payload)}`);
-      throw new Error(payload.message || 'Zalo ZNS send failed');
+      throw new ZaloZnsRejectedError(payload.message || 'Zalo ZNS send failed');
     }
 
     return payload;

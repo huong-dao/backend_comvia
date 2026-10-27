@@ -315,7 +315,9 @@ approved --> disabled
 
 ### BR-CAMPAIGN-03: Trạng thái
 - Campaign: `draft` / `ready` / `running` / `paused` / `completed` / `failed` / `cancelled`.
-- Campaign row: `pending` / `success` / `failed` / `skipped`.
+- Campaign row: `pending` / `processing` / `reconciliation_required` / `success` / `failed` / `skipped`.
+- Mỗi lần execute/retry tạo một campaign run bền vững trong database. Worker claim row `pending` sang `processing` **trước** khi gọi provider.
+- Chế độ đã chốt là **at-most-once**: lúc khởi động lại, row còn `processing` hoặc lỗi mạng/mất response chuyển sang `reconciliation_required`, campaign/run `paused`; không được tự gửi lại hoặc tự hoàn tiền. Chỉ provider trả lỗi đã nhận và xác định không gửi mới là `failed`, được retry/refund theo run đó.
 
 ### BR-CAMPAIGN-04: Preflight check
 - Trước khi chạy phải hiển thị: template đang dùng, OA đang dùng, trạng thái OA/template, tổng số dòng, đơn giá 1 tin, tổng tiền cần giữ/trừ trước, số dư ví hiện tại, kết quả đủ/không đủ tiền.

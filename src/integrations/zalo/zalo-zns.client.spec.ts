@@ -1,4 +1,4 @@
-import { ZaloZnsClient } from './zalo-zns.client';
+import { ZaloZnsClient, ZaloZnsRejectedError } from './zalo-zns.client';
 
 describe('ZaloZnsClient', () => {
   const configService = {
@@ -52,5 +52,21 @@ describe('ZaloZnsClient', () => {
         templateData: {},
       }),
     ).rejects.toThrow('Phone number must be a Vietnamese mobile number');
+  });
+
+  it('marks a parsed provider rejection as safe-to-retry', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      json: jest.fn().mockResolvedValue({ error: -1, message: 'Rejected' }),
+    } as unknown as Response);
+
+    await expect(
+      client.sendTemplate({
+        accessToken: 'access-token',
+        phoneNumber: '0901234567',
+        templateId: 'template-id',
+        templateData: {},
+      }),
+    ).rejects.toBeInstanceOf(ZaloZnsRejectedError);
   });
 });

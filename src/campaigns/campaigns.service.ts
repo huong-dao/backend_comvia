@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   CampaignRowStatus,
+  CampaignRunStatus,
   CampaignStatus,
   MessageStatus,
   OaConnectionStatus,
@@ -9,6 +10,7 @@ import {
   WalletTransactionType,
 } from '@prisma/client';
 import { OaMessagingService } from '../oa/oa-messaging.service';
+import { ZaloZnsRejectedError } from '../integrations/zalo/zalo-zns.client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
@@ -352,7 +354,7 @@ export class CampaignsService {
       throw new BadRequestException('Campaign has no pending rows to send');
     }
 
-    return this.runSendBatch({
+    return this.enqueueCampaignRun({
       campaign,
       rows: pendingRows,
       operatorUserId,
@@ -384,7 +386,7 @@ export class CampaignsService {
       );
     }
 
-    return this.runSendBatch({
+    return this.enqueueCampaignRun({
       campaign,
       rows,
       operatorUserId,
@@ -393,7 +395,11 @@ export class CampaignsService {
     });
   }
 
-  private async runSendBatch(params: {
+  /**
+   * Creates a durable run and charges it before the worker can claim a row.
+   * The HTTP request never calls the provider directly.
+   */
+  private async enqueueCampaignRun(params: {
     campaign: CampaignContext;
     rows: { id: string; phoneNumber: string; payloadData: Prisma.JsonValue }[];
     operatorUserId: string;
@@ -406,95 +412,141 @@ export class CampaignsService {
     );
     const totalCharge = unitPrice * rows.length;
 
-    const wallet = await this.getOwnerWalletOrThrow(
-      campaign.workspace.ownerUserId,
-    );
-    const balanceBefore = Number(wallet.balance);
-    if (balanceBefore < totalCharge) {
-      throw new BadRequestException(
-        'Insufficient credit. Please top up your wallet before sending.',
-      );
-    }
-
-    await this.prismaService.campaign.update({
-      where: { id: campaign.id },
-      data: { status: 'RUNNING' satisfies CampaignStatus },
-    });
-
-    let holdTransactionId: string | undefined;
-    try {
-      holdTransactionId = await this.debitWallet({
+    const run = await this.prismaService.$transaction(async (tx) => {
+      const created = await tx.campaignRun.create({
+        data: {
+          campaignId: campaign.id,
+          operatorUserId,
+          unitPrice,
+          totalCharged: totalCharge,
+        },
+      });
+      const holdTransactionId = await this.walletLedgerService.debit(tx, {
         ownerUserId: campaign.workspace.ownerUserId,
         workspaceId: campaign.workspaceId,
         amount: totalCharge,
         type: 'CAMPAIGN_HOLD' satisfies WalletTransactionType,
-        sourceType: 'CAMPAIGN',
-        sourceId: campaign.id,
+        sourceType: 'CAMPAIGN_RUN',
+        sourceId: created.id,
         createdBy: operatorUserId,
         note,
       });
-    } catch (error) {
-      await this.prismaService.campaign.update({
-        where: { id: campaign.id },
+
+      await tx.campaignRow.updateMany({
+        where: {
+          id: { in: rows.map((row) => row.id) },
+          campaignId: campaign.id,
+        },
         data: {
-          status:
-            campaign.lastRunAt == null
-              ? ('READY' satisfies CampaignStatus)
-              : ('COMPLETED' satisfies CampaignStatus),
+          status: 'PENDING' satisfies CampaignRowStatus,
+          campaignRunId: created.id,
+          dispatchStartedAt: null,
+          failureReason: null,
+          ...(isRetry ? { retryCount: { increment: 1 } } : {}),
         },
       });
-      throw error;
-    }
-
-    let failedCount = 0;
-
-    for (const row of rows) {
-      const result = await this.sendOneRow({
-        campaign,
-        row,
-        unitPrice,
-        operatorUserId,
-        isRetry: !!isRetry,
+      await tx.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'RUNNING' satisfies CampaignStatus,
+          unitPriceAtCreate: unitPrice,
+        },
       });
-      if (!result.success) {
-        failedCount++;
-      }
-    }
-
-    if (failedCount > 0) {
-      await this.creditWallet({
-        ownerUserId: campaign.workspace.ownerUserId,
-        workspaceId: campaign.workspaceId,
-        amount: unitPrice * failedCount,
-        type: 'CAMPAIGN_REFUND' satisfies WalletTransactionType,
-        sourceType: 'CAMPAIGN',
-        sourceId: campaign.id,
-        createdBy: operatorUserId,
-        note: `${note} refund for ${failedCount} failed message(s)`,
+      return tx.campaignRun.update({
+        where: { id: created.id },
+        data: { holdTransactionId },
       });
-    }
-
-    await this.syncCampaignCounters(campaign.id);
-
-    const updated = await this.prismaService.campaign.update({
-      where: { id: campaign.id },
-      data: {
-        status: 'COMPLETED' satisfies CampaignStatus,
-        lastRunAt: new Date(),
-        unitPriceAtCreate: unitPrice,
-      },
-      include: this.campaignInclude(),
     });
 
+    await this.syncCampaignCounters(campaign.id);
     return {
-      campaign: this.flattenCampaignOa(updated),
-      holdTransactionId,
-      sentCount: rows.length - failedCount,
-      failedCount,
+      campaignId: campaign.id,
+      status: 'QUEUED' satisfies CampaignRunStatus,
+      runId: run.id,
       unitPrice,
       totalCharged: totalCharge,
-      totalRefunded: unitPrice * failedCount,
     };
+  }
+
+  /** Called by CampaignWorkerService. Claims happen before any provider call. */
+  async processQueuedCampaignRuns() {
+    const runs = await this.prismaService.campaignRun.findMany({
+      where: { status: { in: ['QUEUED', 'RUNNING'] } },
+      orderBy: { createdAt: 'asc' },
+      take: 20,
+    });
+    for (const run of runs) await this.processCampaignRun(run.id);
+  }
+
+  async recoverInFlightCampaignRows() {
+    const processing = await this.prismaService.campaignRow.findMany({
+      where: { status: 'PROCESSING' },
+      select: { campaignId: true, campaignRunId: true },
+    });
+    if (!processing.length) return;
+
+    await this.prismaService.campaignRow.updateMany({
+      where: { status: 'PROCESSING' },
+      data: {
+        status: 'RECONCILIATION_REQUIRED' satisfies CampaignRowStatus,
+        failureReason:
+          'Dispatch outcome is unknown after worker interruption; do not resend automatically.',
+      },
+    });
+    const runIds = [
+      ...new Set(
+        processing
+          .map((row) => row.campaignRunId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const campaignIds = [...new Set(processing.map((row) => row.campaignId))];
+    if (runIds.length) {
+      await this.prismaService.campaignRun.updateMany({
+        where: { id: { in: runIds } },
+        data: { status: 'PAUSED' satisfies CampaignRunStatus },
+      });
+    }
+    if (campaignIds.length) {
+      await this.prismaService.campaign.updateMany({
+        where: { id: { in: campaignIds } },
+        data: { status: 'PAUSED' satisfies CampaignStatus },
+      });
+      await Promise.all(campaignIds.map((id) => this.syncCampaignCounters(id)));
+    }
+  }
+
+  private async processCampaignRun(runId: string) {
+    await this.prismaService.campaignRun.updateMany({
+      where: { id: runId, status: 'QUEUED' },
+      data: { status: 'RUNNING', startedAt: new Date() },
+    });
+    const run = await this.prismaService.campaignRun.findUnique({
+      where: { id: runId },
+    });
+    if (!run || run.status !== 'RUNNING') return;
+
+    const row = await this.prismaService.campaignRow.findFirst({
+      where: { campaignRunId: run.id, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!row) return this.finalizeCampaignRun(run.id);
+
+    const claimed = await this.prismaService.campaignRow.updateMany({
+      where: { id: row.id, status: 'PENDING', campaignRunId: run.id },
+      data: { status: 'PROCESSING', dispatchStartedAt: new Date() },
+    });
+    if (!claimed.count) return;
+
+    const campaign = await this.getCampaignContextById(run.campaignId);
+    await this.sendOneRow({
+      campaign,
+      row,
+      unitPrice: Number(run.unitPrice),
+      operatorUserId: run.operatorUserId,
+      isRetry: row.retryCount > 0,
+    });
+    await this.syncCampaignCounters(campaign.id);
   }
 
   private async sendOneRow(params: {
@@ -504,7 +556,7 @@ export class CampaignsService {
     operatorUserId: string;
     isRetry: boolean;
   }): Promise<{ success: boolean }> {
-    const { campaign, row, unitPrice, operatorUserId, isRetry } = params;
+    const { campaign, row, unitPrice, operatorUserId } = params;
     const templateData = row.payloadData as Record<string, unknown>;
     const payloadSnapshot = {
       campaignId: campaign.id,
@@ -546,7 +598,7 @@ export class CampaignsService {
           failureReason: null,
           providerMessageId: dispatch.providerMessageId,
           messageLogId: messageLog.id,
-          retryCount: isRetry ? { increment: 1 } : undefined,
+          dispatchStartedAt: null,
         },
       });
 
@@ -555,6 +607,9 @@ export class CampaignsService {
       const errorMessage =
         error instanceof Error ? error.message : 'Zalo ZNS send failed';
 
+      // Only a parsed provider rejection is safe to retry. A network failure or
+      // lost response is ambiguous and must not be resent automatically.
+      const isConfirmedFailure = error instanceof ZaloZnsRejectedError;
       const messageLog = await this.prismaService.messageLog.create({
         data: {
           workspaceId: campaign.workspaceId,
@@ -563,7 +618,9 @@ export class CampaignsService {
           sendType: 'CAMPAIGN' satisfies SendType,
           phoneNumber: row.phoneNumber,
           payloadSnapshot,
-          status: 'FAILED' satisfies MessageStatus,
+          status: (isConfirmedFailure
+            ? 'FAILED'
+            : 'PENDING') satisfies MessageStatus,
           errorCode: errorMessage.slice(0, 255),
           costAtTime: unitPrice,
           operatorUserId,
@@ -573,15 +630,100 @@ export class CampaignsService {
       await this.prismaService.campaignRow.update({
         where: { id: row.id },
         data: {
-          status: 'FAILED' satisfies CampaignRowStatus,
-          failureReason: errorMessage.slice(0, 500),
+          status: (isConfirmedFailure
+            ? 'FAILED'
+            : 'RECONCILIATION_REQUIRED') satisfies CampaignRowStatus,
+          failureReason: isConfirmedFailure
+            ? errorMessage.slice(0, 500)
+            : `Dispatch outcome requires reconciliation: ${errorMessage.slice(0, 440)}`,
           messageLogId: messageLog.id,
-          retryCount: isRetry ? { increment: 1 } : undefined,
+          dispatchStartedAt: null,
         },
       });
 
       return { success: false };
     }
+  }
+
+  private async finalizeCampaignRun(runId: string) {
+    await this.prismaService.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "CampaignRun" WHERE "id" = ${runId} FOR UPDATE`,
+      );
+      const run = await tx.campaignRun.findUnique({
+        where: { id: runId },
+        include: {
+          campaign: {
+            include: { workspace: { select: { ownerUserId: true } } },
+          },
+        },
+      });
+      if (!run || run.status !== 'RUNNING') return;
+
+      const grouped = await tx.campaignRow.groupBy({
+        by: ['status'],
+        where: { campaignRunId: run.id },
+        _count: { _all: true },
+      });
+      const count = new Map(
+        grouped.map((entry) => [entry.status, entry._count._all]),
+      );
+      const unfinished =
+        (count.get('PENDING') ?? 0) + (count.get('PROCESSING') ?? 0);
+      if (unfinished) return;
+
+      if (count.get('RECONCILIATION_REQUIRED')) {
+        await tx.campaignRun.update({
+          where: { id: run.id },
+          data: { status: 'PAUSED' },
+        });
+        await tx.campaign.update({
+          where: { id: run.campaignId },
+          data: { status: 'PAUSED' },
+        });
+        return;
+      }
+
+      const failedCount = count.get('FAILED') ?? 0;
+      const refund = Number(run.unitPrice) * failedCount;
+      if (refund > 0) {
+        await this.walletLedgerService.credit(
+          tx,
+          {
+            ownerUserId: run.campaign.workspace.ownerUserId,
+            workspaceId: run.campaign.workspaceId,
+            amount: refund,
+            type: 'CAMPAIGN_REFUND',
+            sourceType: 'CAMPAIGN_RUN',
+            sourceId: run.id,
+            createdBy: run.operatorUserId,
+            note: `Campaign run refund for ${failedCount} failed message(s)`,
+          },
+          'totalRefund',
+        );
+      }
+
+      await tx.campaignRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          totalRefunded: refund,
+        },
+      });
+      await tx.campaign.update({
+        where: { id: run.campaignId },
+        data: {
+          status: 'COMPLETED',
+          lastRunAt: new Date(),
+          unitPriceAtCreate: run.unitPrice,
+        },
+      });
+    });
+    const run = await this.prismaService.campaignRun.findUnique({
+      where: { id: runId },
+    });
+    if (run) await this.syncCampaignCounters(run.campaignId);
   }
 
   private async debitWallet(params: {
@@ -661,10 +803,17 @@ export class CampaignsService {
         totalData,
         totalValid: totalData,
         totalInvalid: 0,
-        totalPending: countByStatus.get('PENDING') ?? 0,
+        totalPending:
+          (countByStatus.get('PENDING') ?? 0) +
+          (countByStatus.get('PROCESSING') ?? 0) +
+          (countByStatus.get('RECONCILIATION_REQUIRED') ?? 0),
         totalSuccess: countByStatus.get('SUCCESS') ?? 0,
         totalFailed: countByStatus.get('FAILED') ?? 0,
-        estimatedTotalAmount: unitPrice * (countByStatus.get('PENDING') ?? 0),
+        estimatedTotalAmount:
+          unitPrice *
+          ((countByStatus.get('PENDING') ?? 0) +
+            (countByStatus.get('PROCESSING') ?? 0) +
+            (countByStatus.get('RECONCILIATION_REQUIRED') ?? 0)),
       },
     });
   }
@@ -697,6 +846,30 @@ export class CampaignsService {
       throw new BadRequestException('Campaign not found');
     }
 
+    return campaign;
+  }
+
+  private async getCampaignContextById(
+    campaignId: string,
+  ): Promise<CampaignContext> {
+    const campaign = await this.prismaService.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        template: {
+          select: {
+            id: true,
+            status: true,
+            providerTemplateId: true,
+            placeholdersJson: true,
+            unitPricePerMessage: true,
+            ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
+            oaConnectionId: true,
+          },
+        },
+        workspace: { select: { ownerUserId: true, status: true } },
+      },
+    });
+    if (!campaign) throw new BadRequestException('Campaign not found');
     return campaign;
   }
 
