@@ -4,6 +4,8 @@ Tài liệu trong thư mục này do **BE sở hữu** và là bộ tài liệu 
 
 Để trao đổi nhanh với quản lý/PO, xem [Tình trạng dự án](./project-status.md).
 
+Tóm tắt các nhóm tính năng lớn: [Project Discuss](./project-discust.md).
+
 ## Đọc theo vai trò
 
 | Vai trò | Đọc trước |
