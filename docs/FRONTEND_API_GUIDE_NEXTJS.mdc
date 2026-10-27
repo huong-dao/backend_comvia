@@ -1370,7 +1370,7 @@ Chỉ `OWNER` của workspace được gọi; `MEMBER` không có quyền đọc
 - `GET /workspaces/:workspaceId/invoices/:invoiceId`
 - `GET /workspaces/:workspaceId/invoices/:invoiceId/pdf` — chỉ invoice `ISSUED`; PDF mới được stream từ private storage qua route đã guard.
 
-PDF lịch sử mang URL `/public/invoices/...` cần migration vận hành trước khi có thể tải qua route protected.
+PDF lịch sử mang URL `/public/invoices/...` cần migration vận hành trước khi có thể tải qua route protected. BE cung cấp `npm run migrate:legacy-invoice-pdfs` ở chế độ dry-run; DevOps chỉ dùng `-- --apply` sau backup/release window và khi dry-run không còn failure.
 
 ## 12) Public API (gọi bằng API key)
 
