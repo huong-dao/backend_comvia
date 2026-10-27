@@ -24,7 +24,7 @@ Phạm vi:
 | `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
-| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
+| Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `GET /admin/invoices/:invoiceId/pdf`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
 | Trang quản lý tài khoản ngân hàng (admin; path FE tùy dự án, ví dụ `/admin/money-accounts`) | `GET /money-accounts`, `GET /money-accounts/all` | `POST /money-accounts`, `PATCH /money-accounts/:id`, `DELETE /money-accounts/:id` |
 
 ---
@@ -217,7 +217,7 @@ Sắp xếp: `createdAt` giảm dần.
 Kết hợp phân trang + lọc đơn:
 `GET /api/v1/admin/invoices?orderId=clxxxxxxxxxxxxxxxx&page=1&limit=30`
 
-**Response (200):** Cùng dạng `{ data, meta }` như list orders; mỗi phần tử `data[]` có `workspaceId`, `orderId`, `invoiceCode`, `invoiceNumber`, `status`, `issueDate`, `invoicePdfUrl`, `billingType`, `billingSnapshotJson`, `createdAt`, …
+**Response (200):** Cùng dạng `{ data, meta }` như list orders; mỗi phần tử `data[]` có `workspaceId`, `orderId`, `invoiceCode`, `invoiceNumber`, `status`, `issueDate`, `invoicePdfUrl`, `billingType`, `billingSnapshotJson`, `createdAt`, … `invoicePdfUrl` là private storage key, không phải browser URL; tải file qua endpoint PDF bên dưới.
 
 Sắp xếp: `createdAt` giảm dần.
 
@@ -238,6 +238,12 @@ Sắp xếp: `createdAt` giảm dần.
 
 **Lỗi:** `404` nếu không tồn tại `invoiceId`.
 
+### Tải PDF hóa đơn
+
+- `GET /admin/invoices/:invoiceId/pdf`
+
+**Auth / quyền:** JWT + `UserRole.ADMIN`. Chỉ trả PDF khi invoice ở trạng thái `ISSUED` và private file tồn tại; các trường hợp khác trả `404`. FE dùng endpoint này để tải file, không mở trực tiếp `invoicePdfUrl`.
+
 ### Issue hóa đơn qua PDF (atomic verify + issue)
 
 - `POST /admin/invoices/:invoiceId/verify-issue-pdf`
@@ -253,7 +259,7 @@ Sắp xếp: `createdAt` giảm dần.
 | `issueDate` | Không | ISO date `YYYY-MM-DD` |
 | `idempotencyKey` | Không | Khuyến nghị để tránh upload lặp |
 
-**Luồng server:** load invoice `POSTED` → validate PDF → Gemini trích xuất JSON → so khớp billing + tiền + line item → nếu pass: lưu PDF (`/public/invoices/...`), cập nhật `ISSUED`, ghi audit log.
+**Luồng server:** load invoice `POSTED` → validate PDF → Gemini trích xuất JSON → so khớp billing + tiền + line item → nếu pass: lưu PDF private, cập nhật `ISSUED`, ghi audit log.
 
 **Response pass (200):**
 ```json
@@ -264,7 +270,7 @@ Sắp xếp: `createdAt` giảm dần.
     "status": "ISSUED",
     "invoiceNumber": "",
     "issueDate": "",
-    "invoicePdfUrl": "/public/invoices/.../....pdf"
+    "invoicePdfUrl": "invoices/<invoiceId>/<file>.pdf"
   }
 }
 ```
