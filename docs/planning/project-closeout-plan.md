@@ -32,7 +32,7 @@
 |---|---|---|---|
 | REL-01 | FE + BE | **BE code sẵn sàng trên `dev2` tại commit `d80c5e9`:** đã gỡ module, controller, service, registry/executor và API route Quick Chat; các URL API cũ trả `404` sau khi deploy. **FE còn lại:** gỡ direct route, component, import và request; chốt release/redirect cho URL UI cũ. Model/dữ liệu Prisma lịch sử được giữ, chờ quyết định retention riêng. | Build/test BE xanh; FE không còn request hoặc URL Quick Chat; deploy đồng bộ và kiểm tra URL API cũ `404`, hành vi URL UI cũ đã chốt. |
 | BE-01 | BE | Đã push `dev2` tại `93f191d`: khóa `WalletAccount` bằng `FOR UPDATE` trước khi ghi ledger và cập nhật số dư ở topup, single/public send, campaign (F02). | Unit test mock cạnh tranh debit 2/2, build và focused lint PASS ngày 2026-10-27. `DATABASE_URL` test không có và Docker daemon không chạy; cần chạy concurrency test có PostgreSQL, deploy và smoke để chứng minh không double-credit/debit, không âm số dư, ledger/balance nhất quán. |
-| BE-02 | BE | Code chuẩn bị cục bộ trên `dev2`: request topup không nhận `vatRate`; VAT cố định 10% do server tính cho Pay2S, order và invoice (F03). | Unit 3/3 và build PASS ngày 2026-10-27; lint DTO/helper mới PASS, `TopupsService` còn lỗi lint cũ. Cần review/commit/push, chạy topup test/smoke xác nhận request có `vatRate` bị 400 và tổng trước VAT/VAT/tổng thanh toán đúng. |
+| BE-02 | BE | Đã push `dev2` tại `6999c63`: request topup không nhận `vatRate`; VAT cố định 10% do server tính cho Pay2S, order và invoice (F03). | Unit 3/3 và build PASS ngày 2026-10-27; lint DTO/helper mới PASS, `TopupsService` còn lỗi lint cũ. Cần chạy topup test/smoke xác nhận request có `vatRate` bị 400 và tổng trước VAT/VAT/tổng thanh toán đúng. |
 
 ### P1 — khớp số liệu, giá và luồng tiền
 
@@ -63,8 +63,8 @@
 ## Thứ tự triển khai đề nghị
 
 1. Làm `INT-01` và `INT-02`; ghi kết quả vào board và changelog.
-2. Hoàn tất phần FE của `REL-01`, rồi deploy đồng bộ với BE; tiếp tục `BE-01`, `BE-02` trong đợt release an toàn đầu tiên.
-3. Làm `BE-03` đến `BE-06` theo dependency tiền → campaign/analytics → topup/invoice/invitation.
+2. Hoàn tất phần FE của `REL-01`, rồi deploy đồng bộ với BE; trong đợt release an toàn đầu tiên, deploy các code BE đã push và chạy smoke `BE-01`, `BE-02`.
+3. Apply migration `BE-04` và `BE-05`, migrate PDF invoice lịch sử khỏi public storage, rồi smoke campaign recovery/topup callback và luồng owner finance.
 4. Làm `FE-01` và `FE-02`; `FE-03` chỉ bắt đầu khi hợp đồng runtime đã được chứng minh; PO chốt `FE-04` trước khi mở feature mới.
 5. Mỗi release cập nhật `DOC-01`, chạy smoke live theo role và thêm bằng chứng vào board.
 
