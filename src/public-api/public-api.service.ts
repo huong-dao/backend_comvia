@@ -3,6 +3,7 @@ import { MessageStatus, Prisma, SendType } from '@prisma/client';
 import { OaMessagingService } from '../oa/oa-messaging.service';
 import { assertOtpPayloadData } from '../templates/otp-template.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 
 type PublicRequestContext = {
@@ -15,6 +16,7 @@ export class PublicApiService {
     private readonly prismaService: PrismaService,
     private readonly oaMessagingService: OaMessagingService,
     private readonly walletLedgerService: WalletLedgerService,
+    private readonly systemConfigService: SystemConfigService,
   ) {}
 
   async listApprovedTemplates(ctx: PublicRequestContext) {
@@ -82,6 +84,10 @@ export class PublicApiService {
         oaConnectionId: true,
         content: true,
         providerTemplateId: true,
+        unitPricePerMessage: true,
+        ctaButtons: {
+          select: { unitPrice: true, defaultUnitPrice: true },
+        },
       },
     });
 
@@ -119,7 +125,15 @@ export class PublicApiService {
       throw new BadRequestException('Workspace is not active');
     }
 
-    const unitCost = 1000;
+    const unitCost =
+      (await this.systemConfigService.resolveTemplateUnitPrice(
+        template.unitPricePerMessage,
+      )) +
+      template.ctaButtons.reduce(
+        (sum, button) =>
+          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
+        0,
+      );
 
     const wallet = await this.prismaService.walletAccount.findUnique({
       where: { ownerUserId: workspace.ownerUserId },

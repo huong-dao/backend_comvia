@@ -800,7 +800,7 @@ Ghi chú:
 - `type` và `trackingId` là giá trị nội bộ (không map/đối chiếu loại ZNS Zalo). `OTP` yêu cầu `otpExpiryMinutes`; backend chuẩn hóa placeholder `otp` và `phut`, không lưu placeholder null. Khi gửi OTP, `data.otp` và `data.phut` phải là string/number có giá trị. `TABLE` có thêm `secondaryContent`.
 - Các field mới được trả lại ở list/get.
 
-`ctaButtons` là mảng tối đa 2 nút, mỗi nút có `type`, `position` (0 hoặc 1, không trùng), tùy loại có `label`/`target`. Khi PATCH nút cũ gửi `id` UUID để giữ giá; `unitPrice` chỉ ADMIN được đặt. Giá gửi nội bộ/campaign = giá template (hoặc mặc định hệ thống) + tổng giá CTA (`unitPrice` override, fallback `defaultUnitPrice` snapshot). Public API hiện vẫn hardcode 1000, xem F04; không dùng giá public này làm chính sách chuẩn.
+`ctaButtons` là mảng tối đa 2 nút, mỗi nút có `type`, `position` (0 hoặc 1, không trùng), tùy loại có `label`/`target`. Khi PATCH nút cũ gửi `id` UUID để giữ giá; `unitPrice` chỉ ADMIN được đặt. Giá gửi nội bộ, campaign và Public API = giá template (hoặc mặc định hệ thống) + tổng giá CTA (`unitPrice` override, fallback `defaultUnitPrice` snapshot).
 
 ### 7.2 List templates
 - `GET /workspaces/:workspaceId/templates`

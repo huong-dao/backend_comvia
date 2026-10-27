@@ -38,7 +38,7 @@
 
 | ID | Owner | Công việc | Điều kiện hoàn tất |
 |---|---|---|---|
-| BE-03 | BE | Đồng nhất giá giữa public API, gửi đơn và campaign; sửa monthly used/total spent theo chi phí thật (F04/F05). | Cùng template/CTA/dataset cho cùng số tiền ở cả ba kênh; có test regression. |
+| BE-03 | BE | Code chuẩn bị cục bộ trên `dev2`: public send dùng giá template + CTA như single/campaign; monthly used/totalSpent theo chi phí thật còn lại (F04/F05). | Regression giá public 1/1 và build PASS ngày 2026-10-27. Cần commit/push; sau đó hoàn tất aggregate monthly theo bút toán thực tế và thêm regression tương ứng. |
 | BE-04 | BE | Analytics tính cả FAILED theo quy tắc đã chốt; campaign có queue/recovery và trạng thái chạy an toàn (F06/F07). | Ba kỳ analytics đúng dữ liệu; retry/restart không gửi trùng hoặc hoàn tiền sai. |
 | BE-05 | BE | Hoàn tất topup lifecycle, idempotency/audit và public template kiểm tra workspace status (F08/F09). | Callback lặp, PAID/FAILED/EXPIRED, workspace disabled và public key đều có test. |
 | BE-06 | BE | Chốt customer orders/invoices, PDF access, issue-once và invitation identity/resend/revoke (F10/F11). | Contract versioned được QA live; tài liệu nêu rõ Owner/Member/Admin được đọc gì và khách chỉ thấy dữ liệu thuộc workspace. |
