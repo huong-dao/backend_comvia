@@ -7,7 +7,11 @@ public
 
 .env
 
+# Local agent workflows and skills.
+.agents/
+AGENTS.md
+
 .claude
 
-# Internal docs (business rules, architecture, FE integration guides) — not published to GitHub
-docs
+# Current docs/ is versioned; preserve only local archived snapshots outside Git.
+docs-archive-*/
