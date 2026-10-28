@@ -815,6 +815,36 @@ Ghi chú:
 ### 7.2 List templates
 - `GET /workspaces/:workspaceId/templates`
 
+Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
+
+Response: mảng template của workspace, sắp xếp `createdAt` giảm dần. Endpoint không phân trang và không có query filter.
+
+Mỗi phần tử gồm các field:
+| Field | Kiểu | Ghi chú |
+|-------|------|---------|
+| `id` | string | |
+| `type` | enum `TEXT` \| `TABLE` \| `OTP` | |
+| `name` | string | |
+| `code` | string | Mã 6 chữ số do backend gán |
+| `title` | string \| null | |
+| `content` | string \| null | Nội dung template (có từ list; `OTP` thường không có) |
+| `trackingId` | string \| null | |
+| `secondaryContent` | string \| null | Chỉ có ý nghĩa với `TABLE` |
+| `otpExpiryMinutes` | int \| null | Chỉ có với `OTP` |
+| `placeholdersJson` | object \| null | Định nghĩa placeholder; `data` khi send phải khớp field này |
+| `status` | enum | Trạng thái duyệt (ví dụ `DRAFT`, `SUBMITTED`, `APPROVED`, `DISABLED`) |
+| `createdAt` / `updatedAt` | datetime | |
+| `requiresOwnerRevision` | boolean | `true` khi staff trả về để Owner sửa |
+| `revisionReason` | string \| null | Lý do staff trả về |
+| `returnedForRevisionAt` | datetime \| null | |
+| `ctaButtons` | array | Tối đa 2 nút, sắp theo `position` tăng dần |
+
+Ghi chú:
+- `content` được trả trong list để FE hiển thị và preview template mà không cần gọi thêm `GET /:templateId`. Vẫn gọi `GET /:templateId` khi cần đầy đủ chi tiết của một template (ví dụ trước khi mở form sửa).
+- `ctaButtons[]` có `id`, `type`, `label`, `target`, `position`, `defaultUnitPrice`. Field `unitPrice` chỉ xuất hiện khi caller là `ADMIN`.
+- Khi migration bảng CTA chưa được áp dụng (giai đoạn rolling deploy), backend vẫn trả list với `ctaButtons: []` thay vì lỗi.
+- FE không được dùng field này để suy ra quyền sửa; quyền sửa theo mục 7.4.
+
 ### 7.3 Get template
 - `GET /workspaces/:workspaceId/templates/:templateId`
 

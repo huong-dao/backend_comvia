@@ -329,6 +329,17 @@ describe('TemplatesService.list', () => {
     );
   });
 
+  it('selects template content in the list response', async () => {
+    template.findMany.mockResolvedValue([]);
+
+    await service.list('workspace-1', UserRole.USER);
+
+    const [args] = template.findMany.mock.calls[0] as [
+      { select: { content: boolean } },
+    ];
+    expect(args.select.content).toBe(true);
+  });
+
   it('keeps the list available while the CTA-table migration is pending', async () => {
     template.findMany
       .mockRejectedValueOnce({
