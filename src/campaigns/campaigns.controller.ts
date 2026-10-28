@@ -101,6 +101,20 @@ export class CampaignsController {
     return this.service.importCsv(workspaceId, campaignId, csvText);
   }
 
+  @Post(':campaignId/import-csv/reconcile')
+  @UseInterceptors(FileInterceptor('file'))
+  reconcileCsv(
+    @Param('workspaceId') workspaceId: string,
+    @Param('campaignId') campaignId: string,
+    @UploadedFile() file: CsvUploadFile,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('CSV file is required');
+    }
+    const csvText = file.buffer.toString('utf-8');
+    return this.service.reconcileCsv(workspaceId, campaignId, csvText);
+  }
+
   @Get(':campaignId/rows')
   listRows(
     @Param('workspaceId') workspaceId: string,

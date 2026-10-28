@@ -888,12 +888,24 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `GET /workspaces/:workspaceId/campaigns/:campaignId`
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId` — chỉ đổi `name` (không đổi template)
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId` — `DRAFT`: xóa hẳn; đã chạy: `CANCELLED`
-- `GET /workspaces/:workspaceId/campaigns/:campaignId/csv-template` — tải CSV mẫu (cột `Phone` + placeholder). Tên cột placeholder lấy từ `placeholder_labels` của template nếu có, nếu không thì dùng slug viết hoa chữ cái đầu (ví dụ `Name`). Import chấp nhận cả tên nhãn lẫn tên slug. Tên file tải về do FE đặt (BE không đặt tên file)
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv` — `multipart/form-data` field `file` (thay toàn bộ rows; chỉ trước lần execute đầu). Số điện thoại được chuẩn hóa về `84xxxxxxxxx`: chấp nhận `0xxxxxxxxx`, `+84…`, `84…`, có hoặc không dấu cách/chấm/gạch, và 9 số không có `0` đầu. Dòng có số không hợp lệ bị báo trong `errors` theo số dòng và không được import
+- `GET /workspaces/:workspaceId/campaigns/:campaignId/csv-template` — tải CSV. Cột đầu tiên là `row_id`, tiếp theo là `Phone` rồi các cột placeholder. Tên cột placeholder lấy từ `placeholder_labels` của template nếu có, nếu không thì dùng slug viết hoa chữ cái đầu (ví dụ `Name`). Import chấp nhận cả tên nhãn lẫn tên slug. Tên file tải về do FE đặt (BE không đặt tên file).
+  - Campaign **chưa có dòng**: file gồm header và một dòng mẫu, `row_id` để trống.
+  - Campaign **đã có dòng**: mỗi dòng của `CampaignRow` được xuất kèm `row_id` và dữ liệu hiện tại (kể cả `SUCCESS`). File này dùng cho `import-csv/reconcile`. User không được sửa cột `row_id`.
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv` — `multipart/form-data` field `file` (thay toàn bộ rows; chỉ trước lần execute đầu, sau đó trả `400`). Cột `row_id` nếu có thì bị bỏ qua. Số điện thoại được chuẩn hóa về `84xxxxxxxxx`: chấp nhận `0xxxxxxxxx`, `+84…`, `84…`, có hoặc không dấu cách/chấm/gạch, và 9 số không có `0` đầu. Dòng có số không hợp lệ bị báo trong `errors` theo số dòng và không được import
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv/reconcile` — `multipart/form-data` field `file`. Dùng để cập nhật dữ liệu rồi gửi lại **sau khi campaign đã chạy**. Không tạo dòng mới, không xóa dòng, **không trừ ví**.
+  - Mỗi dòng trong file phải có `row_id` thuộc campaign này, không trùng nhau. File thiếu cột `row_id`, có dòng thiếu `row_id`, hoặc `row_id` không thuộc campaign thì bị từ chối cả file.
+  - Dòng `FAILED`: cập nhật số điện thoại và placeholder theo file, đặt lại `PENDING`.
+  - Dòng `PENDING`: cập nhật theo file nếu có khác, vẫn `PENDING`.
+  - Dòng `SUCCESS`: không sửa. Nếu số hoặc nội dung trong file khác dữ liệu hiện có thì từ chối cả file; nếu giống thì bỏ qua.
+  - Dòng `PROCESSING`, `RECONCILIATION_REQUIRED`, `SKIPPED`: không sửa, từ chối cả file nếu file có chứa các dòng này.
+  - Dòng có trong campaign mà không có trong file: giữ nguyên.
+  - Chỉ chấp nhận khi campaign không `RUNNING` và không `CANCELLED`. Phải chờ run hiện tại xong.
+  - Số điện thoại chuẩn hóa như `import-csv`. Nếu sau khi cập nhật còn dòng `PENDING` thì campaign chuyển sang `READY`.
+  - Response thành công: `{ "campaignId": "...", "updated": 2, "unchanged": 3, "pendingRows": 2 }`. Lỗi: `400` với `{ "message": "CSV validation failed", "errors": ["row_id abc: SUCCESS row cannot be changed", ...] }`. Khi có lỗi, không có dòng nào được lưu.
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=`
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request.
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request. **Chỉ xử lý các dòng `PENDING`** (dòng `SUCCESS` không bao giờ bị gửi lại) và `totalCharged = unitPrice × số dòng PENDING` của lần chạy đó. Khi run kết thúc, các dòng `FAILED` của run được hoàn tiền một lần. Sau lần gửi đầu, muốn gửi lại: upload `import-csv/reconcile` để đưa dòng `FAILED` về `PENDING` (kèm sửa dữ liệu), rồi gọi `execute`. Nếu không còn dòng `PENDING`, `execute` trả `400`.
 - `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự).
 
 Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`). Worker claim `PENDING → PROCESSING` trước khi gọi provider. Chính sách **at-most-once**: `PROCESSING` gặp restart hoặc request mất response trở thành `RECONCILIATION_REQUIRED`, campaign `PAUSED`; FE phải hiển thị trạng thái cần đối soát và không gọi retry cho row này. Chỉ `FAILED` do provider đã trả lỗi xác định mới được retry; refund chỉ xảy ra một lần theo từng campaign run khi run hoàn tất.

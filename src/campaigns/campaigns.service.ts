@@ -17,6 +17,7 @@ import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import {
   buildCsvTemplateContent,
   parseCampaignCsv,
+  parseReconcileCsv,
   placeholderKeysFromJson,
 } from './campaign-csv.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -148,9 +149,15 @@ export class CampaignsService {
       string,
       unknown
     >;
+    const rows = await this.prismaService.campaignRow.findMany({
+      where: { campaignId: campaign.id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, phoneNumber: true, payloadData: true },
+    });
     return buildCsvTemplateContent(
       placeholders,
       campaign.template.placeholder_labels as Record<string, unknown> | null,
+      rows,
     );
   }
 
@@ -214,6 +221,155 @@ export class CampaignsService {
     });
 
     return this.get(workspaceId, campaignId);
+  }
+
+  /**
+   * Re-upload after execution. Only FAILED and PENDING rows can change; SUCCESS
+   * rows must match the file exactly. Upload never charges the wallet. Charges
+   * happen when `execute` runs the PENDING rows.
+   */
+  async reconcileCsv(workspaceId: string, campaignId: string, csvText: string) {
+    const campaign = await this.getCampaignContext(workspaceId, campaignId);
+    this.assertCanReconcile(campaign);
+
+    const placeholders = campaign.template.placeholdersJson as Record<
+      string,
+      unknown
+    >;
+    const parsed = parseReconcileCsv(
+      csvText,
+      placeholders,
+      campaign.template.placeholder_labels as Record<string, unknown> | null,
+    );
+    if (parsed.errors.length > 0) {
+      throw new BadRequestException({
+        message: 'CSV validation failed',
+        errors: parsed.errors,
+      });
+    }
+
+    const rowIds = parsed.rows.map((row) => row.rowId as string);
+    const existingRows = await this.prismaService.campaignRow.findMany({
+      where: { campaignId: campaign.id, id: { in: rowIds } },
+      select: {
+        id: true,
+        status: true,
+        phoneNumber: true,
+        payloadData: true,
+      },
+    });
+    const existingById = new Map(existingRows.map((row) => [row.id, row]));
+    const placeholderKeys = placeholderKeysFromJson(placeholders);
+
+    const errors: string[] = [];
+    const changes: {
+      id: string;
+      phoneNumber: string;
+      payloadData: Record<string, string>;
+      rawImportRow: Record<string, string>;
+      resetToPending: boolean;
+    }[] = [];
+    let unchanged = 0;
+
+    for (const row of parsed.rows) {
+      const rowId = row.rowId as string;
+      const existing = existingById.get(rowId);
+      if (!existing) {
+        errors.push(`row_id ${rowId}: not found in this campaign`);
+        continue;
+      }
+
+      const sameData =
+        existing.phoneNumber === row.phoneNumber &&
+        placeholderKeys.every(
+          (key) =>
+            String(
+              (existing.payloadData as Record<string, unknown>)?.[key] ?? '',
+            ) === row.payloadData[key],
+        );
+
+      switch (existing.status) {
+        case 'SUCCESS':
+          if (sameData) {
+            unchanged++;
+          } else {
+            errors.push(`row_id ${rowId}: SUCCESS row cannot be changed`);
+          }
+          break;
+        case 'FAILED':
+          changes.push({
+            id: rowId,
+            phoneNumber: row.phoneNumber,
+            payloadData: row.payloadData,
+            rawImportRow: row.rawImportRow,
+            resetToPending: true,
+          });
+          break;
+        case 'PENDING':
+          if (sameData) {
+            unchanged++;
+          } else {
+            changes.push({
+              id: rowId,
+              phoneNumber: row.phoneNumber,
+              payloadData: row.payloadData,
+              rawImportRow: row.rawImportRow,
+              resetToPending: false,
+            });
+          }
+          break;
+        default:
+          errors.push(
+            `row_id ${rowId}: row is ${existing.status} and cannot be changed`,
+          );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message: 'CSV validation failed',
+        errors,
+      });
+    }
+
+    const pendingRows = await this.prismaService.$transaction(async (tx) => {
+      for (const change of changes) {
+        await tx.campaignRow.update({
+          where: { id: change.id },
+          data: {
+            phoneNumber: change.phoneNumber,
+            payloadData: change.payloadData as Prisma.InputJsonValue,
+            rawImportRow: change.rawImportRow as Prisma.InputJsonValue,
+            ...(change.resetToPending
+              ? {
+                  status: 'PENDING' satisfies CampaignRowStatus,
+                  failureReason: null,
+                  dispatchStartedAt: null,
+                }
+              : {}),
+          },
+        });
+      }
+
+      const pending = await tx.campaignRow.count({
+        where: { campaignId: campaign.id, status: 'PENDING' },
+      });
+      if (pending > 0) {
+        await tx.campaign.update({
+          where: { id: campaign.id },
+          data: { status: 'READY' satisfies CampaignStatus },
+        });
+      }
+      return pending;
+    });
+
+    await this.syncCampaignCounters(campaign.id);
+    return {
+      campaignId: campaign.id,
+      updated: changes.length,
+      unchanged,
+      pendingRows,
+    };
   }
 
   listRows(
@@ -960,6 +1116,17 @@ export class CampaignsService {
     if (campaign.lastRunAt != null) {
       throw new BadRequestException(
         'Cannot re-import CSV after campaign has been executed',
+      );
+    }
+  }
+
+  private assertCanReconcile(campaign: CampaignContext) {
+    if (campaign.status === 'CANCELLED') {
+      throw new BadRequestException('Campaign is cancelled');
+    }
+    if (campaign.status === 'RUNNING') {
+      throw new BadRequestException(
+        'Cannot reconcile while campaign is running',
       );
     }
   }
