@@ -1500,6 +1500,17 @@ Request:
 }
 ```
 
+Xác định template bằng `templateId` (id, không đổi) **hoặc** `templateCode` (mã 6 chữ số, duy nhất trong workspace, lấy từ `GET /public/templates`). Cần ít nhất một trong hai, thiếu cả hai trả `400`. Nếu gửi cả hai thì cả hai phải thuộc cùng một template, nếu không trả `400`. Ví dụ dùng code:
+```json
+{
+  "api_key": "RAW_API_KEY",
+  "templateCode": "123456",
+  "phoneNumber": "84901234567",
+  "data": { "name": "Minh" }
+}
+```
+Lưu ý: `code` có thể bị admin/staff đổi, nên tích hợp lâu dài nên ưu tiên `templateId`.
+
 Response (Zalo ZNS thật):
 ```json
 {
