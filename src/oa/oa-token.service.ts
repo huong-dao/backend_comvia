@@ -87,7 +87,7 @@ export class OaTokenService {
       });
 
       throw new BadRequestException(
-        'OA token expired. Please reconnect Zalo OA.',
+        'OA token đã hết hạn. Vui lòng kết nối lại Zalo OA.',
       );
     }
   }
