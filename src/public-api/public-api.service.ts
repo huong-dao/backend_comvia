@@ -68,14 +68,20 @@ export class PublicApiService {
   async sendSingle(
     ctx: PublicRequestContext,
     dto: {
-      templateId: string;
+      templateId?: string;
+      templateCode?: string;
       phoneNumber: string;
       data: Record<string, unknown>;
     },
   ) {
+    if (!dto.templateId && !dto.templateCode) {
+      throw new BadRequestException('templateId or templateCode is required');
+    }
+
     const template = await this.prismaService.template.findFirst({
       where: {
-        id: dto.templateId,
+        ...(dto.templateId ? { id: dto.templateId } : {}),
+        ...(dto.templateCode ? { code: dto.templateCode } : {}),
         workspaceId: ctx.workspaceId,
       },
       select: {

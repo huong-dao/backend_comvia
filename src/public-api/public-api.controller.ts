@@ -51,6 +51,7 @@ export class PublicApiController {
       { workspaceId: req.workspaceId },
       {
         templateId: dto.templateId,
+        templateCode: dto.templateCode,
         phoneNumber: dto.phoneNumber,
         data: dto.data,
       },
