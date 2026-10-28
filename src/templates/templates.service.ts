@@ -439,6 +439,7 @@ export class TemplatesService {
         secondaryContent: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
+        placeholder_labels: true,
         status: true,
         createdAt: true,
         updatedAt: true,
@@ -473,6 +474,7 @@ export class TemplatesService {
           secondaryContent: true,
           otpExpiryMinutes: true,
           placeholdersJson: true,
+          placeholder_labels: true,
           status: true,
           createdAt: true,
           updatedAt: true,
@@ -692,6 +694,7 @@ export class TemplatesService {
       dto.code === undefined &&
       dto.content === undefined &&
       dto.placeholdersJson === undefined &&
+      dto.placeholder_labels === undefined &&
       dto.type === undefined &&
       dto.title === undefined &&
       dto.trackingId === undefined &&
@@ -754,6 +757,16 @@ export class TemplatesService {
         'Only platform admin can set template unit price per message',
       );
     }
+    if (
+      dto.placeholder_labels &&
+      Object.values(dto.placeholder_labels).some(
+        (label) => typeof label !== 'string',
+      )
+    ) {
+      throw new BadRequestException(
+        'placeholder_labels values must be strings',
+      );
+    }
     this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
 
@@ -787,6 +800,12 @@ export class TemplatesService {
         adminPriceOnly || dto.placeholdersJson === undefined
           ? undefined
           : (dto.placeholdersJson as Prisma.InputJsonValue),
+      placeholder_labels:
+        adminPriceOnly || dto.placeholder_labels === undefined
+          ? undefined
+          : dto.placeholder_labels === null
+            ? Prisma.DbNull
+            : (dto.placeholder_labels as Prisma.InputJsonValue),
       unitPricePerMessage:
         dto.unitPricePerMessage !== undefined
           ? new Prisma.Decimal(dto.unitPricePerMessage)

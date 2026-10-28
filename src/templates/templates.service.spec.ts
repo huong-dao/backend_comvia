@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { TemplateCtaType, TemplateType, UserRole } from '@prisma/client';
+import {
+  Prisma,
+  TemplateCtaType,
+  TemplateType,
+  UserRole,
+} from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -553,5 +558,83 @@ describe('TemplatesService revision workflow', () => {
     expect(auditLogService.write).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'template.returned_for_revision' }),
     );
+  });
+});
+
+describe('TemplatesService.update placeholder_labels', () => {
+  let service: TemplatesService;
+  const draft = {
+    id: 'tpl-1',
+    status: 'DRAFT',
+    requiresOwnerRevision: false,
+    type: TemplateType.TEXT,
+    content: 'Xin chào {{name}}',
+    placeholdersJson: { name: 'string' },
+    otpExpiryMinutes: null,
+    ctaButtons: [],
+  };
+  const template = { findFirst: jest.fn(), update: jest.fn() };
+  const prisma = { template };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    template.findFirst.mockResolvedValue(draft);
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { resolveCtaDefaultUnitPrice: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('stores display labels for the placeholders', async () => {
+    await service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+      placeholder_labels: { name: 'Tên khách hàng' },
+    });
+
+    expect(template.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          placeholder_labels: { name: 'Tên khách hàng' },
+        }),
+      }),
+    );
+  });
+
+  it('clears display labels with SQL NULL when null is sent', async () => {
+    await service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+      placeholder_labels: null,
+    });
+
+    const [args] = template.update.mock.calls[0] as [
+      { data: { placeholder_labels: unknown } },
+    ];
+    expect(args.data.placeholder_labels).toBe(Prisma.DbNull);
+  });
+
+  it('leaves display labels untouched when the field is omitted', async () => {
+    await service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+      name: 'Renamed',
+    });
+
+    const [args] = template.update.mock.calls[0] as [
+      { data: { placeholder_labels: unknown } },
+    ];
+    expect(args.data.placeholder_labels).toBeUndefined();
+  });
+
+  it('rejects label values that are not strings', async () => {
+    await expect(
+      service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+        placeholder_labels: { name: 1 as unknown as string },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(template.update).not.toHaveBeenCalled();
   });
 });

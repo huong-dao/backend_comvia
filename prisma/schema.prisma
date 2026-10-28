@@ -617,6 +617,7 @@ model Template {
   secondaryContent    String?
   otpExpiryMinutes    Int?
   placeholdersJson    Json?
+  placeholder_labels  Json?
   providerTemplateId  String?
   unitPricePerMessage Decimal?
   status              TemplateStatus @default(DRAFT)
