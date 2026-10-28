@@ -11,6 +11,12 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { SendSingleDto } from './dto/send-single.dto';
 import { assertOtpPayloadData } from '../templates/otp-template.util';
+import {
+  SEND_ERROR_CODES,
+  SEND_SUCCESS_MESSAGE,
+  sendErrorBody,
+  toSendErrorBody,
+} from './send-error-messages';
 
 @Injectable()
 export class MessagingService {
@@ -43,12 +49,14 @@ export class MessagingService {
     });
 
     if (!template) {
-      throw new BadRequestException('Template not found or not approved');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_APPROVED),
+      );
     }
 
     if (!template.providerTemplateId) {
       throw new BadRequestException(
-        'Template is missing Zalo providerTemplateId',
+        sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_SYNCED),
       );
     }
 
@@ -64,7 +72,9 @@ export class MessagingService {
     });
 
     if (!oa || oa.status !== 'CONNECTED') {
-      throw new BadRequestException('OA is not connected');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
+      );
     }
 
     const workspace = await this.prismaService.workspace.findUnique({
@@ -72,7 +82,9 @@ export class MessagingService {
       select: { id: true, ownerUserId: true, status: true },
     });
     if (!workspace || workspace.status !== 'ACTIVE') {
-      throw new BadRequestException('Workspace is not active');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.WORKSPACE_INACTIVE),
+      );
     }
 
     const wallet = await this.prismaService.walletAccount.findUnique({
@@ -80,7 +92,9 @@ export class MessagingService {
       select: { ownerUserId: true, balance: true },
     });
     if (!wallet) {
-      throw new BadRequestException('Wallet not initialized');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.WALLET_NOT_INITIALIZED),
+      );
     }
 
     const unitCost =
@@ -94,7 +108,9 @@ export class MessagingService {
       );
     const walletBefore = Number(wallet.balance);
     if (walletBefore < unitCost) {
-      throw new BadRequestException('Insufficient credit');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.INSUFFICIENT_CREDIT),
+      );
     }
 
     const payloadSnapshot: Prisma.InputJsonValue = {
@@ -132,7 +148,7 @@ export class MessagingService {
       });
 
       throw new BadRequestException({
-        message: errorMessage,
+        ...toSendErrorBody(error),
         messageLogId: failedLog.id,
       });
     }
@@ -172,6 +188,7 @@ export class MessagingService {
 
       return {
         status: messageLog.status,
+        message: SEND_SUCCESS_MESSAGE,
         providerMessageId: messageLog.providerMessageId,
         messageLogId: messageLog.id,
       };

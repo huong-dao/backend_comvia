@@ -3,6 +3,10 @@ import { OaConnectionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ZaloOAuthClient } from '../integrations/zalo/zalo-oauth.client';
 import type { ZaloTokenResponse } from '../integrations/zalo/zalo.types';
+import {
+  SEND_ERROR_CODES,
+  sendErrorBody,
+} from '../messaging/send-error-messages';
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -31,11 +35,15 @@ export class OaTokenService {
       });
 
     if (!connection || connection.status !== 'CONNECTED') {
-      throw new BadRequestException('OA is not connected');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
+      );
     }
 
     if (!connection.accessToken || !connection.refreshToken) {
-      throw new BadRequestException('OA tokens are missing');
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.OA_TOKEN_MISSING),
+      );
     }
 
     const now = Date.now();
@@ -87,7 +95,7 @@ export class OaTokenService {
       });
 
       throw new BadRequestException(
-        'OA token đã hết hạn. Vui lòng kết nối lại Zalo OA.',
+        sendErrorBody(SEND_ERROR_CODES.OA_TOKEN_EXPIRED),
       );
     }
   }

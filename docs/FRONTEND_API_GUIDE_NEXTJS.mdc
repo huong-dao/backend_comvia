@@ -1008,22 +1008,38 @@ Response thành công:
 ```json
 {
   "status": "SUCCESS",
+  "message": "Đã gửi tin thành công.",
   "providerMessageId": "MSG_ID_TU_ZALO",
   "messageLogId": "MESSAGE_LOG_ID"
 }
 ```
 
-Response lỗi (ví dụ Zalo từ chối / thiếu credit / thiếu providerTemplateId):
+Response lỗi (HTTP `400`). FE hiển thị `message` cho người dùng; `code` dùng để phân loại; `detail` chỉ để đối soát, không hiển thị:
 ```json
 {
-  "statusCode": 400,
-  "message": {
-    "message": "Zalo ZNS send failed",
-    "messageLogId": "MESSAGE_LOG_ID"
-  },
-  "error": "Bad Request"
+  "code": "ZALO_REJECTED",
+  "message": "Zalo từ chối gửi tin. Vui lòng kiểm tra lại mẫu tin và thử lại sau.",
+  "detail": "Template is not approved",
+  "messageLogId": "MESSAGE_LOG_ID"
 }
 ```
+
+Bảng `code`:
+
+| `code` | Khi nào |
+|--------|---------|
+| `TEMPLATE_NOT_APPROVED` | Mẫu không tồn tại hoặc chưa duyệt |
+| `TEMPLATE_NOT_SYNCED` | Mẫu thiếu `providerTemplateId` |
+| `OA_NOT_CONNECTED` | OA chưa kết nối |
+| `OA_TOKEN_MISSING` | OA thiếu token |
+| `OA_TOKEN_EXPIRED` | Token OA hết hạn, cần kết nối lại |
+| `WORKSPACE_INACTIVE` | Workspace không hoạt động |
+| `WALLET_NOT_INITIALIZED` | Ví chưa khởi tạo |
+| `INSUFFICIENT_CREDIT` | Số dư không đủ (không có `messageLogId`) |
+| `ZALO_REJECTED` | Zalo từ chối; có `detail` là lỗi gốc |
+| `SEND_FAILED` | Lỗi khác |
+
+`messageLogId` chỉ có khi tin đã được ghi nhận là `FAILED` (lỗi sau khi gọi Zalo). Các lỗi kiểm tra trước đó không tạo log.
 
 Ghi chú nghiệp vụ:
 - **Chỉ trừ ví** khi Zalo trả success.
