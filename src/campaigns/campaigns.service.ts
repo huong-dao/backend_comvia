@@ -37,6 +37,7 @@ type CampaignContext = {
     status: string;
     providerTemplateId: string | null;
     placeholdersJson: Prisma.JsonValue;
+    placeholder_labels: Prisma.JsonValue;
     unitPricePerMessage: Prisma.Decimal | null;
     ctaButtons: { unitPrice: number | null; defaultUnitPrice: number | null }[];
     oaConnectionId: string;
@@ -147,7 +148,10 @@ export class CampaignsService {
       string,
       unknown
     >;
-    return buildCsvTemplateContent(placeholders);
+    return buildCsvTemplateContent(
+      placeholders,
+      campaign.template.placeholder_labels as Record<string, unknown> | null,
+    );
   }
 
   async importCsv(workspaceId: string, campaignId: string, csvText: string) {
@@ -158,7 +162,11 @@ export class CampaignsService {
       string,
       unknown
     >;
-    const parsed = parseCampaignCsv(csvText, placeholders);
+    const parsed = parseCampaignCsv(
+      csvText,
+      placeholders,
+      campaign.template.placeholder_labels as Record<string, unknown> | null,
+    );
     if (parsed.errors.length > 0) {
       throw new BadRequestException({
         message: 'CSV validation failed',
@@ -835,6 +843,7 @@ export class CampaignsService {
             status: true,
             providerTemplateId: true,
             placeholdersJson: true,
+            placeholder_labels: true,
             unitPricePerMessage: true,
             ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
             oaConnectionId: true,
@@ -865,6 +874,7 @@ export class CampaignsService {
             status: true,
             providerTemplateId: true,
             placeholdersJson: true,
+            placeholder_labels: true,
             unitPricePerMessage: true,
             ctaButtons: { select: { unitPrice: true, defaultUnitPrice: true } },
             oaConnectionId: true,

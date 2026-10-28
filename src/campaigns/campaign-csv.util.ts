@@ -9,7 +9,13 @@ export type ParsedCampaignCsvRow = {
 
 export type CampaignCsvColumnPlan = {
   phoneColumn: string;
-  placeholderColumns: { key: string; header: string }[];
+  placeholderColumns: {
+    key: string;
+    /** Header written to the CSV template. Uses the label when one is set. */
+    header: string;
+    /** Slug-based header, always accepted on import for backward compatibility. */
+    fallbackHeader: string;
+  }[];
 };
 
 export function placeholderKeysFromJson(
@@ -20,15 +26,24 @@ export function placeholderKeysFromJson(
 
 export function buildCsvColumnPlan(
   placeholdersJson: Record<string, unknown>,
+  placeholderLabels?: Record<string, unknown> | null,
 ): CampaignCsvColumnPlan {
   const keys = placeholderKeysFromJson(placeholdersJson);
-  return {
-    phoneColumn: PHONE_COLUMN,
-    placeholderColumns: keys.map((key) => ({
-      key,
-      header: placeholderKeyToHeader(key),
-    })),
-  };
+  const fallbackHeaders = keys.map((key) => placeholderKeyToHeader(key));
+  const reserved = new Set([PHONE_COLUMN.toLowerCase()]);
+  const placeholderColumns = keys.map((key, index) => {
+    const fallbackHeader = fallbackHeaders[index];
+    const label = placeholderLabels?.[key];
+    const labelHeader = typeof label === 'string' ? label.trim() : '';
+    // A label that collides with Phone or another column would make the
+    // import header ambiguous, so the slug header is used for that key.
+    const useLabel =
+      labelHeader.length > 0 && !reserved.has(labelHeader.toLowerCase());
+    const header = useLabel ? labelHeader : fallbackHeader;
+    reserved.add(header.toLowerCase());
+    return { key, header, fallbackHeader };
+  });
+  return { phoneColumn: PHONE_COLUMN, placeholderColumns };
 }
 
 export function placeholderKeyToHeader(key: string): string {
@@ -38,8 +53,9 @@ export function placeholderKeyToHeader(key: string): string {
 
 export function buildCsvTemplateContent(
   placeholdersJson: Record<string, unknown>,
+  placeholderLabels?: Record<string, unknown> | null,
 ): string {
-  const plan = buildCsvColumnPlan(placeholdersJson);
+  const plan = buildCsvColumnPlan(placeholdersJson, placeholderLabels);
   const headers = [
     plan.phoneColumn,
     ...plan.placeholderColumns.map((c) => c.header),
@@ -48,14 +64,22 @@ export function buildCsvTemplateContent(
     '0901234567',
     ...plan.placeholderColumns.map((c) => `demo_${c.key}`),
   ];
-  return [headers.join(','), demoValues.join(',')].join('\n');
+  return [headers, demoValues]
+    .map((cells) => cells.map(escapeCsvCell).join(','))
+    .join('\n');
+}
+
+function escapeCsvCell(value: string): string {
+  if (!/[",\r\n]/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 export function parseCampaignCsv(
   csvText: string,
   placeholdersJson: Record<string, unknown>,
+  placeholderLabels?: Record<string, unknown> | null,
 ): { rows: ParsedCampaignCsvRow[]; errors: string[] } {
-  const plan = buildCsvColumnPlan(placeholdersJson);
+  const plan = buildCsvColumnPlan(placeholdersJson, placeholderLabels);
   const lines = csvText
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
@@ -139,7 +163,10 @@ function buildHeaderIndex(
 
   const placeholderIdx: Record<string, number> = {};
   for (const col of plan.placeholderColumns) {
-    const idx = normalized.indexOf(col.header.toLowerCase());
+    let idx = normalized.indexOf(col.header.toLowerCase());
+    if (idx < 0 && col.fallbackHeader !== col.header) {
+      idx = normalized.indexOf(col.fallbackHeader.toLowerCase());
+    }
     if (idx < 0) {
       errors.push(`Missing required column: ${col.header}`);
     } else {
