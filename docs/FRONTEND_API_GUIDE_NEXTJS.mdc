@@ -889,7 +889,7 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId` — chỉ đổi `name` (không đổi template)
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId` — `DRAFT`: xóa hẳn; đã chạy: `CANCELLED`
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/csv-template` — tải CSV mẫu (cột `Phone` + placeholder). Tên cột placeholder lấy từ `placeholder_labels` của template nếu có, nếu không thì dùng slug viết hoa chữ cái đầu (ví dụ `Name`). Import chấp nhận cả tên nhãn lẫn tên slug. Tên file tải về do FE đặt (BE không đặt tên file)
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv` — `multipart/form-data` field `file` (thay toàn bộ rows; chỉ trước lần execute đầu)
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/import-csv` — `multipart/form-data` field `file` (thay toàn bộ rows; chỉ trước lần execute đầu). Số điện thoại được chuẩn hóa về `84xxxxxxxxx`: chấp nhận `0xxxxxxxxx`, `+84…`, `84…`, có hoặc không dấu cách/chấm/gạch, và 9 số không có `0` đầu. Dòng có số không hợp lệ bị báo trong `errors` theo số dòng và không được import
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=`
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`

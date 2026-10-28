@@ -1,3 +1,5 @@
+import { normalizeVietnamesePhone } from '../common/utils/vn-phone';
+
 const PHONE_COLUMN = 'Phone';
 const MAX_IMPORT_ROWS = 10_000;
 
@@ -113,14 +115,21 @@ export function parseCampaignCsv(
   for (let i = 0; i < dataLines.length; i++) {
     const lineNumber = i + 2;
     const cells = parseCsvLine(dataLines[i]);
-    const phone = (cells[headerIndex.phoneIdx] ?? '').trim();
-    if (!phone) {
+    const rawPhone = (cells[headerIndex.phoneIdx] ?? '').trim();
+    if (!rawPhone) {
       errors.push(`Row ${lineNumber}: Phone is required`);
+      continue;
+    }
+    const phone = normalizeVietnamesePhone(rawPhone);
+    if (!phone) {
+      errors.push(
+        `Row ${lineNumber}: Phone is not a valid Vietnamese mobile number`,
+      );
       continue;
     }
 
     const payloadData: Record<string, string> = {};
-    const rawImportRow: Record<string, string> = { [PHONE_COLUMN]: phone };
+    const rawImportRow: Record<string, string> = { [PHONE_COLUMN]: rawPhone };
 
     for (const col of plan.placeholderColumns) {
       const value = (cells[headerIndex.placeholderIdx[col.key]] ?? '').trim();

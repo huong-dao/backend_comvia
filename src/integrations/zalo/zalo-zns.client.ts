@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import type { ZaloZnsSendResult, ZaloZnsSendResponse } from './zalo.types';
+import { normalizeVietnamesePhone } from '../../common/utils/vn-phone';
 
 export type SendZnsTemplateInput = {
   accessToken: string;
@@ -75,13 +76,9 @@ export class ZaloZnsClient {
   }
 
   private normalizePhoneNumber(phoneNumber: string): string {
-    const compact = phoneNumber.replace(/[\s.-]/g, '');
-    if (/^0\d{9}$/.test(compact)) {
-      return `84${compact.slice(1)}`;
-    }
-
-    if (/^84\d{9}$/.test(compact)) {
-      return compact;
+    const normalized = normalizeVietnamesePhone(phoneNumber);
+    if (normalized) {
+      return normalized;
     }
 
     throw new Error(

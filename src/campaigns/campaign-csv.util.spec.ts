@@ -67,3 +67,50 @@ describe('parseCampaignCsv', () => {
     expect(result.errors).toContain('Missing required column: Tên khách hàng');
   });
 });
+
+describe('parseCampaignCsv phone normalization', () => {
+  it('converts a 0-prefixed number to the 84 form', () => {
+    const result = parseCampaignCsv(
+      'Phone,Name,OrderId\n0707210690,Minh,A1',
+      placeholders,
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0].phoneNumber).toBe('84707210690');
+    expect(result.rows[0].rawImportRow.Phone).toBe('0707210690');
+  });
+
+  it('normalizes separators and a leading plus sign', () => {
+    const result = parseCampaignCsv(
+      'Phone,Name,OrderId\n+84 707-210-690,Minh,A1\n0707.210.690,An,A2',
+      placeholders,
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map((row) => row.phoneNumber)).toEqual([
+      '84707210690',
+      '84707210690',
+    ]);
+  });
+
+  it('accepts 9 digits without the leading 0', () => {
+    const result = parseCampaignCsv(
+      'Phone,Name,OrderId\n707210690,Minh,A1',
+      placeholders,
+    );
+
+    expect(result.rows[0].phoneNumber).toBe('84707210690');
+  });
+
+  it('reports an invalid number on its row and skips it', () => {
+    const result = parseCampaignCsv(
+      'Phone,Name,OrderId\n12345,Minh,A1\n0707210690,An,A2',
+      placeholders,
+    );
+
+    expect(result.errors).toEqual([
+      'Row 2: Phone is not a valid Vietnamese mobile number',
+    ]);
+    expect(result.rows).toHaveLength(1);
+  });
+});
