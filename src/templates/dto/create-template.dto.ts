@@ -51,6 +51,12 @@ export class CreateTemplateDto {
   @IsObject()
   placeholdersJson?: Record<string, unknown>;
 
+  // Display labels keyed by placeholder slug. Each key must exist in
+  // placeholdersJson; partial coverage is allowed.
+  @IsOptional()
+  @IsObject()
+  placeholder_labels?: Record<string, string> | null;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

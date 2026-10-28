@@ -92,6 +92,29 @@ export class TemplatesService {
     }
   }
 
+  /**
+   * Labels are optional per placeholder, but every labelled slug must exist in
+   * the template's placeholdersJson. `null` means "no labels" and is allowed.
+   */
+  private assertPlaceholderLabelsOrThrow(
+    labels: Record<string, string> | null | undefined,
+    placeholdersJson: Record<string, unknown> | null | undefined,
+  ): void {
+    if (labels == null) return;
+    if (Object.values(labels).some((label) => typeof label !== 'string')) {
+      throw new BadRequestException(
+        'placeholder_labels values must be strings',
+      );
+    }
+    const slugs = new Set(Object.keys(placeholdersJson ?? {}));
+    const unknown = Object.keys(labels).filter((slug) => !slugs.has(slug));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `placeholder_labels has keys not in placeholdersJson: ${unknown.join(', ')}`,
+      );
+    }
+  }
+
   private canEditTemplateCode(role: UserRole): boolean {
     return role === UserRole.ADMIN || role === UserRole.STAFF;
   }
@@ -330,6 +353,10 @@ export class TemplatesService {
       placeholdersJson: dto.placeholdersJson,
       otpExpiryMinutes: dto.otpExpiryMinutes,
     });
+    this.assertPlaceholderLabelsOrThrow(
+      dto.placeholder_labels,
+      dto.placeholdersJson,
+    );
 
     const isOtp = type === TemplateType.OTP;
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
@@ -361,6 +388,9 @@ export class TemplatesService {
             // OTP templates omit free-text content but retain their fixed placeholders.
             content: isOtp ? null : dto.content,
             placeholdersJson: dto.placeholdersJson as Prisma.InputJsonValue,
+            placeholder_labels: dto.placeholder_labels
+              ? (dto.placeholder_labels as Prisma.InputJsonValue)
+              : undefined,
             // secondaryContent only applies to TABLE templates.
             secondaryContent:
               type === TemplateType.TABLE
@@ -757,14 +787,14 @@ export class TemplatesService {
         'Only platform admin can set template unit price per message',
       );
     }
-    if (
-      dto.placeholder_labels &&
-      Object.values(dto.placeholder_labels).some(
-        (label) => typeof label !== 'string',
-      )
-    ) {
-      throw new BadRequestException(
-        'placeholder_labels values must be strings',
+    // Labels are checked against the effective placeholdersJson: the patch
+    // value if sent, otherwise the stored one.
+    if (!adminPriceOnly) {
+      this.assertPlaceholderLabelsOrThrow(
+        dto.placeholder_labels,
+        dto.placeholdersJson !== undefined
+          ? dto.placeholdersJson
+          : (template.placeholdersJson as Record<string, unknown> | null),
       );
     }
     this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);

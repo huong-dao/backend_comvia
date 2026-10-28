@@ -804,6 +804,7 @@ Field mới (BR-05):
 | `content` | string | Bắt buộc khi `TEXT`/`TABLE`; bỏ khi `OTP` |
 | `secondaryContent` | string | Chỉ dùng khi `type = TABLE` ("nội dung phụ") |
 | `otpExpiryMinutes` | int ≥ 1 | Bắt buộc khi `type = OTP` |
+| `placeholder_labels` | object `{ "<slug>": "<nhãn>" }` \| null | Không — bỏ qua hoặc `null` thì lưu `NULL` (FE dùng slug). Mọi value phải là string; mỗi key phải có trong `placeholdersJson`, không có thì `400`. Không cần đủ nhãn cho mọi placeholder |
 
 Ghi chú:
 - `code` do backend gán khi tạo: chuỗi **6 chữ số**, random trong khoảng **100000–999999**, **unique trong workspace**. Frontend lấy `code` từ **response** của `POST` (cùng các field như list/get).
@@ -857,7 +858,7 @@ Response có thêm `placeholder_labels` (xem bảng field ở mục 7.2).
 Ghi chú:
 - Chỉ sửa nội dung khi `DRAFT` hoặc `SUBMITTED` có `requiresOwnerRevision=true`; các trạng thái khác trả `409`. `APPROVED` chỉ cho ADMIN cập nhật riêng giá theo whitelist của service, không sửa nội dung.
 - STAFF không được sửa nội dung template. `code` của USER bị chặn `403`; quyền đổi code vẫn chịu kiểm tra trạng thái và vai trò ở service.
-- `placeholder_labels`: gửi object `{ "<slug>": "<nhãn>" }` để cập nhật; mọi value phải là string, nếu không trả `400`. Gửi `null` để xóa nhãn về `NULL` (FE dùng slug). Bỏ qua field thì giữ nguyên. Chịu cùng quy tắc sửa nội dung ở trên. Không đổi `placeholdersJson`.
+- `placeholder_labels`: gửi object `{ "<slug>": "<nhãn>" }` để cập nhật; mọi value phải là string, mỗi key phải có trong `placeholdersJson` đang lưu (hoặc trong body nếu PATCH có gửi `placeholdersJson`). Vi phạm trả `400`. Gửi `null` để xóa nhãn về `NULL` (FE dùng slug). Bỏ qua field thì giữ nguyên. Chịu cùng quy tắc sửa nội dung ở trên. Không đổi `placeholdersJson`.
 - `unitPricePerMessage` (VND/tin): chỉ `ADMIN` set; nếu null thì dùng giá mặc định từ `GET /admin/config/message-pricing`.
 
 ### 7.5 Submit template

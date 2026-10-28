@@ -638,3 +638,105 @@ describe('TemplatesService.update placeholder_labels', () => {
     expect(template.update).not.toHaveBeenCalled();
   });
 });
+
+describe('TemplatesService placeholder_labels key rules', () => {
+  let service: TemplatesService;
+  const workspaceOa = { findUnique: jest.fn() };
+  const template = {
+    create: jest.fn<unknown, [{ data: Record<string, unknown> }]>(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  };
+  const prisma = { workspaceOa, template };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    workspaceOa.findUnique.mockResolvedValue({
+      id: 'oa-1',
+      connection: { status: 'CONNECTED' },
+    });
+    template.create.mockImplementation(({ data }) =>
+      Promise.resolve({ id: 'tpl-1', ...data }),
+    );
+    template.findFirst.mockResolvedValue({
+      id: 'tpl-1',
+      status: 'DRAFT',
+      requiresOwnerRevision: false,
+      type: TemplateType.TEXT,
+      content: 'Xin chào {{name}}, mã {{code}}',
+      placeholdersJson: { name: 'string', code: 'string' },
+      otpExpiryMinutes: null,
+      ctaButtons: [],
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('stores labels on create when every key exists in placeholdersJson', async () => {
+    await service.create('ws-1', 'owner-1', UserRole.USER, {
+      name: 'Welcome',
+      content: 'Xin chào {{name}}',
+      placeholdersJson: { name: 'string', code: 'string' },
+      placeholder_labels: { name: 'Tên khách hàng' },
+    });
+
+    expect(template.create.mock.calls[0][0].data.placeholder_labels).toEqual({
+      name: 'Tên khách hàng',
+    });
+  });
+
+  it('allows create without labels and stores NULL', async () => {
+    await service.create('ws-1', 'owner-1', UserRole.USER, {
+      name: 'Welcome',
+      content: 'Xin chào {{name}}',
+      placeholdersJson: { name: 'string' },
+    });
+
+    expect(
+      template.create.mock.calls[0][0].data.placeholder_labels,
+    ).toBeUndefined();
+  });
+
+  it('rejects create when a label key is not in placeholdersJson', async () => {
+    await expect(
+      service.create('ws-1', 'owner-1', UserRole.USER, {
+        name: 'Welcome',
+        content: 'Xin chào {{name}}',
+        placeholdersJson: { name: 'string' },
+        placeholder_labels: { orderId: 'Mã đơn' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(template.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects PATCH when a label key is not in the stored placeholdersJson', async () => {
+    await expect(
+      service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+        placeholder_labels: { orderId: 'Mã đơn' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(template.update).not.toHaveBeenCalled();
+  });
+
+  it('checks PATCH labels against a placeholdersJson sent in the same request', async () => {
+    await service.update('ws-1', 'tpl-1', 'owner-1', UserRole.USER, {
+      placeholdersJson: { orderId: 'string' },
+      placeholder_labels: { orderId: 'Mã đơn' },
+    });
+
+    expect(template.update).toHaveBeenCalledTimes(1);
+  });
+});
