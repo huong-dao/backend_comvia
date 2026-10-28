@@ -38,11 +38,12 @@ export class PublicApiService {
     });
   }
 
-  async getApprovedTemplate(ctx: PublicRequestContext, templateId: string) {
+  /** `idOrCode` matches the template id or its workspace-unique code. */
+  async getApprovedTemplate(ctx: PublicRequestContext, idOrCode: string) {
     await this.assertActiveWorkspace(ctx.workspaceId);
     const template = await this.prismaService.template.findFirst({
       where: {
-        id: templateId,
+        OR: [{ id: idOrCode }, { code: idOrCode }],
         workspaceId: ctx.workspaceId,
         status: 'APPROVED',
       },

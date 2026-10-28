@@ -1487,6 +1487,8 @@ Response:
 ### 12.3 Get template detail
 - `GET /public/templates/:templateId`
 
+`:templateId` nhận **id** hoặc **code** (6 chữ số) của template, ví dụ `/public/templates/123456`. Chỉ trả template `APPROVED` của workspace gắn với API key; không tìm thấy trả `400`. Response có thêm `content` và `oaConnectionId` so với danh sách.
+
 ### 12.4 Send public message
 - `POST /public/messages/send`
 
