@@ -124,7 +124,6 @@ model Workspace {
   topupRequests      TopupRequest[]
   paymentCallbackLogs PaymentCallbackLog[]
   orders             Order[]
-  invoices           Invoice[]
   templates          Template[]
   messageLogs        MessageLog[]
   campaigns          Campaign[]
@@ -446,8 +445,7 @@ model Order {
   owner     User      @relation(fields: [ownerUserId], references: [id])
   workspace Workspace @relation(fields: [workspaceId], references: [id])
 
-  items   OrderItem[]
-  invoice Invoice?
+  items OrderItem[]
 
   createdAt DateTime @default(now())
 }
@@ -463,46 +461,6 @@ model OrderItem {
   totalAmountInclVat Decimal
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-}
-
-enum InvoiceStatus {
-  POSTED
-  ISSUED
-  CANCELLED
-}
-
-model Invoice {
-  id                  String        @id @default(cuid())
-  invoiceCode         String        @unique
-  invoiceNumber       String?
-  invoicePdfUrl       String?
-  workspaceId         String
-  orderId             String        @unique
-  billingType         BillingType
-  billingSnapshotJson Json
-  status              InvoiceStatus @default(POSTED)
-  issueDate           DateTime?
-  verificationJson    Json?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  items InvoiceItem[]
-}
-
-model InvoiceItem {
-  id                 String  @id @default(cuid())
-  invoiceId          String
-  name               String
-  quantity           Int     @default(1)
-  unitPrice          Decimal
-  vatRate            Decimal @default(10)
-  vatAmount          Decimal
-  totalAmountInclVat Decimal
-
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 enum OaConnectionStatus {

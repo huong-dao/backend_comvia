@@ -24,7 +24,6 @@ import { SystemConfigModule } from './system-config/system-config.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import pay2sConfig from './config/pay2s.config';
-import geminiConfig from './config/gemini.config';
 import zaloConfig from './config/zalo.config';
 import emailConfig from './config/email.config';
 
@@ -32,7 +31,7 @@ import emailConfig from './config/email.config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [pay2sConfig, geminiConfig, zaloConfig, emailConfig],
+      load: [pay2sConfig, zaloConfig, emailConfig],
     }),
     PrismaModule,
     SystemConfigModule,

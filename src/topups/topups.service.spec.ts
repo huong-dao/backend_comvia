@@ -37,10 +37,6 @@ describe('TopupsService callback lifecycle', () => {
           .fn()
           .mockResolvedValue({ id: 'order-1', orderCode: 'ORD_1' }),
       },
-      workspaceBillingProfile: {
-        findUnique: jest.fn().mockResolvedValue(null),
-      },
-      invoice: { create: jest.fn() },
       auditLog: { create: jest.fn() },
       $queryRaw: jest.fn(),
     };

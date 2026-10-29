@@ -377,7 +377,7 @@ Request (mọi field optional, chỉ gửi field muốn đổi):
 ```
 
 Ghi chú:
-- Sửa `billing` sẽ upsert `WorkspaceBillingProfile` — **không** ảnh hưởng invoice đã tạo trước đó (invoice lưu snapshot riêng).
+- Sửa `billing` sẽ upsert `WorkspaceBillingProfile`. Không còn entity Invoice để snapshot vào (ISSUE-001) — `WorkspaceBillingProfile` luôn phản ánh giá trị hiện tại.
 - Ghi audit `workspace.updated` (đổi name/slug) và/hoặc `billing_info.updated` (đổi billing).
 - Owner sửa được ở trạng thái `ACTIVE`/`DISABLED`/`SUSPENDED`. Workspace `DELETED` (đã xóa mềm) **không** sửa được — trả **HTTP 403** với message **"Workspace is not active (DELETED)"**. FE không mở popup Sửa cho workspace đã xóa. (Lưu ý: trước khi deploy bản mới, PATCH trên `DISABLED`/`SUSPENDED` tạm thời vẫn trả 403.)
 
@@ -1298,7 +1298,7 @@ Request (do Pay2S gửi, shape thật — **khác hoàn toàn** kiểu `mock_gat
 Xử lý:
 - `orderId` = `topupCode` đã gửi lúc tạo link (mục 9.4).
 - `resultCode !== 0` → backend trả `{ "status": "error", "message": "Transaction failed from provider" }`, không cộng credit.
-- `resultCode === 0` → cộng credit = `amountExclVat` đã lưu; `amountInclVat` chỉ là số tiền Pay2S phải thu. Backend tạo `WalletTransaction` (`TOPUP_CREDIT`), `Order` (`PAID`) + `OrderItem`, `Invoice` (`POSTED`) + `InvoiceItem` snapshot billing hiện tại của workspace với VAT server-side `10%`.
+- `resultCode === 0` → cộng credit = `amountExclVat` đã lưu; `amountInclVat` chỉ là số tiền Pay2S phải thu. Backend tạo `WalletTransaction` (`TOPUP_CREDIT`), `Order` (`PAID`) + `OrderItem` với VAT server-side `10%`. Dừng lại ở Order — **không còn tạo Invoice/InvoiceItem** (ISSUE-001, 2026-10-29).
 - Response luôn `HTTP 200` (kể cả khi lỗi nghiệp vụ) để Pay2S không retry vô hạn.
 
 **Ghi chú vận hành (đúng thực trạng code hiện tại, không phải hành vi mong đợi):**
@@ -1446,22 +1446,17 @@ Query:
 | `api_key.created` | `POST /workspaces/:workspaceId/api-keys` | OWNER |
 | `api_key.disabled` | `PATCH /workspaces/:workspaceId/api-keys/:apiKeyId/disable` | OWNER |
 | `api_key.regenerated` | `POST /workspaces/:workspaceId/api-keys/:apiKeyId/regenerate` | OWNER |
-| `invoice.issued_via_pdf` | `POST /admin/invoices/:invoiceId/verify-issue-pdf` (pass) | ADMIN |
-| `invoice.pdf_verification_failed` | `POST /admin/invoices/:invoiceId/verify-issue-pdf` (fail `422`) | ADMIN |
 
-Ghi chú: hai action `invoice.*` cũng ghi kèm `workspaceId` (lấy từ `invoice.workspaceId`) nên hiện ở cả `GET /admin/audit-logs` lẫn `GET /workspaces/:workspaceId/audit-logs` (mục 11.1) của đúng workspace sở hữu đơn hàng đó.
+> **ISSUE-001 (2026-10-29, PO duyệt):** bỏ action `invoice.issued_via_pdf`, `invoice.pdf_verification_failed` cùng toàn bộ tính năng Invoice — backend không còn ghi 2 action này.
 
-## 11.2 Owner finance (order, invoice, PDF)
+## 11.2 Owner finance (order)
 
-Chỉ `OWNER` của workspace được gọi; `MEMBER` không có quyền đọc order, invoice hoặc PDF. `ADMIN` vẫn dùng các route backoffice `/admin/*` riêng.
+Chỉ `OWNER` của workspace được gọi; `MEMBER` không có quyền đọc order. `ADMIN` vẫn dùng các route backoffice `/admin/*` riêng.
 
 - `GET /workspaces/:workspaceId/orders`
 - `GET /workspaces/:workspaceId/orders/:orderId`
-- `GET /workspaces/:workspaceId/invoices`
-- `GET /workspaces/:workspaceId/invoices/:invoiceId`
-- `GET /workspaces/:workspaceId/invoices/:invoiceId/pdf` — chỉ invoice `ISSUED`; PDF mới được stream từ private storage qua route đã guard.
 
-PDF lịch sử mang URL `/public/invoices/...` cần migration vận hành trước khi có thể tải qua route protected. BE cung cấp `npm run migrate:legacy-invoice-pdfs` ở chế độ dry-run; DevOps chỉ dùng `-- --apply` sau backup/release window và khi dry-run không còn failure.
+Không còn endpoint invoice (`GET /workspaces/:workspaceId/invoices*`) — đã xóa theo ISSUE-001; response order detail cũng không còn field `invoice` lồng bên trong.
 
 ## 12) Public API (gọi bằng API key)
 
@@ -1611,7 +1606,6 @@ Backend trả enum **UPPER_SNAKE_CASE** (theo Prisma). FE nên map label hiển 
 | `TemplateStatus` | `DRAFT`, `SUBMITTED`, `PENDING_ZALO_APPROVAL`, `APPROVED`, `DISABLED` |
 | `TopupStatus` | `PENDING`, `PAID`, `FAILED`, `EXPIRED` |
 | `OrderStatus` | `PAID`, `CANCELLED` |
-| `InvoiceStatus` | `POSTED`, `ISSUED`, `CANCELLED` |
 | `WalletTransactionType` | `TOPUP_CREDIT`, `MESSAGE_DEBIT`, `CAMPAIGN_HOLD`, `CAMPAIGN_REFUND`, `MANUAL_ADJUSTMENT`, `REVERSAL` |
 | `SendType` | `TEST`, `SINGLE`, `CAMPAIGN` — **lưu ý:** hiện chỉ `SINGLE` (mục 8.1) và `CAMPAIGN` (mục 7.7) có endpoint gửi thật; `TEST` tồn tại trong enum nhưng chưa có endpoint "gửi thử" nào dùng tới |
 | `MessageStatus` | `PENDING`, `SUCCESS`, `FAILED` |

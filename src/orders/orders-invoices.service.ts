@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AdminInvoicesQueryDto } from './dto/admin-invoices-query.dto';
 import { AdminOrdersQueryDto } from './dto/admin-orders-query.dto';
 
 @Injectable()
@@ -36,48 +35,6 @@ export class OrdersInvoicesService {
       }
       if (query.paidAtTo) {
         where.paidAt.lte = new Date(query.paidAtTo);
-      }
-    }
-    if (query.createdAtFrom !== undefined || query.createdAtTo !== undefined) {
-      where.createdAt = {};
-      if (query.createdAtFrom) {
-        where.createdAt.gte = new Date(query.createdAtFrom);
-      }
-      if (query.createdAtTo) {
-        where.createdAt.lte = new Date(query.createdAtTo);
-      }
-    }
-
-    return where;
-  }
-
-  private buildInvoiceWhere(
-    query: AdminInvoicesQueryDto,
-  ): Prisma.InvoiceWhereInput {
-    const where: Prisma.InvoiceWhereInput = {};
-
-    if (query.workspaceId) {
-      where.workspaceId = query.workspaceId;
-    }
-    if (query.orderId) {
-      where.orderId = query.orderId;
-    }
-    if (query.status !== undefined) {
-      where.status = query.status;
-    }
-    if (query.billingType !== undefined) {
-      where.billingType = query.billingType;
-    }
-    if (query.invoiceCode) {
-      where.invoiceCode = query.invoiceCode;
-    }
-    if (query.issueDateFrom !== undefined || query.issueDateTo !== undefined) {
-      where.issueDate = {};
-      if (query.issueDateFrom) {
-        where.issueDate.gte = new Date(query.issueDateFrom);
-      }
-      if (query.issueDateTo) {
-        where.issueDate.lte = new Date(query.issueDateTo);
       }
     }
     if (query.createdAtFrom !== undefined || query.createdAtTo !== undefined) {
@@ -157,7 +114,6 @@ export class OrdersInvoicesService {
       where: { id: orderId },
       include: {
         items: true,
-        invoice: true,
         topupRequest: {
           select: {
             id: true,
@@ -192,109 +148,20 @@ export class OrdersInvoicesService {
     return order;
   }
 
-  async listInvoicesForAdmin(query: AdminInvoicesQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 30;
-    const where = this.buildInvoiceWhere(query);
-
-    const [data, total] = await Promise.all([
-      this.prismaService.invoice.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        select: {
-          id: true,
-          invoiceCode: true,
-          invoiceNumber: true,
-          workspaceId: true,
-          orderId: true,
-          status: true,
-          issueDate: true,
-          invoicePdfUrl: true,
-          billingType: true,
-          billingSnapshotJson: true,
-          createdAt: true,
-        },
-      }),
-      this.prismaService.invoice.count({ where }),
-    ]);
-
-    return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async getInvoiceForAdmin(invoiceId: string) {
-    const invoice = await this.prismaService.invoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        items: true,
-        order: {
-          select: {
-            id: true,
-            orderCode: true,
-            totalAmountExclVat: true,
-            totalVatAmount: true,
-            totalAmountInclVat: true,
-            status: true,
-            paidAt: true,
-            createdAt: true,
-          },
-        },
-        workspace: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            status: true,
-          },
-        },
-      },
-    });
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-    return invoice;
-  }
-
   listOrdersForOwner(workspaceId: string) {
     return this.prismaService.order.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
-      include: { items: true, invoice: true },
+      include: { items: true },
     });
   }
 
   async getOrderForOwner(workspaceId: string, orderId: string) {
     const order = await this.prismaService.order.findFirst({
       where: { id: orderId, workspaceId },
-      include: { items: true, invoice: true },
+      include: { items: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     return order;
-  }
-
-  listInvoicesForOwner(workspaceId: string) {
-    return this.prismaService.invoice.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: 'desc' },
-      include: { items: true, order: true },
-    });
-  }
-
-  async getInvoiceForOwner(workspaceId: string, invoiceId: string) {
-    const invoice = await this.prismaService.invoice.findFirst({
-      where: { id: invoiceId, workspaceId },
-      include: { items: true, order: true },
-    });
-    if (!invoice) throw new NotFoundException('Invoice not found');
-    return invoice;
   }
 }

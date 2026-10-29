@@ -12,7 +12,7 @@ export interface ImageDimensions {
 /**
  * Shared file storage service (ADR-002): writes binary files to local disk under
  * `public/<scope>/<subId>/` and returns the relative `/public/...` URL served by
- * `useStaticAssets`. Follows the pattern of `InvoicePdfStorageService`.
+ * `useStaticAssets`.
  */
 @Injectable()
 export class FileStorageService {

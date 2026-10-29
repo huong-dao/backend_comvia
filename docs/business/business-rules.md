@@ -116,8 +116,7 @@ approved --> disabled
 - Owner cập nhật: tên, logo, thông tin cơ bản, billing info.
 - PATCH workspace yêu cầu người gọi là Owner và workspace **chưa bị xóa**. Owner sửa được ở các trạng thái `active`/`disabled`/`suspended`; sửa thông tin/billing **không** thuộc nhóm "thao tác nghiệp vụ" bị chặn ở BR-WS-05. Workspace `deleted` (đã xóa mềm) **không** cho sửa: trả HTTP **403** với message "Workspace is not active (DELETED)" (chặn ở `WorkspaceContextGuard`).
 - PATCH và GET chi tiết cho phép workspace `disabled`/`suspended` qua `@AllowWorkspaceStatuses`; DELETE, switch và thao tác nghiệp vụ yêu cầu `active`. `GET /workspaces` hiện liệt kê workspace theo membership, không lọc status; không áp guard trạng thái từng workspace cho route danh sách.
-- Sửa billing info **không** làm thay đổi invoice đã tạo trước đó — invoice luôn lưu snapshot tại thời điểm tạo.
-- Xóa dùng soft delete, không xóa cứng; không xóa nếu còn dữ liệu nghiệp vụ cần giữ; cân nhắc chặn xóa nếu đang có campaign running hoặc invoice chưa xử lý.
+- Xóa dùng soft delete, không xóa cứng; không xóa nếu còn dữ liệu nghiệp vụ cần giữ; cân nhắc chặn xóa nếu đang có campaign running.
 
 ### BR-WS-05: Trạng thái workspace
 
@@ -150,8 +149,8 @@ approved --> disabled
 
 ### BR-MEMBER-04: Permission matrix
 
-- **Owner:** quản lý workspace, billing info, OA, template, campaign, API key, mời/xóa member, xem wallet/order/invoice/PDF.
-- **Member:** xem dashboard, tạo template, gửi tin, xem logs — không xem order/invoice/PDF; **credit luôn trừ vào ví owner**.
+- **Owner:** quản lý workspace, billing info, OA, template, campaign, API key, mời/xóa member, xem wallet/order.
+- **Member:** xem dashboard, tạo template, gửi tin, xem logs — không xem order; **credit luôn trừ vào ví owner**.
 
 ## Module 5 — Workspace Context & Session
 
@@ -220,7 +219,7 @@ approved --> disabled
 
 ### BR-TOPUP-04: Xử lý thanh toán thành công (webhook)
 
-- Xác thực webhook hợp lệ → tìm topup pending tương ứng → **kiểm tra idempotent** → cập nhật topup `paid`/`success` → cộng credit bằng `amount_excl_vat` → tạo wallet transaction → tạo order → tạo order_item → tạo invoice `posted` → tạo invoice_item → gửi email kế toán → gửi thông báo user.
+- Xác thực webhook hợp lệ → tìm topup pending tương ứng → **kiểm tra idempotent** → cập nhật topup `paid`/`success` → cộng credit bằng `amount_excl_vat` → tạo wallet transaction → tạo order → tạo order_item → gửi thông báo user. Topup dừng lại ở Order; không còn tạo Invoice/Invoice Item (xem ISSUE-001, loại bỏ toàn bộ tính năng Invoice).
 
 ### BR-TOPUP-05: Dữ liệu cần lưu
 
@@ -228,9 +227,11 @@ approved --> disabled
 
 ### BR-TOPUP-06: Ràng buộc bắt buộc
 
-- `qr_content` unique. Webhook phải idempotent — **không cộng credit 2 lần, không tạo 2 order/invoice cho cùng 1 giao dịch**. Nếu số tiền callback không khớp `amount_incl_vat` → đánh lỗi để kiểm tra thủ công. Chỉ topup thành công mới cộng credit.
+- `qr_content` unique. Webhook phải idempotent — **không cộng credit 2 lần, không tạo 2 order cho cùng 1 giao dịch**. Nếu số tiền callback không khớp `amount_incl_vat` → đánh lỗi để kiểm tra thủ công. Chỉ topup thành công mới cộng credit.
 
-## Module 8 — Order, Order Item, Invoice, Invoice Item
+## Module 8 — Order, Order Item
+
+> ISSUE-001 (2026-10-29, PO duyệt): bỏ toàn bộ tính năng Invoice/Invoice Item. Topup `paid` dừng lại ở Order; không còn entity Invoice, không còn vai trò Kế toán xử lý invoice. Billing Profile (`invoice_email`, mã số thuế, loại hình cá nhân/tổ chức...) ở Workspace **giữ nguyên** (BR-WS-02, BR-WS-06) — chỉ không còn được dùng để snapshot vào Invoice.
 
 ### BR-ORDER-01: Order
 
@@ -241,25 +242,9 @@ approved --> disabled
 
 - Mỗi order topup tạo **1 order item**: `name` = "Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS", `quantity`=1, `unit_price=amount_excl_vat`, `vat_rate=10%`, `vat_amount`, `total_amount_incl_vat`. Có thể mở rộng nhiều item/dịch vụ/khuyến mãi trong tương lai.
 
-### BR-INVOICE-01: Invoice
+### BR-ORDER-03: Màn hình khách hàng
 
-- Tạo sau khi order `paid`. Field: `invoice_id`, `invoice_code`, `invoice_number`, `workspace_id`, `order_id`, `billing_type`, snapshot billing info, `total_amount_excl_vat`, `total_vat_amount`, `total_amount_incl_vat`, `status`, `issue_date`, `pdf_url`, `created_at`.
-- Trạng thái: `posted` (hệ thống tạo, chờ kế toán xuất) → `issued` (kế toán đã xuất thật + upload file) → hoặc `cancelled`.
-
-### BR-INVOICE-02: Snapshot billing info
-
-- `organization`: `company_name`, `tax_code`, `address`, `invoice_email`, `representative_name`, `phone`.
-- `individual`: `full_name`, `citizen_id`, `address`, `invoice_email`, `phone`.
-- Invoice phải lưu snapshot tại thời điểm tạo — sửa billing info sau này **không** ảnh hưởng invoice cũ.
-
-### BR-INVOICE-03: Invoice Item
-
-- Mỗi invoice topup có 1 item, copy từ order_item theo cơ chế snapshot, không phụ thuộc record order_item sau này. `vat_rate=10%`.
-
-### BR-ORDER-03: Màn hình khách hàng & kế toán
-
-- Owner: xem danh sách/chi tiết order, item, invoice đi kèm, download invoice nếu `issued`. Member không xem order/invoice/PDF; không có tài khoản khách độc lập ở phase này.
-- Kế toán: xem/filter invoice `posted`, xem snapshot billing info, upload PDF, nhập `invoice_number`/`issue_date`, cập nhật `issued`.
+- Owner: xem danh sách/chi tiết order, item. Member không xem order; không có tài khoản khách độc lập ở phase này.
 
 ## Module 9 — Zalo OA Connection
 
@@ -440,10 +425,6 @@ approved --> disabled
 
 - Xem danh sách template toàn hệ thống, filter theo workspace/user/OA/status, cập nhật trạng thái, nhập template provider id/lý do rejected, disable template, cấu hình cost/sell price nếu hỗ trợ.
 
-### BR-ADMIN-04: Accountant
-
-- Xem invoice `posted`, filter theo thời gian/workspace, upload PDF, nhập `invoice_number`/`issue_date`, cập nhật `issued`.
-
 ### BR-ADMIN-05: Dashboard quản trị
 
 - Tổng user, tổng workspace, tổng topup, tổng doanh thu, tổng VAT, tổng số tin gửi, tỷ lệ fail, số template đang chờ xử lý.
@@ -453,8 +434,8 @@ approved --> disabled
 ### BR-NOTI-01: Kênh & sự kiện
 
 - Kênh: email, SMS (có thể mở rộng in-app).
-- Gửi cho user: OTP đăng ký/quên mật khẩu, invitation workspace, topup thành công, low balance warning, template approved/rejected, invoice issued.
-- Gửi cho nội bộ: template mới submit, invoice mới cần xử lý, payment exception, OA token lỗi.
+- Gửi cho user: OTP đăng ký/quên mật khẩu, invitation workspace, topup thành công, low balance warning, template approved/rejected.
+- Gửi cho nội bộ: template mới submit, payment exception, OA token lỗi.
 
 ### BR-AUDIT-01: Audit log tối thiểu
 
@@ -462,7 +443,7 @@ approved --> disabled
 
 ### BR-JOB-01: Background jobs cần có
 
-- OTP expiry cleanup, webhook retry/reconciliation, OA token refresh, OA health check, low balance warning, template reminder, campaign queue processor, campaign finalize refund, invoice email retry, payment exception monitoring.
+- OTP expiry cleanup, webhook retry/reconciliation, OA token refresh, OA health check, low balance warning, template reminder, campaign queue processor, campaign finalize refund, payment exception monitoring.
 
 ## Business Rules cốt lõi toàn hệ thống (áp dụng xuyên module)
 
@@ -470,18 +451,18 @@ approved --> disabled
 
 - User bắt buộc phải có workspace; mọi nghiệp vụ chạy trong ngữ cảnh workspace; 1 user có thể có nhiều workspace.
 
-### BR-CORE-02: Billing info & Invoice
+### BR-CORE-02: Billing info
 
-- Workspace khi tạo phải chọn Tổ chức hoặc Cá nhân; billing info bắt buộc trước khi topup; invoice lưu snapshot; sửa billing info sau này không ảnh hưởng invoice cũ.
+- Workspace khi tạo phải chọn Tổ chức hoặc Cá nhân; billing info bắt buộc trước khi topup.
 - Tổ chức bắt buộc `tax_code`; cá nhân **không** bắt buộc `tax_code`.
 
 ### BR-CORE-03: Topup & VAT
 
 - Số tiền user chọn là trước VAT; VAT=10%; QR thanh toán = trước VAT + VAT; ví credit chỉ cộng phần trước VAT; màn hình topup phải hiển thị đầy đủ breakdown.
 
-### BR-CORE-04: Order & Invoice
+### BR-CORE-04: Order
 
-- Mỗi topup success tạo đúng 1 order + 1 order_item + 1 invoice `posted` + 1 invoice_item. Tên item/invoice_item = "Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS". `vat_rate=10%`.
+- Mỗi topup success tạo đúng 1 order + 1 order_item, dừng lại ở đó (không còn Invoice/Invoice Item — ISSUE-001). Tên order_item = "Phí dịch vụ hỗ trợ kinh doanh Zalo ZNS". `vat_rate=10%`.
 
 ### BR-CORE-05: Wallet
 
@@ -501,4 +482,4 @@ approved --> disabled
 
 ### BR-CORE-09: Payment idempotency
 
-- Webhook lặp không được cộng tiền 2 lần; không tạo 2 order; không tạo 2 invoice; phải lưu raw callback log để audit. Callback Pay2S được dedupe theo cặp provider/event ID trong cùng transaction với việc chuyển topup `PENDING → PAID` hoặc `PENDING → FAILED`.
+- Webhook lặp không được cộng tiền 2 lần; không tạo 2 order; phải lưu raw callback log để audit. Callback Pay2S được dedupe theo cặp provider/event ID trong cùng transaction với việc chuyển topup `PENDING → PAID` hoặc `PENDING → FAILED`.

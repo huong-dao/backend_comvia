@@ -567,9 +567,9 @@ export class TopupsService {
   }
 
   /**
-   * Cộng ví + sinh Order/Invoice cho 1 topup, chỉ thực hiện đúng 1 lần dù
-   * được gọi nhiều lần (IPN và WebHook có thể cùng báo về 1 giao dịch,
-   * hoặc Pay2S tự retry) nhờ update có điều kiện `status: { not: 'PAID' }`.
+   * Cộng ví + sinh Order cho 1 topup, chỉ thực hiện đúng 1 lần dù được gọi
+   * nhiều lần (IPN và WebHook có thể cùng báo về 1 giao dịch, hoặc Pay2S tự
+   * retry) nhờ update có điều kiện `status: { not: 'PAID' }`.
    */
   private async creditTopupIfPending(
     topup: TopupRequestRecord,
@@ -667,8 +667,9 @@ export class TopupsService {
         },
       });
 
-      // D. Tạo Order (Đơn hàng)
-      const order = await tx.order.create({
+      // D. Tạo Order (Đơn hàng) — theo ISSUE-001, topup paid chỉ dừng lại ở
+      // Order, không còn tạo Invoice/InvoiceItem kèm theo.
+      await tx.order.create({
         data: {
           orderCode: `ORD_${topup.topupCode}`,
           workspaceId: topup.workspaceId,
@@ -685,32 +686,6 @@ export class TopupsService {
               quantity: 1,
               unitPrice: topup.amountExclVat,
               vatRate: TOPUP_VAT_RATE,
-              vatAmount: topup.vatAmount,
-              totalAmountInclVat: topup.amountInclVat,
-            },
-          },
-        },
-      });
-
-      // E. Tạo Invoice (Hóa đơn)
-      // Lấy thông tin billing từ Workspace làm snapshot
-      const billing = await tx.workspaceBillingProfile.findUnique({
-        where: { workspaceId: topup.workspaceId },
-      });
-
-      await tx.invoice.create({
-        data: {
-          invoiceCode: `INV_${order.orderCode}`,
-          workspaceId: topup.workspaceId,
-          orderId: order.id,
-          billingType: billing?.billingType || 'INDIVIDUAL',
-          billingSnapshotJson: (billing as any) || {},
-          status: 'POSTED',
-          items: {
-            create: {
-              name: `Nạp tiền vào ví`,
-              quantity: 1,
-              unitPrice: topup.amountExclVat,
               vatAmount: topup.vatAmount,
               totalAmountInclVat: topup.amountInclVat,
             },
