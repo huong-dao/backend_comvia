@@ -236,6 +236,7 @@ export class PublicApiService {
 
     return {
       status: 'success',
+      message: 'Gửi tin nhắn thành công',
       providerMessageId: dispatchResult.providerMessageId,
       messageLogId: result.messageLog.id,
     };
