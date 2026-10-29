@@ -15,6 +15,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { AdminService } from './admin.service';
 import { UpdateMessagePricingConfigDto } from './dto/update-message-pricing-config.dto';
 import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
+import { ListWorkspacesQueryDto } from './dto/list-workspaces-query.dto';
 import { UpdateCtaPricingConfigDto } from './dto/update-cta-pricing-config.dto';
 import { UpdateAdminCtaButtonPriceDto } from './dto/update-admin-cta-button-price.dto';
 import { TemplatesService } from '../templates/templates.service';
@@ -41,8 +42,8 @@ export class AdminController {
   }
 
   @Get('workspaces')
-  listWorkspaces() {
-    return this.service.listWorkspaces();
+  listWorkspaces(@Query() query: ListWorkspacesQueryDto) {
+    return this.service.listWorkspaces(query);
   }
 
   @Get('oa-connections')

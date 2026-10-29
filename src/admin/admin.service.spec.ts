@@ -114,3 +114,70 @@ describe('AdminService.impersonateWorkspaceOwner', () => {
     expect(jwtService.signAsync).not.toHaveBeenCalled();
   });
 });
+
+describe('AdminService.listWorkspaces (ISSUE-004 pagination/filter)', () => {
+  let service: AdminService;
+  const prisma = {
+    workspace: { findMany: jest.fn(), count: jest.fn() },
+    $transaction: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((ops: Promise<unknown>[]) =>
+      Promise.all(ops),
+    );
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AdminService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        { provide: JwtService, useValue: { signAsync: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(AdminService);
+  });
+
+  it('defaults to page 1 / limit 30 and returns data + meta', async () => {
+    prisma.workspace.findMany.mockResolvedValue([{ id: 'ws-1' }]);
+    prisma.workspace.count.mockResolvedValue(1);
+
+    const result = await service.listWorkspaces({});
+
+    expect(prisma.workspace.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {}, skip: 0, take: 30 }),
+    );
+    expect(result).toEqual({
+      data: [{ id: 'ws-1' }],
+      meta: { page: 1, limit: 30, total: 1, totalPages: 1 },
+    });
+  });
+
+  it('builds a keyword OR filter against name/slug plus exact status and owner', async () => {
+    prisma.workspace.findMany.mockResolvedValue([]);
+    prisma.workspace.count.mockResolvedValue(0);
+
+    await service.listWorkspaces({
+      page: 2,
+      limit: 10,
+      keyword: 'acme',
+      status: 'ACTIVE',
+      ownerUserId: 'owner-1',
+    });
+
+    expect(prisma.workspace.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: 'ACTIVE',
+          ownerUserId: 'owner-1',
+          OR: [
+            { name: { contains: 'acme', mode: 'insensitive' } },
+            { slug: { contains: 'acme', mode: 'insensitive' } },
+          ],
+        },
+        skip: 10,
+        take: 10,
+      }),
+    );
+  });
+});

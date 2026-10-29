@@ -21,7 +21,7 @@ Phạm vi:
 |-------|-----------------|------------------|
 | `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
-| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable`, `POST /admin/workspaces/:workspaceId/impersonate` |
+| `/admin/workspaces` | `GET /admin/workspaces?page=&limit=&keyword=&status=&ownerUserId=` | `PATCH /admin/workspaces/:workspaceId/disable`, `POST /admin/workspaces/:workspaceId/impersonate` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
 | Trang đơn hàng (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` | `GET /admin/orders/:orderId` |
@@ -61,10 +61,30 @@ Phạm vi:
 
 ## 3) `/admin/workspaces`
 
-### Load
-- `GET /admin/workspaces`
+### Load (ISSUE-004 — phân trang + lọc server-side)
+- `GET /admin/workspaces?page=&limit=&keyword=&status=&ownerUserId=`
 
-### Fields nên render
+**Query (tất cả optional):**
+| Param | Kiểu | Ghi chú |
+|-------|------|---------|
+| `page` | int ≥ 1 | Mặc định `1` |
+| `limit` | int 1–100 | Mặc định `30` |
+| `keyword` | string | Tìm `name` **hoặc** `slug`, contains, không phân biệt hoa thường |
+| `status` | enum `WorkspaceStatus` | `ACTIVE` \| `DISABLED` \| `SUSPENDED` \| `DELETED` |
+| `ownerUserId` | string | Khớp chính xác — tìm theo ID chủ workspace (không gộp vào `keyword`) |
+
+**Response:** cùng shape `{ data, meta }` với `GET /admin/orders`:
+```json
+{
+  "data": [
+    { "id": "WS_ID", "name": "Demo Workspace", "slug": "demo-workspace", "status": "ACTIVE", "ownerUserId": "OWNER_ID", "createdAt": "..." }
+  ],
+  "meta": { "page": 1, "limit": 30, "total": 0, "totalPages": 0 }
+}
+```
+Sắp xếp: `createdAt` giảm dần. **Đây là breaking change so với bản cũ** (cũ trả thẳng mảng, không có `meta`) — FE cần đổi fetcher từ đọc mảng trực tiếp sang đọc `data`/`meta`, bỏ logic lọc/phân trang client-side tạm thời đã làm trước đó (xem ISSUE-004).
+
+### Fields nên render (mỗi phần tử `data[]`)
 - `id`
 - `name`
 - `slug`

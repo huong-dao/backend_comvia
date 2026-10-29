@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import {
   AUDIT_ACTIONS,
   AUDIT_RESOURCE_TYPES,
@@ -8,6 +9,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
+import { ListWorkspacesQueryDto } from './dto/list-workspaces-query.dto';
 
 // Short-lived on purpose: this token lets an ADMIN act as a workspace's
 // Owner. Keeping it well under the normal login TTL limits the damage
@@ -44,18 +46,49 @@ export class AdminService {
     });
   }
 
-  listWorkspaces() {
-    return this.prismaService.workspace.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        status: true,
-        ownerUserId: true,
-        createdAt: true,
+  async listWorkspaces(query: ListWorkspacesQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const where: Prisma.WorkspaceWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.ownerUserId ? { ownerUserId: query.ownerUserId } : {}),
+      ...(query.keyword
+        ? {
+            OR: [
+              { name: { contains: query.keyword, mode: 'insensitive' } },
+              { slug: { contains: query.keyword, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await this.prismaService.$transaction([
+      this.prismaService.workspace.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          ownerUserId: true,
+          createdAt: true,
+        },
+      }),
+      this.prismaService.workspace.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
-    });
+    };
   }
 
   disableWorkspace(workspaceId: string) {
