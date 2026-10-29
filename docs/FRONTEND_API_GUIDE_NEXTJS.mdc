@@ -231,9 +231,12 @@ Response:
   "fullName": "Demo User",
   "role": "USER",
   "status": "ACTIVE",
-  "createdAt": "2026-03-20T07:..Z"
+  "createdAt": "2026-03-20T07:..Z",
+  "isImpersonation": false,
+  "impersonatedByAdmin": null
 }
 ```
+`isImpersonation`/`impersonatedByAdmin` chỉ khác `false`/`null` khi gọi bằng access token sinh ra từ `POST /admin/workspaces/:workspaceId/impersonate` (ISSUE-002, xem `FRONTEND_ADMIN_ROUTER_API_MAP.mdc` mục 3) — khi đó `impersonatedByAdmin` là `{ id, email, fullName }` của admin đã bấm "Đăng nhập Owner". FE dùng field này để hiển thị banner "đang đăng nhập hộ" trong tab mới.
 
 ### 3.5 Update my profile
 
@@ -1446,6 +1449,7 @@ Query:
 | `api_key.created` | `POST /workspaces/:workspaceId/api-keys` | OWNER |
 | `api_key.disabled` | `PATCH /workspaces/:workspaceId/api-keys/:apiKeyId/disable` | OWNER |
 | `api_key.regenerated` | `POST /workspaces/:workspaceId/api-keys/:apiKeyId/regenerate` | OWNER |
+| `workspace.admin_impersonated` | `POST /admin/workspaces/:workspaceId/impersonate` | ADMIN |
 
 > **ISSUE-001 (2026-10-29, PO duyệt):** bỏ action `invoice.issued_via_pdf`, `invoice.pdf_verification_failed` cùng toàn bộ tính năng Invoice — backend không còn ghi 2 action này.
 

@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = {
   API_KEY_REGENERATED: 'api_key.regenerated',
   TOPUP_PAID: 'topup.paid',
   TOPUP_FAILED: 'topup.failed',
+  WORKSPACE_IMPERSONATED: 'workspace.admin_impersonated',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

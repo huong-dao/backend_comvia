@@ -26,8 +26,8 @@ export class AuthController {
   }
 
   @Get('me')
-  me(@Request() req: { user: { id: string } }) {
-    return this.authService.me(req.user.id);
+  me(@Request() req: { user: { id: string; impersonatedBy?: string } }) {
+    return this.authService.me(req.user.id, req.user.impersonatedBy);
   }
 
   @Post('change-password')

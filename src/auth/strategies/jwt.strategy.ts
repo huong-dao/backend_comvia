@@ -26,7 +26,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(
     payload: JwtPayload,
-  ): Promise<Pick<User, 'id' | 'email' | 'role'>> {
+  ): Promise<
+    Pick<User, 'id' | 'email' | 'role'> & { impersonatedBy?: string }
+  > {
     const user = await this.prismaService.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, tokenVersion: true },
@@ -36,6 +38,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token không hợp lệ');
     }
 
-    return { id: user.id, email: user.email, role: user.role };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      ...(payload.impersonatedBy
+        ? { impersonatedBy: payload.impersonatedBy }
+        : {}),
+    };
   }
 }

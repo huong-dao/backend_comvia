@@ -21,7 +21,7 @@ Phạm vi:
 |-------|-----------------|------------------|
 | `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
-| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable` |
+| `/admin/workspaces` | `GET /admin/workspaces` | `PATCH /admin/workspaces/:workspaceId/disable`, `POST /admin/workspaces/:workspaceId/impersonate` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
 | Trang đơn hàng (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` | `GET /admin/orders/:orderId` |
@@ -75,6 +75,25 @@ Phạm vi:
 ### Row actions
 - Disable workspace:
   - `PATCH /admin/workspaces/:workspaceId/disable`
+- Đăng nhập Owner (impersonate) — ISSUE-002:
+  - `POST /admin/workspaces/:workspaceId/impersonate`, body rỗng.
+  - Trả về access token **ngắn hạn (20 phút, không refresh)** mang danh tính thật của Owner workspace đó (không phải token của admin), kèm `workspace` và `owner` để FE biết redirect vào đâu:
+```json
+{
+  "accessToken": "ey...",
+  "tokenType": "Bearer",
+  "expiresInMinutes": 20,
+  "workspace": { "id": "WS_ID", "name": "Demo Workspace", "slug": "demo-workspace" },
+  "owner": { "id": "OWNER_ID", "email": "owner@example.com", "fullName": "Owner Name" }
+}
+```
+  - **Lỗi:** `400` nếu workspace không tồn tại, workspace không `ACTIVE`, hoặc tài khoản Owner không `ACTIVE` (bị khóa/chưa xác thực) — hiển thị thông báo lỗi, không mở tab mới.
+  - **FE bắt buộc dùng `sessionStorage` riêng cho token này** (không ghi đè `localStorage`/token admin hiện tại) — mở tab mới bằng `window.open()` trỏ tới trang nhận token, trang đó lưu `accessToken` vào `sessionStorage` của chính tab mới rồi redirect vào dashboard workspace. Tab admin gốc không bị ảnh hưởng vì không đụng tới `localStorage`.
+  - `GET /auth/me` gọi bằng token impersonate trả thêm 2 field để FE hiển thị banner "đang đăng nhập hộ": `isImpersonation: true` và `impersonatedByAdmin: { id, email, fullName }` (là admin đã bấm nút). Token login bình thường trả `isImpersonation: false`, `impersonatedByAdmin: null`.
+  - Token hết hạn sau 20 phút và **không có cơ chế refresh** — hết hạn thì mọi API call bằng token đó trả `401`, FE điều hướng tab đó về trang đăng nhập (không tự động gọi lại impersonate).
+  - Token cũng tự vô hiệu ngay nếu Owner đổi mật khẩu/reset mật khẩu trong lúc đang bị impersonate (dùng chung cơ chế `tokenVersion` với token đăng nhập thường).
+  - **Phạm vi quyền chưa bị giới hạn thêm** trong bản đầu tiên này: phiên impersonate có đầy đủ quyền y như Owner tự đăng nhập (đổi billing, xóa workspace, submit template, tạo topup...). Đây là giới hạn đã biết của phase 1, PO cần xác nhận lại nếu muốn hạn chế thêm hành động nhạy cảm (xem ISSUE-002 mục "Giả định/Câu hỏi mở").
+  - Mọi lần gọi thành công đều ghi `AuditLog` action `workspace.admin_impersonated` (`resourceType: "Workspace"`, `resourceId: workspaceId`, `metadataJson: { targetOwnerUserId, targetOwnerEmail, expiresInMinutes }`) — tra lại qua `GET /admin/audit-logs?action=workspace.admin_impersonated`.
 
 ---
 

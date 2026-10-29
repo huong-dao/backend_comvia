@@ -1,13 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
+
+// Short-lived on purpose: this token lets an ADMIN act as a workspace's
+// Owner. Keeping it well under the normal login TTL limits the damage
+// window if a browser tab with the impersonated session is left open.
+const IMPERSONATION_TOKEN_TTL_MINUTES = 20;
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly jwtService: JwtService,
   ) {}
 
   listUsers() {
@@ -136,5 +148,91 @@ export class AdminService {
       }),
     ]);
     return { items, page, limit, total };
+  }
+
+  /**
+   * ISSUE-002: let an ADMIN act as the Owner of a workspace without ever
+   * knowing/resetting the owner's password. The returned token carries the
+   * owner's real identity (sub/email/role/tokenVersion) so every existing
+   * guard treats the session exactly like the owner's own login — only
+   * `impersonatedBy` is new, and it rides along purely for audit/UX (see
+   * JwtStrategy.validate() and AuthService.me()). No extra restriction is
+   * applied to what the impersonated session can do versus a real owner
+   * login — a known, intentional scope limit of this first version, flagged
+   * in ISSUE-002 for PO follow-up rather than silently decided.
+   */
+  async impersonateWorkspaceOwner(adminUserId: string, workspaceId: string) {
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        owner: {
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+            role: true,
+            status: true,
+            tokenVersion: true,
+          },
+        },
+      },
+    });
+
+    if (!workspace) {
+      throw new BadRequestException('Workspace not found');
+    }
+    if (workspace.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'Cannot impersonate the owner of a non-active workspace',
+      );
+    }
+    if (workspace.owner.status !== 'ACTIVE') {
+      throw new BadRequestException('Workspace owner account is not active');
+    }
+
+    const payload: JwtPayload = {
+      sub: workspace.owner.id,
+      email: workspace.owner.email,
+      role: workspace.owner.role,
+      tokenVersion: workspace.owner.tokenVersion,
+      impersonatedBy: adminUserId,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: `${IMPERSONATION_TOKEN_TTL_MINUTES}m`,
+    });
+
+    await this.auditLogService.write({
+      actorUserId: adminUserId,
+      workspaceId: workspace.id,
+      action: AUDIT_ACTIONS.WORKSPACE_IMPERSONATED,
+      resourceType: AUDIT_RESOURCE_TYPES.WORKSPACE,
+      resourceId: workspace.id,
+      metadataJson: {
+        targetOwnerUserId: workspace.owner.id,
+        targetOwnerEmail: workspace.owner.email,
+        expiresInMinutes: IMPERSONATION_TOKEN_TTL_MINUTES,
+      },
+    });
+
+    return {
+      accessToken,
+      tokenType: 'Bearer',
+      expiresInMinutes: IMPERSONATION_TOKEN_TTL_MINUTES,
+      workspace: {
+        id: workspace.id,
+        name: workspace.name,
+        slug: workspace.slug,
+      },
+      owner: {
+        id: workspace.owner.id,
+        email: workspace.owner.email,
+        fullName: workspace.owner.fullName,
+      },
+    };
   }
 }

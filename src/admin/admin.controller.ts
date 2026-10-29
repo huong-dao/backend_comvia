@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Param,
+  Post,
   Query,
   Request,
 } from '@nestjs/common';
@@ -88,6 +89,16 @@ export class AdminController {
   @Patch('workspaces/:workspaceId/disable')
   disableWorkspace(@Param('workspaceId') workspaceId: string) {
     return this.service.disableWorkspace(workspaceId);
+  }
+
+  // ISSUE-002: admin "đăng nhập hộ" — returns a short-lived access token for
+  // the workspace's Owner, for FE to open in a new tab.
+  @Post('workspaces/:workspaceId/impersonate')
+  impersonateWorkspaceOwner(
+    @Request() req: { user: { id: string } },
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.service.impersonateWorkspaceOwner(req.user.id, workspaceId);
   }
 
   @Get('audit-logs')

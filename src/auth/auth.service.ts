@@ -132,8 +132,8 @@ export class AuthService {
     };
   }
 
-  async me(userId: string) {
-    return this.prismaService.user.findUnique({
+  async me(userId: string, impersonatedBy?: string) {
+    const user = await this.prismaService.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -144,6 +144,24 @@ export class AuthService {
         createdAt: true,
       },
     });
+
+    if (!impersonatedBy) {
+      return { ...user, isImpersonation: false, impersonatedByAdmin: null };
+    }
+
+    // Best-effort: the impersonation token remains valid even if the admin
+    // account is later looked up differently; still surface *something* so
+    // the FE banner has a name/email to show even if this lookup ever misses.
+    const admin = await this.prismaService.user.findUnique({
+      where: { id: impersonatedBy },
+      select: { id: true, email: true, fullName: true },
+    });
+
+    return {
+      ...user,
+      isImpersonation: true,
+      impersonatedByAdmin: admin,
+    };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
