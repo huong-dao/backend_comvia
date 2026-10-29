@@ -326,12 +326,12 @@ Sắp xếp: `createdAt` giảm dần.
 
 **Query (tất cả optional):** `status` (enum `TemplateStatus`), `workspaceId`, `oaId`, `keyword` (tìm theo tên/mã template, tên workspace, tên/oaId OA), `limit` (mặc định `50`).
 
-Response: mảng template kèm `workspace` (`id, name, slug, status`) và `oaConnection` (đã flatten `{ id, oaId, oaName, status, connectedAt }`).
+Response: mảng template kèm `workspace` (`id, name, slug, status`), `oaConnection` (đã flatten `{ id, oaId, oaName, status, connectedAt }`), và `placeholder_labels` (nhãn hiển thị cho từng placeholder, có thể `null` nếu chưa đặt — FE fallback về tên slug trong `placeholdersJson`).
 
 ### Chi tiết template
 - `GET /admin/templates/:templateId`
 
-Response gồm đầy đủ field + `workspace` (kèm `ownerUserId`) + `oaConnection`.
+Response gồm đầy đủ field (bao gồm `placeholder_labels`) + `workspace` (kèm `ownerUserId`) + `oaConnection`.
 
 ### Override toàn quyền một template (bỏ qua rule "APPROVED read-only")
 
@@ -351,6 +351,7 @@ Response gồm đầy đủ field + `workspace` (kèm `ownerUserId`) + `oaConnec
   "secondaryContent": "Chỉ dùng cho TABLE",
   "otpExpiryMinutes": 5,
   "placeholdersJson": { "placeholder": "Mô tả" },
+  "placeholder_labels": { "placeholder": "Nhãn hiển thị cho placeholder" },
   "unitPricePerMessage": 50,
   "providerTemplateId": "ZALO_TEMPLATE_ID",
   "status": "APPROVED",
@@ -379,8 +380,9 @@ Response gồm đầy đủ field + `workspace` (kèm `ownerUserId`) + `oaConnec
 - Khi chuyển sang `DRAFT` hoặc `APPROVED` mà không tự gửi `requiresOwnerRevision`, backend tự reset `requiresOwnerRevision = false`, `revisionReason = null`, `returnedForRevisionAt = null` để tránh còn sót cờ "cần sửa lại" từ vòng submit cũ.
 - Đổi `code` trùng với template khác trong cùng workspace → `400 Bad Request` ("Template code already exists in this workspace").
 - `ctaButtons` dùng đúng semantics như `PATCH /workspaces/:workspaceId/templates/:templateId`: object có `id` = update tại chỗ, object không có `id` = tạo mới, button cũ không được liệt kê = xóa. Admin luôn được set `unitPrice` trên CTA (không bị chặn như role khác).
+- `placeholder_labels`: optional, key phải nằm trong `placeholdersJson` hiệu lực (patch nếu có, không thì bản đang lưu) — key lạ → `400 Bad Request` ("placeholder_labels has keys not in placeholdersJson: ..."); value phải là string. Gửi `null` để xóa hết nhãn (FE sẽ fallback hiển thị slug placeholder); không gửi field này thì giữ nguyên nhãn cũ.
 
-**Lưu ý đồng bộ Zalo (KHÔNG tự động):** endpoint này **không** gọi API Zalo. Nếu template đang (hoặc sắp) ở `APPROVED` và bạn sửa `name/type/title/content/secondaryContent/otpExpiryMinutes/placeholdersJson/ctaButtons` trong khi đã có `providerTemplateId`, nội dung hiển thị thật trên Zalo **không đổi theo** — sẽ lệch với dữ liệu Comvia. Backend ghi cảnh báo vào log server (`TemplatesService` logger) và đánh dấu `metadataJson.zaloContentMayBeOutOfSync: true` trong audit log tương ứng — FE nên hiển thị cảnh báo tương tự trước khi submit nếu template đang `APPROVED`.
+**Lưu ý đồng bộ Zalo (KHÔNG tự động):** endpoint này **không** gọi API Zalo. Nếu template đang (hoặc sắp) ở `APPROVED` và bạn sửa `name/type/title/content/secondaryContent/otpExpiryMinutes/placeholdersJson/placeholder_labels/ctaButtons` trong khi đã có `providerTemplateId`, nội dung hiển thị thật trên Zalo **không đổi theo** — sẽ lệch với dữ liệu Comvia. Backend ghi cảnh báo vào log server (`TemplatesService` logger) và đánh dấu `metadataJson.zaloContentMayBeOutOfSync: true` trong audit log tương ứng — FE nên hiển thị cảnh báo tương tự trước khi submit nếu template đang `APPROVED`.
 
 **Audit log:** mọi lần gọi thành công đều ghi `AuditLog` với `action: "template.admin_overridden"`, `resourceType: "Template"`, `metadataJson` chứa `{ changedFields, before, after, zaloContentMayBeOutOfSync }` — xem lại qua `GET /admin/audit-logs?action=template.admin_overridden`.
 

@@ -60,6 +60,12 @@ export class AdminOverrideTemplateDto {
   @IsObject()
   placeholdersJson?: Record<string, unknown>;
 
+  // Display labels keyed by placeholder slug. null clears them so FE falls
+  // back to the slug.
+  @IsOptional()
+  @IsObject()
+  placeholder_labels?: Record<string, string> | null;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

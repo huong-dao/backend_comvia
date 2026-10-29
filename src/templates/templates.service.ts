@@ -641,6 +641,7 @@ export class TemplatesService {
         secondaryContent: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
+        placeholder_labels: true,
         status: true,
         providerTemplateId: true,
         requiresOwnerRevision: true,
@@ -692,6 +693,7 @@ export class TemplatesService {
         secondaryContent: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
+        placeholder_labels: true,
         providerTemplateId: true,
         status: true,
         requiresOwnerRevision: true,
@@ -1186,6 +1188,7 @@ export class TemplatesService {
         secondaryContent: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
+        placeholder_labels: true,
         unitPricePerMessage: true,
         providerTemplateId: true,
         status: true,
@@ -1201,6 +1204,15 @@ export class TemplatesService {
     const targetStatus = dto.status ?? template.status;
     this.assertValidAdminStatusTransition(template.status, targetStatus);
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
+
+    // Labels are checked against the effective placeholdersJson: the patch
+    // value if sent, otherwise the stored one.
+    this.assertPlaceholderLabelsOrThrow(
+      dto.placeholder_labels,
+      dto.placeholdersJson !== undefined
+        ? dto.placeholdersJson
+        : (template.placeholdersJson as Record<string, unknown> | null),
+    );
 
     this.validateTemplateByTypeOrThrow({
       type: dto.type ?? template.type,
@@ -1241,6 +1253,7 @@ export class TemplatesService {
       'secondaryContent',
       'otpExpiryMinutes',
       'placeholdersJson',
+      'placeholder_labels',
       'ctaButtons',
     ];
     const zaloContentMayBeOutOfSync =
@@ -1274,6 +1287,12 @@ export class TemplatesService {
         dto.placeholdersJson !== undefined
           ? (dto.placeholdersJson as Prisma.InputJsonValue)
           : undefined,
+      placeholder_labels:
+        dto.placeholder_labels === undefined
+          ? undefined
+          : dto.placeholder_labels === null
+            ? Prisma.DbNull
+            : (dto.placeholder_labels as Prisma.InputJsonValue),
       unitPricePerMessage:
         dto.unitPricePerMessage !== undefined
           ? new Prisma.Decimal(dto.unitPricePerMessage)
@@ -1298,6 +1317,8 @@ export class TemplatesService {
       otpExpiryMinutes: template.otpExpiryMinutes,
       placeholdersJson:
         template.placeholdersJson as Prisma.InputJsonValue | null,
+      placeholder_labels:
+        template.placeholder_labels as Prisma.InputJsonValue | null,
       unitPricePerMessage: template.unitPricePerMessage?.toNumber() ?? null,
       providerTemplateId: template.providerTemplateId,
       status: template.status,
@@ -1323,6 +1344,10 @@ export class TemplatesService {
       placeholdersJson: (dto.placeholdersJson !== undefined
         ? dto.placeholdersJson
         : before.placeholdersJson) as Prisma.InputJsonValue | null,
+      placeholder_labels:
+        dto.placeholder_labels !== undefined
+          ? dto.placeholder_labels
+          : before.placeholder_labels,
       unitPricePerMessage:
         dto.unitPricePerMessage !== undefined
           ? dto.unitPricePerMessage
