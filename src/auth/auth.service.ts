@@ -4,11 +4,20 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { OtpPurpose, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+import { StringValue } from 'ms';
+import {
+  AUDIT_ACTIONS,
+  AUDIT_RESOURCE_TYPES,
+} from '../audit-log/audit-log.constants';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
@@ -20,6 +29,14 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { sha256Hex } from '../common/utils/sha256';
 
 const SALT_ROUNDS = 10;
+const DEFAULT_REFRESH_TOKEN_TTL: StringValue = '30d';
+
+interface SessionUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  tokenVersion: number;
+}
 
 @Injectable()
 export class AuthService {
@@ -29,7 +46,50 @@ export class AuthService {
     private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
     private readonly otpService: OtpService,
+    private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {}
+
+  /**
+   * ISSUE-003 (Hướng B): issue a short-lived access token plus a 30-day
+   * sliding refresh token. Rotating the refresh token's jti on every call —
+   * stored as the single `User.currentRefreshTokenId` — both extends the
+   * session ("warmup") and lets `refresh()` detect reuse of a token that was
+   * already rotated away.
+   */
+  private async issueTokenPair(user: SessionUser) {
+    const accessPayload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+      type: 'access',
+    };
+    const accessToken = await this.jwtService.signAsync(accessPayload);
+
+    const jti = randomUUID();
+    const refreshTtl = (this.configService.get<string>(
+      'JWT_REFRESH_EXPIRES_IN',
+    ) ?? DEFAULT_REFRESH_TOKEN_TTL) as StringValue;
+    const refreshPayload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+      type: 'refresh',
+      jti,
+    };
+    const refreshToken = await this.jwtService.signAsync(refreshPayload, {
+      expiresIn: refreshTtl,
+    });
+
+    await this.prismaService.user.update({
+      where: { id: user.id },
+      data: { currentRefreshTokenId: jti },
+    });
+
+    return { accessToken, refreshToken, tokenType: 'Bearer' as const };
+  }
 
   async register(registerDto: RegisterDto) {
     const existingUser = await this.prismaService.user.findUnique({
@@ -111,18 +171,10 @@ export class AuthService {
       throw new UnauthorizedException('Tài khoản chưa được xác thực');
     }
 
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      tokenVersion: user.tokenVersion,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload);
+    const tokens = await this.issueTokenPair(user);
 
     return {
-      accessToken,
-      tokenType: 'Bearer',
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
@@ -209,18 +261,10 @@ export class AuthService {
       dto.otpCode,
     );
 
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      tokenVersion: user.tokenVersion,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload);
+    const tokens = await this.issueTokenPair(user);
 
     return {
-      accessToken,
-      tokenType: 'Bearer',
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
@@ -229,6 +273,75 @@ export class AuthService {
         status: user.status,
       },
     };
+  }
+
+  /**
+   * ISSUE-003: exchange a still-valid refresh token for a new access token
+   * and a rotated refresh token (sliding 30-day expiry). A refresh token
+   * whose jti no longer matches `User.currentRefreshTokenId` — because it
+   * was already rotated away by a later call, or never issued — is treated
+   * as a possible theft signal: the whole refresh chain is killed so every
+   * device must log in again, instead of silently accepting it.
+   */
+  async refresh(dto: RefreshTokenDto) {
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(dto.refreshToken);
+    } catch {
+      throw new UnauthorizedException(
+        'Refresh token không hợp lệ hoặc đã hết hạn',
+      );
+    }
+
+    if (payload.type !== 'refresh' || !payload.jti) {
+      throw new UnauthorizedException('Refresh token không hợp lệ');
+    }
+
+    const user = await this.prismaService.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        tokenVersion: true,
+        currentRefreshTokenId: true,
+      },
+    });
+
+    if (!user || (payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Refresh token không hợp lệ');
+    }
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Tài khoản không khả dụng');
+    }
+
+    if (user.currentRefreshTokenId !== payload.jti) {
+      await this.prismaService.user.update({
+        where: { id: user.id },
+        data: { currentRefreshTokenId: null },
+      });
+      await this.auditLogService.write({
+        actorUserId: user.id,
+        action: AUDIT_ACTIONS.AUTH_REFRESH_TOKEN_REUSED,
+        resourceType: AUDIT_RESOURCE_TYPES.USER,
+        resourceId: user.id,
+        metadataJson: { presentedJti: payload.jti },
+      });
+      throw new UnauthorizedException('Refresh token đã bị thu hồi');
+    }
+
+    return this.issueTokenPair(user);
+  }
+
+  /** Kill the account's active refresh chain; the still-live access token
+   * (now short-lived, ~1h by default) simply expires naturally. */
+  async logout(userId: string) {
+    await this.prismaService.user.update({
+      where: { id: userId },
+      data: { currentRefreshTokenId: null },
+    });
+    return { message: 'Logged out successfully' };
   }
 
   async resendOtp(dto: OtpResendDto) {

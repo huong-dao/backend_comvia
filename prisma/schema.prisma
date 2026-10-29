@@ -64,6 +64,11 @@ model User {
   role                  UserRole                @default(USER)
   status                UserStatus              @default(PENDING_VERIFICATION)
   tokenVersion          Int                     @default(0)
+  // ISSUE-003: jti of the single refresh token currently considered valid for
+  // this account. Rotated on every successful POST /auth/refresh; a refresh
+  // token presented with a stale jti is rejected and this is cleared,
+  // forcing a fresh login (standard refresh-token-theft response).
+  currentRefreshTokenId String?
   lastActiveWorkspaceId String?
   credential            UserCredential?
   ownedWorkspaces       Workspace[]             @relation("WorkspaceOwner")

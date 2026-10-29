@@ -160,6 +160,7 @@ Response:
 ```json
 {
   "accessToken": "JWT_ACCESS_TOKEN",
+  "refreshToken": "JWT_REFRESH_TOKEN",
   "tokenType": "Bearer",
   "user": {
     "id": "USER_ID",
@@ -170,6 +171,8 @@ Response:
   }
 }
 ```
+
+**ISSUE-003 (2026-10-29):** mọi lần cấp token (`register` verify-otp, `login`) giờ trả thêm `refreshToken` — xem mục 3.3b để biết cách dùng. `accessToken` giờ sống **ngắn** (mặc định `JWT_EXPIRES_IN`, fallback `1h` nếu ops chưa set) thay vì gánh luôn cả phiên 30 ngày như trước — FE **bắt buộc** phải lưu và dùng `refreshToken` để duy trì phiên, nếu không user sẽ bị đăng xuất sau khoảng 1 giờ.
 
 Ghi chú: `purpose` hiện **chỉ hỗ trợ `"REGISTER"`** ở backend (gửi `purpose` khác sẽ nhận lỗi "Unsupported OTP purpose"); enum `OtpPurpose` có thêm `FORGOT_PASSWORD` nhưng chưa có luồng quên mật khẩu nào gọi tới.
 
@@ -205,6 +208,7 @@ Response:
 ```json
 {
   "accessToken": "JWT_ACCESS_TOKEN",
+  "refreshToken": "JWT_REFRESH_TOKEN",
   "tokenType": "Bearer",
   "user": {
     "id": "USER_ID",
@@ -214,6 +218,48 @@ Response:
   }
 }
 ```
+
+Xem mục 3.3b cho cách dùng `refreshToken` (ISSUE-003 — warmup phiên 30 ngày).
+
+### 3.3b Refresh token & logout (ISSUE-003 — warmup phiên 30 ngày)
+
+**Bối cảnh:** trước đây `accessToken` một mình gánh luôn thời hạn phiên (checkbox "Ghi nhớ đăng nhập" chỉ quyết định lưu `localStorage` hay `sessionStorage`, **không** đổi hạn JWT thật). Giờ tách làm 2:
+- `accessToken`: sống ngắn (mặc định theo env `JWT_EXPIRES_IN`, fallback **1 giờ** nếu chưa cấu hình) — dùng cho mọi API call như cũ (`Authorization: Bearer <accessToken>`).
+- `refreshToken`: sống **30 ngày, trượt (sliding)** — chỉ dùng để xin `accessToken` mới qua endpoint dưới đây. Mỗi lần refresh thành công, BE **rotate**: cấp `refreshToken` MỚI (hạn 30 ngày tính lại từ lúc đó) và token cũ lập tức không dùng lại được — đây chính là cơ chế "vào lại trong 30 ngày thì tự gia hạn thêm 30 ngày" PO yêu cầu.
+
+**Endpoint:**
+- `POST /auth/refresh` (Public — không cần `Authorization` header, không cần accessToken còn hạn)
+
+Request:
+```json
+{ "refreshToken": "JWT_REFRESH_TOKEN" }
+```
+
+Response (200) — giống hệt shape login, FE ghi đè cả 2 token vào storage đang dùng:
+```json
+{
+  "accessToken": "NEW_JWT_ACCESS_TOKEN",
+  "refreshToken": "NEW_JWT_REFRESH_TOKEN",
+  "tokenType": "Bearer"
+}
+```
+
+**Lỗi `401`** khi: refresh token hết hạn/sai chữ ký, hoặc **đã bị rotate** (dùng lại token cũ — xem cảnh báo bảo mật bên dưới), hoặc tài khoản không còn `ACTIVE` (bị khóa), hoặc user đã đổi mật khẩu sau khi token được cấp (`tokenVersion` không khớp). Gặp `401` ở `/auth/refresh` → **không retry**, `clearAuthSession()` + điều hướng `/auth/login` ngay.
+
+**Cảnh báo bảo mật — dùng lại refresh token cũ sau khi đã rotate sẽ bị coi là dấu hiệu bị đánh cắp:** BE chỉ chấp nhận ĐÚNG MỘT `refreshToken` hợp lệ tại một thời điểm cho mỗi tài khoản (không phải theo từng thiết bị). Hệ quả FE cần biết:
+- Đăng nhập ở thiết bị/trình duyệt mới sẽ làm `refreshToken` của phiên cũ (thiết bị khác) thành vô hiệu ở lần refresh tiếp theo của thiết bị đó — `accessToken` cũ của thiết bị kia vẫn chạy bình thường tới khi tự hết hạn (~1 giờ), sau đó thiết bị đó bắt đăng nhập lại. Đây là đánh đổi được chấp nhận ở bản đầu tiên để đơn giản hóa, không phải lỗi.
+- Nếu `/auth/refresh` gọi 2 lần song song bằng cùng 1 `refreshToken` cũ (race condition ở FE, ví dụ 2 tab cùng lúc refresh), lần gọi thứ 2 sẽ nhận `401` vì token đã bị rotate bởi lần gọi thứ nhất — FE nên dùng 1 cơ chế khóa (mutex/lock) để chỉ 1 request refresh chạy tại một thời điểm, các request khác chờ kết quả rồi dùng chung token mới, thay vì gọi refresh độc lập ở mỗi tab/request.
+
+**`POST /auth/logout`** (JWT, `Authorization: Bearer <accessToken>`): thu hồi `refreshToken` hiện tại của tài khoản (set về rỗng phía BE). `accessToken` đang cầm vẫn hoạt động tới khi tự hết hạn tự nhiên — đây là hành vi cố ý (access token ngắn hạn nên không cần revoke ngay). FE vẫn `clearAuthSession()` ở local như cũ sau khi gọi logout thành công.
+```json
+{ "message": "Logged out successfully" }
+```
+
+**Gợi ý luồng FE (không bắt buộc theo đúng câu chữ, miễn đạt hiệu quả tương đương):**
+1. Khi `comviaFetch` nhận `401` từ bất kỳ API nào (trừ chính `/auth/refresh`) → thử gọi `/auth/refresh` một lần bằng `refreshToken` đang lưu; thành công thì lưu lại cặp token mới rồi retry đúng 1 lần request vừa fail; thất bại thì `clearAuthSession()` + điều hướng `/auth/login`.
+2. (Khuyến nghị thêm, không bắt buộc) Chủ động refresh nền trước khi `accessToken` hết hạn (vd dựa vào `exp` trong JWT, refresh sớm hơn vài phút) để tránh user gặp 1 lần loading do 401 → refresh → retry.
+3. `refreshToken` lưu cùng storage với `accessToken` theo đúng checkbox "Ghi nhớ đăng nhập" hiện có (`localStorage` nếu remember, `sessionStorage` nếu không) — **không** đổi sang cookie ở bản này.
+4. Token "đăng nhập hộ" (impersonate, ISSUE-002) **không đổi**: vẫn chỉ có `accessToken` 20 phút, không có `refreshToken` đi kèm, không áp dụng luồng refresh ở trên.
 
 ### 3.4 Me
 
@@ -255,10 +301,10 @@ Request:
 
 ### 3.6 Đổi và quên mật khẩu
 
-- `POST /auth/change-password` (JWT): `{ "currentPassword": "...", "newPassword": "..." }`, mỗi field tối thiểu 8 ký tự. Thành công tăng tokenVersion, FE yêu cầu đăng nhập lại. Code hiện chưa chặn mật khẩu mới trùng cũ (F14 trong audit).
+- `POST /auth/change-password` (JWT): `{ "currentPassword": "...", "newPassword": "..." }`, mỗi field tối thiểu 8 ký tự. Thành công tăng `tokenVersion` — vô hiệu hóa **cả accessToken lẫn mọi refreshToken** đang có (xem mục 3.3b), FE yêu cầu đăng nhập lại. Code hiện chưa chặn mật khẩu mới trùng cũ (F14 trong audit).
 - `POST /auth/forgot-password/request` (public): `{ "email": "user@example.com" }`. Response không tiết lộ email có tồn tại.
-- `POST /auth/forgot-password/reset` (public): `{ "email": "user@example.com", "otpCode": "...", "password": "..." }`. Mật khẩu tối thiểu 8 ký tự; OTP reset dùng một lần; thành công tăng tokenVersion.
-- Hiện chưa có API liệt kê thiết bị/session hoặc logout riêng từng thiết bị. Register/login hiện dùng email, không hỗ trợ phone trong DTO.
+- `POST /auth/forgot-password/reset` (public): `{ "email": "user@example.com", "otpCode": "...", "password": "..." }`. Mật khẩu tối thiểu 8 ký tự; OTP reset dùng một lần; thành công tăng `tokenVersion` (vô hiệu hóa token cũ như trên).
+- `POST /auth/logout` (JWT) — xem mục 3.3b. Hiện chưa có API liệt kê thiết bị/session hoặc logout riêng từng thiết bị (chỉ có đúng 1 refresh chain mỗi tài khoản). Register/login hiện dùng email, không hỗ trợ phone trong DTO.
 
 ## 4) Workspace APIs (cốt lõi cho mọi nghiệp vụ)
 
@@ -1450,6 +1496,7 @@ Query:
 | `api_key.disabled` | `PATCH /workspaces/:workspaceId/api-keys/:apiKeyId/disable` | OWNER |
 | `api_key.regenerated` | `POST /workspaces/:workspaceId/api-keys/:apiKeyId/regenerate` | OWNER |
 | `workspace.admin_impersonated` | `POST /admin/workspaces/:workspaceId/impersonate` | ADMIN |
+| `auth.refresh_token_reused` | `POST /auth/refresh` (gọi bằng refresh token đã bị rotate/thu hồi) | Mọi role — tín hiệu bảo mật, không phải thao tác thường |
 
 > **ISSUE-001 (2026-10-29, PO duyệt):** bỏ action `invoice.issued_via_pdf`, `invoice.pdf_verification_failed` cùng toàn bộ tính năng Invoice — backend không còn ghi 2 action này.
 

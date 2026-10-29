@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Request } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { OtpResendDto } from './dto/otp-resend.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
@@ -28,6 +29,17 @@ export class AuthController {
   @Get('me')
   me(@Request() req: { user: { id: string; impersonatedBy?: string } }) {
     return this.authService.me(req.user.id, req.user.impersonatedBy);
+  }
+
+  @Public()
+  @Post('refresh')
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto);
+  }
+
+  @Post('logout')
+  logout(@Request() req: { user: { id: string } }) {
+    return this.authService.logout(req.user.id);
   }
 
   @Post('change-password')

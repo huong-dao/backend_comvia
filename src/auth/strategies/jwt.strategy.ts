@@ -29,6 +29,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ): Promise<
     Pick<User, 'id' | 'email' | 'role'> & { impersonatedBy?: string }
   > {
+    // A refresh token must only ever be redeemed via POST /auth/refresh,
+    // never accepted as credentials on a normal protected route.
+    if (payload.type === 'refresh') {
+      throw new UnauthorizedException('Token không hợp lệ');
+    }
+
     const user = await this.prismaService.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, tokenVersion: true },
