@@ -983,6 +983,14 @@ POST /internal/templates/:templateId/disable
 
 Sau khi approve xong, template trở thành `APPROVED` để FE có thể gửi message.
 
+### 7.9 Admin override (bất kỳ field, bất kỳ status)
+
+- `PATCH /admin/templates/:templateId` — `UserRole.ADMIN`
+
+Khác với `PATCH /workspaces/:workspaceId/templates/:templateId` (mục 7.4) và các API staff ở mục 7.8, endpoint này **bỏ qua** rule "nội dung chỉ sửa được khi `DRAFT`/trả lại sửa" và cho phép admin ghi đè mọi field (`name`, `content`, `placeholdersJson`, `ctaButtons`, `status`, `providerTemplateId`, …) kể cả khi template đang `APPROVED`. Status chỉ được đổi theo một bảng transition cố định (không tùy ý), sửa nội dung của template đã `APPROVED` không tự đồng bộ lại Zalo, và mọi lần gọi đều ghi `AuditLog` (`action: "template.admin_overridden"`).
+
+Chi tiết body, bảng status transition, và các lỗi trả về: xem `FRONTEND_ADMIN_ROUTER_API_MAP.mdc` mục 7.
+
 ## 8) Messaging (send single + logs) — Zalo ZNS thật
 
 Base:
@@ -1433,6 +1441,8 @@ Query:
 | `template.submitted` | `POST /workspaces/:workspaceId/templates/:templateId/submit` | OWNER hoặc MEMBER |
 | `template.approved` | `POST /internal/templates/:templateId/approve` | STAFF |
 | `template.returned_for_revision` | `POST /internal/templates/:templateId/return-to-submitted` | STAFF (bắt buộc `reason`) |
+| `template.admin_overridden` | `PATCH /admin/templates/:templateId` | ADMIN |
+| `template.cta_price_overridden` | `PATCH /admin/templates/:templateId/cta-buttons/:ctaButtonId/unit-price` | ADMIN |
 | `api_key.created` | `POST /workspaces/:workspaceId/api-keys` | OWNER |
 | `api_key.disabled` | `PATCH /workspaces/:workspaceId/api-keys/:apiKeyId/disable` | OWNER |
 | `api_key.regenerated` | `POST /workspaces/:workspaceId/api-keys/:apiKeyId/regenerate` | OWNER |

@@ -25,6 +25,7 @@ Phạm vi:
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
 | Trang đơn hàng / hóa đơn (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders`, `GET /admin/invoices` | `GET /admin/orders/:orderId`, `GET /admin/invoices/:invoiceId`, `GET /admin/invoices/:invoiceId/pdf`, `POST /admin/invoices/:invoiceId/verify-issue-pdf` |
+| Trang quản lý template (admin, toàn hệ thống; path FE tùy dự án, ví dụ `/admin/templates`) | `GET /admin/templates`, `GET /admin/templates/:templateId` | `PATCH /admin/templates/:templateId` (override toàn quyền), `PATCH /admin/templates/:templateId/cta-buttons/:ctaButtonId/unit-price` |
 | Trang quản lý tài khoản ngân hàng (admin; path FE tùy dự án, ví dụ `/admin/money-accounts`) | `GET /money-accounts`, `GET /money-accounts/all` | `POST /money-accounts`, `PATCH /money-accounts/:id`, `DELETE /money-accounts/:id` |
 
 ---
@@ -314,7 +315,85 @@ Sắp xếp: `createdAt` giảm dần.
 
 ---
 
-## 7) Quản lý tài khoản ngân hàng (Money Accounts)
+## 7) Quản lý template (Admin override)
+
+**Module này chưa có mặt ở bản tài liệu cũ — hoàn toàn thiếu**, dù `AdminController` đã có sẵn `GET /admin/templates`, `GET /admin/templates/:templateId` và `PATCH /admin/templates/:templateId/cta-buttons/:ctaButtonId/unit-price` từ trước. Mục này bổ sung các endpoint đó **và** endpoint override mới `PATCH /admin/templates/:templateId`.
+
+**Auth/quyền:** JWT + `UserRole.ADMIN` (`@Controller('admin')` + `@Roles(ADMIN)` ở class level).
+
+### Danh sách template (toàn hệ thống, mọi workspace)
+- `GET /admin/templates`
+
+**Query (tất cả optional):** `status` (enum `TemplateStatus`), `workspaceId`, `oaId`, `keyword` (tìm theo tên/mã template, tên workspace, tên/oaId OA), `limit` (mặc định `50`).
+
+Response: mảng template kèm `workspace` (`id, name, slug, status`) và `oaConnection` (đã flatten `{ id, oaId, oaName, status, connectedAt }`).
+
+### Chi tiết template
+- `GET /admin/templates/:templateId`
+
+Response gồm đầy đủ field + `workspace` (kèm `ownerUserId`) + `oaConnection`.
+
+### Override toàn quyền một template (bỏ qua rule "APPROVED read-only")
+
+- `PATCH /admin/templates/:templateId`
+
+**Đây là endpoint admin riêng, KHÔNG dùng chung với `PATCH /workspaces/:workspaceId/templates/:templateId`** (endpoint đó có business rule khóa nội dung khi `status = APPROVED`, chỉ owner/member dùng). Endpoint admin này cho phép ghi đè **bất kỳ** field, **bất kỳ** status hiện tại.
+
+**Body (mọi field optional, chỉ gửi field muốn đổi):**
+```json
+{
+  "name": "Tên mới",
+  "code": "TEMPLATE_CODE",
+  "type": "TEXT",
+  "title": "Tiêu đề",
+  "trackingId": "tracking-id",
+  "content": "Nội dung mới {{placeholder}}",
+  "secondaryContent": "Chỉ dùng cho TABLE",
+  "otpExpiryMinutes": 5,
+  "placeholdersJson": { "placeholder": "Mô tả" },
+  "unitPricePerMessage": 50,
+  "providerTemplateId": "ZALO_TEMPLATE_ID",
+  "status": "APPROVED",
+  "requiresOwnerRevision": false,
+  "revisionReason": null,
+  "ctaButtons": [
+    { "id": "existing-cta-id", "type": "PHONE_CALL", "target": "0901234567", "position": 0 }
+  ]
+}
+```
+
+**Validate phía backend (quan trọng để FE hiển thị lỗi đúng):**
+- Cấu trúc theo loại template vẫn bị validate như bình thường (BR-TPL-01): TEXT/TABLE cần `content` + `placeholdersJson`; OTP cần `otpExpiryMinutes` + đúng placeholder `otp`/`phut`.
+- **Status transition bị giới hạn**, không phải "chuyển tùy ý" — tránh set về trạng thái vô nghĩa:
+
+| Từ status | Được phép chuyển tới |
+|-----------|----------------------|
+| `DRAFT` | `SUBMITTED`, `DISABLED` |
+| `SUBMITTED` | `DRAFT`, `PENDING_ZALO_APPROVAL`, `DISABLED` |
+| `PENDING_ZALO_APPROVAL` | `SUBMITTED`, `APPROVED`, `DISABLED` |
+| `APPROVED` | `SUBMITTED`, `DRAFT`, `DISABLED` |
+| `DISABLED` | `DRAFT`, `SUBMITTED` |
+
+  Giữ nguyên status hiện tại (không gửi `status` hoặc gửi đúng status cũ) luôn hợp lệ. Transition không nằm trong bảng trả `409 Conflict`. Lưu ý: không cho nhảy thẳng `DRAFT -> APPROVED` (bỏ qua hoàn toàn chuỗi duyệt Zalo) — muốn vậy phải đi qua `SUBMITTED` rồi `PENDING_ZALO_APPROVAL` trước, hoặc set `status: "PENDING_ZALO_APPROVAL"` trước rồi mới `APPROVED` ở lần gọi sau.
+- Set `status: "APPROVED"` mà template chưa có `providerTemplateId` (cả hiện tại lẫn trong body) → `400 Bad Request` ("providerTemplateId is required to set status APPROVED").
+- Khi chuyển sang `DRAFT` hoặc `APPROVED` mà không tự gửi `requiresOwnerRevision`, backend tự reset `requiresOwnerRevision = false`, `revisionReason = null`, `returnedForRevisionAt = null` để tránh còn sót cờ "cần sửa lại" từ vòng submit cũ.
+- Đổi `code` trùng với template khác trong cùng workspace → `400 Bad Request` ("Template code already exists in this workspace").
+- `ctaButtons` dùng đúng semantics như `PATCH /workspaces/:workspaceId/templates/:templateId`: object có `id` = update tại chỗ, object không có `id` = tạo mới, button cũ không được liệt kê = xóa. Admin luôn được set `unitPrice` trên CTA (không bị chặn như role khác).
+
+**Lưu ý đồng bộ Zalo (KHÔNG tự động):** endpoint này **không** gọi API Zalo. Nếu template đang (hoặc sắp) ở `APPROVED` và bạn sửa `name/type/title/content/secondaryContent/otpExpiryMinutes/placeholdersJson/ctaButtons` trong khi đã có `providerTemplateId`, nội dung hiển thị thật trên Zalo **không đổi theo** — sẽ lệch với dữ liệu Comvia. Backend ghi cảnh báo vào log server (`TemplatesService` logger) và đánh dấu `metadataJson.zaloContentMayBeOutOfSync: true` trong audit log tương ứng — FE nên hiển thị cảnh báo tương tự trước khi submit nếu template đang `APPROVED`.
+
+**Audit log:** mọi lần gọi thành công đều ghi `AuditLog` với `action: "template.admin_overridden"`, `resourceType: "Template"`, `metadataJson` chứa `{ changedFields, before, after, zaloContentMayBeOutOfSync }` — xem lại qua `GET /admin/audit-logs?action=template.admin_overridden`.
+
+**Response:** template đầy đủ (cùng shape `GET /admin/templates/:templateId`).
+
+### Override giá CTA button
+- `PATCH /admin/templates/:templateId/cta-buttons/:ctaButtonId/unit-price`
+
+Body: `{ "unitPrice": 100 }` (số nguyên >= 0). Ghi audit log `template.cta_price_overridden`.
+
+---
+
+## 8) Quản lý tài khoản ngân hàng (Money Accounts)
 
 **Module này chưa có mặt ở bản tài liệu cũ — hoàn toàn thiếu.** Đây là danh sách tài khoản ngân hàng nhận tiền qua Pay2S, **dùng chung cho toàn hệ thống** (không tách theo workspace, dù path tham số của service có tên `workspaceId` — hiện bị bỏ qua ở tầng service). Owner chọn 1 tài khoản trong danh sách này khi tạo topup (xem `FRONTEND_API_GUIDE_NEXTJS.mdc §9.3`).
 
@@ -378,10 +457,11 @@ Response: `{ "success": true, "message": "Money account deleted successfully" }`
 
 ---
 
-## 8) Gợi ý code frontend
+## 9) Gợi ý code frontend
 
 - `/admin` nên là hub nhẹ, không cần phụ thuộc API dashboard riêng.
 - **Đơn / hóa đơn:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Tab “Hóa đơn của đơn” có thể dùng `GET /admin/invoices?orderId=<orderId>` hoặc dùng `invoice` đã embed trong response đơn (nếu đủ cho UI).
 - Trang list invoice toàn hệ thống: `GET /admin/invoices`; detail: `GET /admin/invoices/:invoiceId`.
-- Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo, và cập nhật đúng shape Pay2S thật (mục 8) thay vì shape mock cũ.
+- Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo, và cập nhật đúng shape Pay2S thật (mục 5) thay vì shape mock cũ.
+- Trang quản lý template (`PATCH /admin/templates/:templateId`): chặn FE gửi `status` nhảy ngoài bảng transition ở mục 7 (hiển thị lỗi 409 rõ ràng thay vì để user đoán); cảnh báo trước khi submit sửa nội dung một template đang `APPROVED` đã có `providerTemplateId`, vì nội dung trên Zalo sẽ không tự cập nhật theo.
 - Trang quản lý tài khoản ngân hàng: ưu tiên nút "Ẩn/Hiện" (`PATCH isActive`) thay vì nút "Xóa" trong UI, vì `DELETE` chỉ soft-delete — tránh gây hiểu lầm là xóa vĩnh viễn.
