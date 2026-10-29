@@ -1,4 +1,4 @@
-import { IsObject, IsString, ValidateIf } from 'class-validator';
+import { IsObject, IsOptional, IsString, ValidateIf } from 'class-validator';
 
 export class SendPublicMessageDto {
   // Identify the template by either its id or its workspace-unique code.
@@ -17,7 +17,12 @@ export class SendPublicMessageDto {
   @IsObject()
   data!: Record<string, unknown>;
 
-  // included for compatibility with your spec (some clients pass in body)
+  // Fallback only: ApiKeyGuard already reads the key from the x-api-key
+  // header first (see common/guards/api-key.guard.ts). Optional so callers
+  // that only send the header aren't forced to duplicate it in the body;
+  // kept (not removed) so existing clients that still send it here don't
+  // break under the global forbidNonWhitelisted ValidationPipe.
+  @IsOptional()
   @IsString()
-  api_key!: string;
+  api_key?: string;
 }

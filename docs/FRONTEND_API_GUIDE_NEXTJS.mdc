@@ -1515,11 +1515,10 @@ Base:
 - `/public/...`
 
 ### 12.1 Auth bằng `api_key`
-- Backend Public API dùng `ApiKeyGuard`, thứ tự ưu tiên đọc key: header `x-api-key` → body `api_key` → query `?api_key=`.
-- Với `GET /public/templates` và `GET /public/templates/:templateId` (không có body): gửi header `x-api-key: <api_key>` (khuyến nghị), hoặc `?api_key=<api_key>` trên query string nếu không set được header.
-- Với `POST /public/messages/send` (có body, validate bằng DTO yêu cầu field `api_key`): để tránh fail DTO, gửi cả:
-  - header `x-api-key: <api_key>`
-  - field `api_key` trong body.
+- Backend Public API dùng `ApiKeyGuard`, thứ tự ưu tiên đọc key: header `x-api-key` → body `api_key` → query `?api_key=`. Chỉ cần **một trong ba**, không cần gửi trùng lặp.
+- **Khuyến nghị dùng header `x-api-key: <api_key>` cho mọi endpoint** (kể cả `POST /public/messages/send`) — gọn và nhất quán giữa GET/POST.
+- `GET /public/templates`, `GET /public/templates/:templateId` (không có body): header `x-api-key` (khuyến nghị), hoặc `?api_key=<api_key>` trên query string nếu không set được header.
+- `POST /public/messages/send`: **từ 2026-10-29, field `api_key` trong body là optional** — chỉ gửi header `x-api-key` là đủ, không cần lặp lại `api_key` trong JSON body nữa. Field này vẫn được DTO chấp nhận (không lỗi 400 nếu còn gửi) để không phá client cũ đang gửi cả hai, nhưng **không còn bắt buộc**.
 
 Tất cả endpoint `/public/*` chặn workspace không tồn tại hoặc khác `ACTIVE`, gồm cả list/detail template (không chỉ endpoint gửi tin).
 - Mỗi lần gọi thành công, backend cập nhật `lastUsedAt` của API key.
@@ -1548,10 +1547,12 @@ Response:
 ### 12.4 Send public message
 - `POST /public/messages/send`
 
+Headers:
+- `x-api-key: RAW_API_KEY`
+
 Request:
 ```json
 {
-  "api_key": "RAW_API_KEY",
   "templateId": "TEMPLATE_ID",
   "phoneNumber": "84901234567",
   "data": { "name": "Minh" }
@@ -1561,12 +1562,13 @@ Request:
 Xác định template bằng `templateId` (id, không đổi) **hoặc** `templateCode` (mã 6 chữ số, duy nhất trong workspace, lấy từ `GET /public/templates`). Cần ít nhất một trong hai, thiếu cả hai trả `400`. Nếu gửi cả hai thì cả hai phải thuộc cùng một template, nếu không trả `400`. Ví dụ dùng code:
 ```json
 {
-  "api_key": "RAW_API_KEY",
   "templateCode": "123456",
   "phoneNumber": "84901234567",
   "data": { "name": "Minh" }
 }
 ```
+
+(Field `api_key` trong body vẫn được chấp nhận nếu client cũ còn gửi — xem mục 12.1 — nhưng **không cần** cho request mới.)
 Lưu ý: `code` có thể bị admin/staff đổi, nên tích hợp lâu dài nên ưu tiên `templateId`.
 
 Response (Zalo ZNS thật):
@@ -1636,7 +1638,7 @@ Kịch bản 1 (user -> verify OTP -> workspace -> oa -> template -> staff appro
 Kịch bản 2 (API key -> public send):
 1. Tạo api key (owner)
 2. Đảm bảo OA connected + template approved có `providerTemplateId`
-3. Gọi `POST /public/messages/send` với `x-api-key` + `api_key` trong body
+3. Gọi `POST /public/messages/send` với header `x-api-key` (không cần thêm `api_key` trong body — xem mục 12.1)
 
 ## Phụ lục A) Enum / status (API response)
 
