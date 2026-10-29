@@ -18,6 +18,7 @@ import { UpdateCtaPricingConfigDto } from './dto/update-cta-pricing-config.dto';
 import { UpdateAdminCtaButtonPriceDto } from './dto/update-admin-cta-button-price.dto';
 import { TemplatesService } from '../templates/templates.service';
 import { InternalTemplatesQueryDto } from '../templates/dto/internal-templates-query.dto';
+import { AdminOverrideTemplateDto } from '../templates/dto/admin-override-template.dto';
 
 @Controller('admin')
 @Roles(UserRole.ADMIN)
@@ -56,6 +57,17 @@ export class AdminController {
   @Get('templates/:templateId')
   getTemplate(@Param('templateId') templateId: string) {
     return this.templatesService.staffGetTemplate(templateId);
+  }
+
+  // Admin override: writes any template field regardless of status, bypassing
+  // the "APPROVED is read-only" rule that gates the workspace-scoped PATCH.
+  @Patch('templates/:templateId')
+  overrideTemplate(
+    @Request() req: { user: { id: string } },
+    @Param('templateId') templateId: string,
+    @Body() dto: AdminOverrideTemplateDto,
+  ) {
+    return this.templatesService.adminOverride(templateId, req.user.id, dto);
   }
 
   @Patch('templates/:templateId/cta-buttons/:ctaButtonId/unit-price')

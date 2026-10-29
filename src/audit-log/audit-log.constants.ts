@@ -11,6 +11,7 @@ export const AUDIT_ACTIONS = {
   TEMPLATE_SUBMITTED: 'template.submitted',
   TEMPLATE_APPROVED: 'template.approved',
   TEMPLATE_RETURNED_FOR_REVISION: 'template.returned_for_revision',
+  TEMPLATE_ADMIN_OVERRIDDEN: 'template.admin_overridden',
   API_KEY_CREATED: 'api_key.created',
   API_KEY_DISABLED: 'api_key.disabled',
   API_KEY_REGENERATED: 'api_key.regenerated',

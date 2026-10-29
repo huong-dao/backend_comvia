@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import {
@@ -27,9 +28,12 @@ import { ApproveTemplateDto } from './dto/approve-template.dto';
 import { ReturnTemplateToSubmittedDto } from './dto/return-template-to-submitted.dto';
 import { InternalTemplatesQueryDto } from './dto/internal-templates-query.dto';
 import { TemplateCtaButtonDto } from './dto/template-cta-button.dto';
+import { AdminOverrideTemplateDto } from './dto/admin-override-template.dto';
 
 @Injectable()
 export class TemplatesService {
+  private readonly logger = new Logger(TemplatesService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly auditLogService: AuditLogService,
@@ -37,6 +41,37 @@ export class TemplatesService {
   ) {}
 
   private static readonly SIX_DIGIT_CODE_ATTEMPTS = 64;
+
+  /**
+   * Admin override transitions. Deliberately narrower than "anything goes":
+   * still forbids skipping the Zalo review chain (DRAFT -> APPROVED) so an
+   * admin can't accidentally mark a template approved without ever routing
+   * it through staff review, while allowing free backward moves to fix
+   * mistakes (e.g. APPROVED -> DRAFT to redo content after a Zalo rejection).
+   */
+  private static readonly ADMIN_STATUS_TRANSITIONS: Record<
+    TemplateStatus,
+    TemplateStatus[]
+  > = {
+    DRAFT: ['SUBMITTED', 'DISABLED'],
+    SUBMITTED: ['DRAFT', 'PENDING_ZALO_APPROVAL', 'DISABLED'],
+    PENDING_ZALO_APPROVAL: ['SUBMITTED', 'APPROVED', 'DISABLED'],
+    APPROVED: ['SUBMITTED', 'DRAFT', 'DISABLED'],
+    DISABLED: ['DRAFT', 'SUBMITTED'],
+  };
+
+  private assertValidAdminStatusTransition(
+    from: TemplateStatus,
+    to: TemplateStatus,
+  ): void {
+    if (from === to) return;
+    const allowed = TemplatesService.ADMIN_STATUS_TRANSITIONS[from];
+    if (!allowed.includes(to)) {
+      throw new ConflictException(
+        `Cannot change template status from ${from} to ${to}. Allowed: ${allowed.join(', ') || 'none'}`,
+      );
+    }
+  }
 
   /** Uniform random in [100000, 999999] — always 6 digits, no leading-zero runs like 000001. */
   private randomSixDigitCode(): string {
@@ -851,59 +886,72 @@ export class TemplatesService {
     }
 
     await this.prismaService.$transaction(async (tx) => {
-      const existing = await tx.templateCtaButton.findMany({
-        where: { templateId },
-        select: { id: true },
-      });
-      const existingIds = new Set(existing.map((button) => button.id));
-      const suppliedIds = dto
-        .ctaButtons!.map((button) => button.id)
-        .filter((id): id is string => !!id);
-      if (
-        new Set(suppliedIds).size !== suppliedIds.length ||
-        suppliedIds.some((id) => !existingIds.has(id))
-      ) {
-        throw new BadRequestException(
-          'CTA button id does not belong to this template',
-        );
-      }
-      const suppliedIdSet = new Set(suppliedIds);
-      await tx.templateCtaButton.deleteMany({
-        where: { templateId, id: { notIn: suppliedIds } },
-      });
-      // Move retained rows outside the valid 0/1 range first so swapping the
-      // two displayed positions cannot violate the unique DB constraint.
-      if (suppliedIds.length > 0) {
-        await tx.templateCtaButton.updateMany({
-          where: { templateId, id: { in: suppliedIds } },
-          data: { position: { increment: 2 } },
-        });
-      }
-      for (const button of dto.ctaButtons!) {
-        const data = {
-          type: button.type,
-          label: button.label ?? null,
-          target: button.target ?? null,
-          position: button.position,
-          defaultUnitPrice:
-            await this.systemConfigService.resolveCtaDefaultUnitPrice(
-              button.type,
-            ),
-          unitPrice:
-            actorRole === UserRole.ADMIN ? button.unitPrice : undefined,
-        };
-        if (button.id && suppliedIdSet.has(button.id)) {
-          await tx.templateCtaButton.update({ where: { id: button.id }, data });
-        } else {
-          await tx.templateCtaButton.create({ data: { templateId, ...data } });
-        }
-      }
+      await this.replaceCtaButtons(tx, templateId, dto.ctaButtons!, actorRole);
       return tx.template.update({
         where: { id: templateId },
         data: updateData,
       });
     });
     return this.get(workspaceId, templateId, actorRole);
+  }
+
+  /**
+   * Replace a template's CTA-button set inside a transaction. Existing rows
+   * carry their id (updated in place); omitted ids are deleted; rows without
+   * an id are created. Retained rows are bumped out of the 0/1 position
+   * range first so swapping the two displayed positions cannot violate the
+   * unique (templateId, position) constraint.
+   */
+  private async replaceCtaButtons(
+    tx: Prisma.TransactionClient,
+    templateId: string,
+    ctaButtons: TemplateCtaButtonDto[],
+    actorRole: UserRole,
+  ): Promise<void> {
+    const existing = await tx.templateCtaButton.findMany({
+      where: { templateId },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((button) => button.id));
+    const suppliedIds = ctaButtons
+      .map((button) => button.id)
+      .filter((id): id is string => !!id);
+    if (
+      new Set(suppliedIds).size !== suppliedIds.length ||
+      suppliedIds.some((id) => !existingIds.has(id))
+    ) {
+      throw new BadRequestException(
+        'CTA button id does not belong to this template',
+      );
+    }
+    const suppliedIdSet = new Set(suppliedIds);
+    await tx.templateCtaButton.deleteMany({
+      where: { templateId, id: { notIn: suppliedIds } },
+    });
+    if (suppliedIds.length > 0) {
+      await tx.templateCtaButton.updateMany({
+        where: { templateId, id: { in: suppliedIds } },
+        data: { position: { increment: 2 } },
+      });
+    }
+    for (const button of ctaButtons) {
+      const data = {
+        type: button.type,
+        label: button.label ?? null,
+        target: button.target ?? null,
+        position: button.position,
+        defaultUnitPrice:
+          await this.systemConfigService.resolveCtaDefaultUnitPrice(
+            button.type,
+          ),
+        unitPrice: actorRole === UserRole.ADMIN ? button.unitPrice : undefined,
+      };
+      if (button.id && suppliedIdSet.has(button.id)) {
+        await tx.templateCtaButton.update({ where: { id: button.id }, data });
+      } else {
+        await tx.templateCtaButton.create({ data: { templateId, ...data } });
+      }
+    }
   }
 
   async updateCtaUnitPrice(
@@ -1105,5 +1153,247 @@ export class TemplatesService {
       templateId,
       'DISABLED' satisfies TemplateStatus,
     );
+  }
+
+  /**
+   * Admin-only override: write any field on any template regardless of its
+   * current status, bypassing the "APPROVED is read-only" rule enforced by
+   * the workspace-scoped update(). Still validates:
+   * - structural rules per template type (BR-TPL-01), against the merged
+   *   (existing + patch) values;
+   * - status transitions, against ADMIN_STATUS_TRANSITIONS;
+   * - providerTemplateId presence before a template can be set APPROVED.
+   * Every call is audit-logged with a before/after snapshot of the changed
+   * fields, including a flag when editing content that is already synced to
+   * Zalo (the Zalo-side template is NOT updated by this endpoint).
+   */
+  async adminOverride(
+    templateId: string,
+    actorUserId: string,
+    dto: AdminOverrideTemplateDto,
+  ) {
+    const template = await this.prismaService.template.findUnique({
+      where: { id: templateId },
+      select: {
+        id: true,
+        workspaceId: true,
+        name: true,
+        code: true,
+        type: true,
+        title: true,
+        trackingId: true,
+        content: true,
+        secondaryContent: true,
+        otpExpiryMinutes: true,
+        placeholdersJson: true,
+        unitPricePerMessage: true,
+        providerTemplateId: true,
+        status: true,
+        requiresOwnerRevision: true,
+        revisionReason: true,
+      },
+    });
+
+    if (!template) {
+      throw new BadRequestException('Template not found');
+    }
+
+    const targetStatus = dto.status ?? template.status;
+    this.assertValidAdminStatusTransition(template.status, targetStatus);
+    this.validateCtaButtonsOrThrow(dto.ctaButtons);
+
+    this.validateTemplateByTypeOrThrow({
+      type: dto.type ?? template.type,
+      content: dto.content !== undefined ? dto.content : template.content,
+      placeholdersJson:
+        dto.placeholdersJson !== undefined
+          ? dto.placeholdersJson
+          : (template.placeholdersJson as Record<string, unknown> | null),
+      otpExpiryMinutes:
+        dto.otpExpiryMinutes !== undefined
+          ? dto.otpExpiryMinutes
+          : template.otpExpiryMinutes,
+    });
+
+    const resolvedProviderTemplateId =
+      dto.providerTemplateId !== undefined
+        ? dto.providerTemplateId
+        : template.providerTemplateId;
+
+    if (targetStatus === 'APPROVED' && !resolvedProviderTemplateId) {
+      throw new BadRequestException(
+        'providerTemplateId is required to set status APPROVED',
+      );
+    }
+
+    // Leaving APPROVED/landing back on DRAFT or re-approving must not carry
+    // over stale revision-request state from a previous submission cycle.
+    const clearRevisionState =
+      dto.requiresOwnerRevision === undefined &&
+      targetStatus !== template.status &&
+      (targetStatus === 'DRAFT' || targetStatus === 'APPROVED');
+
+    const contentFieldKeys: (keyof AdminOverrideTemplateDto)[] = [
+      'name',
+      'type',
+      'title',
+      'content',
+      'secondaryContent',
+      'otpExpiryMinutes',
+      'placeholdersJson',
+      'ctaButtons',
+    ];
+    const zaloContentMayBeOutOfSync =
+      !!resolvedProviderTemplateId &&
+      (template.status === 'APPROVED' || targetStatus === 'APPROVED') &&
+      contentFieldKeys.some((key) => dto[key] !== undefined);
+
+    if (zaloContentMayBeOutOfSync) {
+      this.logger.warn(
+        `adminOverride: template ${templateId} content changed while providerTemplateId=${resolvedProviderTemplateId} is approved on Zalo — Zalo-side content is NOT updated by this call and will now diverge from Comvia.`,
+      );
+    }
+
+    const resolvedRequiresOwnerRevision = clearRevisionState
+      ? false
+      : dto.requiresOwnerRevision;
+    const resolvedRevisionReason = clearRevisionState
+      ? null
+      : dto.revisionReason;
+
+    const updateData: Prisma.TemplateUpdateInput = {
+      name: dto.name,
+      code: dto.code,
+      type: dto.type,
+      title: dto.title,
+      trackingId: dto.trackingId,
+      content: dto.content,
+      secondaryContent: dto.secondaryContent,
+      otpExpiryMinutes: dto.otpExpiryMinutes,
+      placeholdersJson:
+        dto.placeholdersJson !== undefined
+          ? (dto.placeholdersJson as Prisma.InputJsonValue)
+          : undefined,
+      unitPricePerMessage:
+        dto.unitPricePerMessage !== undefined
+          ? new Prisma.Decimal(dto.unitPricePerMessage)
+          : undefined,
+      providerTemplateId: dto.providerTemplateId,
+      status: dto.status,
+      requiresOwnerRevision: resolvedRequiresOwnerRevision,
+      revisionReason: resolvedRevisionReason,
+      returnedForRevisionAt: clearRevisionState ? null : undefined,
+    };
+
+    // Plain-value snapshots (Decimal -> number, no class instances) so the
+    // audit payload is valid JSON.
+    const before = {
+      name: template.name,
+      code: template.code,
+      type: template.type,
+      title: template.title,
+      trackingId: template.trackingId,
+      content: template.content,
+      secondaryContent: template.secondaryContent,
+      otpExpiryMinutes: template.otpExpiryMinutes,
+      placeholdersJson:
+        template.placeholdersJson as Prisma.InputJsonValue | null,
+      unitPricePerMessage: template.unitPricePerMessage?.toNumber() ?? null,
+      providerTemplateId: template.providerTemplateId,
+      status: template.status,
+      requiresOwnerRevision: template.requiresOwnerRevision,
+      revisionReason: template.revisionReason,
+    };
+    const after = {
+      name: dto.name !== undefined ? dto.name : before.name,
+      code: dto.code !== undefined ? dto.code : before.code,
+      type: dto.type !== undefined ? dto.type : before.type,
+      title: dto.title !== undefined ? dto.title : before.title,
+      trackingId:
+        dto.trackingId !== undefined ? dto.trackingId : before.trackingId,
+      content: dto.content !== undefined ? dto.content : before.content,
+      secondaryContent:
+        dto.secondaryContent !== undefined
+          ? dto.secondaryContent
+          : before.secondaryContent,
+      otpExpiryMinutes:
+        dto.otpExpiryMinutes !== undefined
+          ? dto.otpExpiryMinutes
+          : before.otpExpiryMinutes,
+      placeholdersJson: (dto.placeholdersJson !== undefined
+        ? dto.placeholdersJson
+        : before.placeholdersJson) as Prisma.InputJsonValue | null,
+      unitPricePerMessage:
+        dto.unitPricePerMessage !== undefined
+          ? dto.unitPricePerMessage
+          : before.unitPricePerMessage,
+      providerTemplateId: resolvedProviderTemplateId,
+      status: targetStatus,
+      requiresOwnerRevision:
+        resolvedRequiresOwnerRevision !== undefined
+          ? resolvedRequiresOwnerRevision
+          : before.requiresOwnerRevision,
+      revisionReason:
+        resolvedRevisionReason !== undefined
+          ? resolvedRevisionReason
+          : before.revisionReason,
+      ctaButtonsChanged: dto.ctaButtons !== undefined,
+    };
+    const changedFields = Object.keys(dto);
+
+    try {
+      await this.prismaService.$transaction(async (tx) => {
+        if (dto.ctaButtons !== undefined) {
+          await this.replaceCtaButtons(
+            tx,
+            templateId,
+            dto.ctaButtons,
+            UserRole.ADMIN,
+          );
+        }
+
+        await tx.template.update({
+          where: { id: templateId },
+          data: updateData,
+        });
+
+        if (dto.status !== undefined && dto.status !== template.status) {
+          await tx.templateSubmissionLog.create({
+            data: {
+              templateId,
+              status: dto.status,
+              reason: `Admin override by user ${actorUserId}`,
+            },
+          });
+        }
+
+        await this.auditLogService.write({
+          actorUserId,
+          workspaceId: template.workspaceId,
+          action: AUDIT_ACTIONS.TEMPLATE_ADMIN_OVERRIDDEN,
+          resourceType: AUDIT_RESOURCE_TYPES.TEMPLATE,
+          resourceId: templateId,
+          metadataJson: {
+            changedFields,
+            before,
+            after,
+            zaloContentMayBeOutOfSync,
+          },
+          tx,
+        });
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          'Template code already exists in this workspace',
+        );
+      }
+      throw e;
+    }
+
+    return this.staffGetTemplate(templateId);
   }
 }
