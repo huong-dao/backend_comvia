@@ -116,9 +116,55 @@ export class CampaignsService {
       throw new BadRequestException('Cancelled campaign cannot be updated');
     }
 
+    const data: Prisma.CampaignUpdateInput = {};
+    if (dto.name !== undefined) {
+      data.name = dto.name;
+    }
+
+    if (dto.templateId !== undefined && dto.templateId !== campaign.templateId) {
+      if (campaign.status === 'RUNNING') {
+        throw new BadRequestException('Cannot change template while campaign is running');
+      }
+      if (campaign.lastRunAt != null) {
+        throw new BadRequestException(
+          'Cannot change template after campaign has been executed',
+        );
+      }
+
+      const template = await this.getApprovedTemplateOrThrow(
+        workspaceId,
+        dto.templateId,
+      );
+      const unitPrice = await this.resolveTemplateDispatchUnitPrice(template);
+
+      data.template = { connect: { id: template.id } };
+      data.oaConnection = { connect: { id: template.oaConnectionId } };
+      data.unitPriceAtCreate = unitPrice;
+      data.estimatedTotalAmount = 0;
+      data.status = 'DRAFT' satisfies CampaignStatus;
+      data.totalData = 0;
+      data.totalValid = 0;
+      data.totalInvalid = 0;
+      data.totalPending = 0;
+      data.totalSuccess = 0;
+      data.totalFailed = 0;
+
+      // Existing rows are keyed to the old template's placeholders; clear
+      // them so the FE's CSV template/preview always matches templateId.
+      const updated = await this.prismaService.$transaction(async (tx) => {
+        await tx.campaignRow.deleteMany({ where: { campaignId: campaign.id } });
+        return tx.campaign.update({
+          where: { id: campaign.id },
+          data,
+          include: this.campaignInclude(),
+        });
+      });
+      return this.flattenCampaignOa(updated);
+    }
+
     const updated = await this.prismaService.campaign.update({
       where: { id: campaign.id },
-      data: { name: dto.name },
+      data,
       include: this.campaignInclude(),
     });
     return this.flattenCampaignOa(updated);

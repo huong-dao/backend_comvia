@@ -1,7 +1,12 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateCampaignDto {
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  name!: string;
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  templateId?: string;
 }

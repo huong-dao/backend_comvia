@@ -935,7 +935,7 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `POST /workspaces/:workspaceId/campaigns` — body `{ "name", "templateId" }` (template phải `APPROVED`)
 - `GET /workspaces/:workspaceId/campaigns`
 - `GET /workspaces/:workspaceId/campaigns/:campaignId`
-- `PATCH /workspaces/:workspaceId/campaigns/:campaignId` — chỉ đổi `name` (không đổi template)
+- `PATCH /workspaces/:workspaceId/campaigns/:campaignId` — body `{ "name"?, "templateId"? }`, cả hai field đều optional. Đổi `templateId` chỉ được phép khi campaign **chưa từng execute** (`lastRunAt` null) và không đang `RUNNING`; template mới phải `APPROVED` (và OA của template đó đang `CONNECTED`), nếu không trả `400`. Khi đổi `templateId` thành công: toàn bộ `CampaignRow` hiện có (nếu có) bị xóa, các counter (`totalData`, `totalValid`, …) reset về 0, `status` chuyển `DRAFT`, `unitPriceAtCreate`/`oaConnectionId` cập nhật theo template mới — FE cần import CSV lại theo mẫu mới sau khi đổi.
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId` — `DRAFT`: xóa hẳn; đã chạy: `CANCELLED`
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/csv-template` — tải CSV. Cột đầu tiên là `row_id`, tiếp theo là `Phone` rồi các cột placeholder. Tên cột placeholder lấy từ `placeholder_labels` của template nếu có, nếu không thì dùng slug viết hoa chữ cái đầu (ví dụ `Name`). Import chấp nhận cả tên nhãn lẫn tên slug. Tên file tải về do FE đặt (BE không đặt tên file).
   - Campaign **chưa có dòng**: file gồm header và một dòng mẫu, `row_id` để trống.
