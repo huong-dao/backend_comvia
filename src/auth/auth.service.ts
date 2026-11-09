@@ -140,6 +140,8 @@ export class AuthService {
       'EMAIL',
       user.email,
       'REGISTER',
+      // Email delivery is handled later; do not fail registration if it breaks.
+      { tolerateEmailFailure: true },
     );
 
     return {

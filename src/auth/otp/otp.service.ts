@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +23,8 @@ function isTruthy(value: unknown): boolean {
 
 @Injectable()
 export class OtpService {
+  private readonly logger = new Logger(OtpService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
@@ -116,6 +119,7 @@ export class OtpService {
     targetType: OtpTargetType,
     targetValue: string,
     purpose: OtpPurpose,
+    options?: { tolerateEmailFailure?: boolean },
   ) {
     // In demo/production, we treat the latest OTP as active and mark old ones expired.
     await this.prismaService.otpRequest.updateMany({
@@ -145,17 +149,38 @@ export class OtpService {
       select: { id: true, expiredAt: true },
     });
 
-    await this.sendOtpEmailIfNeeded(targetType, targetValue, otpCode, purpose);
+    let emailSent = true;
+    try {
+      await this.sendOtpEmailIfNeeded(
+        targetType,
+        targetValue,
+        otpCode,
+        purpose,
+      );
+    } catch (error) {
+      if (!options?.tolerateEmailFailure) {
+        throw error;
+      }
+      emailSent = false;
+      this.logger.warn(
+        `Failed to send ${purpose} OTP email (${otpRequest.id}): ${String(error)}`,
+      );
+    }
 
     if (this.demoMode) {
       return {
         otpRequestId: otpRequest.id,
         expiredAt: otpRequest.expiredAt,
+        emailSent,
         demoOtpCode: otpCode,
       };
     }
 
-    return { otpRequestId: otpRequest.id, expiredAt: otpRequest.expiredAt };
+    return {
+      otpRequestId: otpRequest.id,
+      expiredAt: otpRequest.expiredAt,
+      emailSent,
+    };
   }
 
   async resendOtp(
