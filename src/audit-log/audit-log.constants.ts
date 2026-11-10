@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = {
   TOPUP_FAILED: 'topup.failed',
   WORKSPACE_IMPERSONATED: 'workspace.admin_impersonated',
   AUTH_REFRESH_TOKEN_REUSED: 'auth.refresh_token_reused',
+  WALLET_ADJUSTED: 'wallet.manual_adjusted',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -34,6 +35,7 @@ export const AUDIT_RESOURCE_TYPES = {
   API_KEY: 'ApiKey',
   TOPUP_REQUEST: 'TopupRequest',
   USER: 'User',
+  WALLET_TRANSACTION: 'WalletTransaction',
 } as const;
 
 export type AuditResourceType =

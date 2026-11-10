@@ -21,6 +21,7 @@ import { UpdateAdminCtaButtonPriceDto } from './dto/update-admin-cta-button-pric
 import { TemplatesService } from '../templates/templates.service';
 import { InternalTemplatesQueryDto } from '../templates/dto/internal-templates-query.dto';
 import { AdminOverrideTemplateDto } from '../templates/dto/admin-override-template.dto';
+import { AdjustWalletDto } from './dto/adjust-wallet.dto';
 
 @Controller('admin')
 @Roles(UserRole.ADMIN)
@@ -100,6 +101,16 @@ export class AdminController {
     @Param('workspaceId') workspaceId: string,
   ) {
     return this.service.impersonateWorkspaceOwner(req.user.id, workspaceId);
+  }
+
+  // ISSUE-006: ADMIN credits/debits a workspace owner's wallet manually.
+  @Post('workspaces/:workspaceId/wallet-adjustment')
+  adjustWorkspaceWallet(
+    @Request() req: { user: { id: string } },
+    @Param('workspaceId') workspaceId: string,
+    @Body() dto: AdjustWalletDto,
+  ) {
+    return this.service.adjustWorkspaceWallet(req.user.id, workspaceId, dto);
   }
 
   @Get('audit-logs')

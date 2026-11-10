@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { AdminService } from './admin.service';
 
 describe('AdminService.impersonateWorkspaceOwner', () => {
@@ -34,6 +36,7 @@ describe('AdminService.impersonateWorkspaceOwner', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: auditLogService },
         { provide: JwtService, useValue: jwtService },
+        { provide: WalletLedgerService, useValue: { adjust: jest.fn() } },
       ],
     }).compile();
     service = module.get(AdminService);
@@ -133,6 +136,7 @@ describe('AdminService.listWorkspaces (ISSUE-004 pagination/filter)', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: { write: jest.fn() } },
         { provide: JwtService, useValue: { signAsync: jest.fn() } },
+        { provide: WalletLedgerService, useValue: { adjust: jest.fn() } },
       ],
     }).compile();
     service = module.get(AdminService);
@@ -179,5 +183,133 @@ describe('AdminService.listWorkspaces (ISSUE-004 pagination/filter)', () => {
         take: 10,
       }),
     );
+  });
+});
+
+describe('AdminService.adjustWorkspaceWallet (ISSUE-006)', () => {
+  let service: AdminService;
+  const prisma = {
+    workspace: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
+  };
+  const auditLogService = { write: jest.fn() };
+  const walletLedgerService = { adjust: jest.fn() };
+  const tx = { marker: 'tx' };
+
+  const dto = { direction: 'CREDIT' as const, amount: 5000, note: 'Gift' };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((cb: (client: unknown) => unknown) =>
+      cb(tx),
+    );
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AdminService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: auditLogService },
+        { provide: JwtService, useValue: { signAsync: jest.fn() } },
+        { provide: WalletLedgerService, useValue: walletLedgerService },
+      ],
+    }).compile();
+    service = module.get(AdminService);
+  });
+
+  it('writes the ledger entry and audit log in one transaction and returns a summary', async () => {
+    prisma.workspace.findUnique.mockResolvedValue({
+      ownerUserId: 'owner-1',
+      status: 'ACTIVE',
+    });
+    walletLedgerService.adjust.mockResolvedValue({
+      walletTransactionId: 'wt-1',
+      balanceBefore: new Prisma.Decimal(1000),
+      balanceAfter: new Prisma.Decimal(6000),
+    });
+
+    const result = await service.adjustWorkspaceWallet('admin-1', 'ws-1', dto);
+
+    expect(walletLedgerService.adjust).toHaveBeenCalledWith(
+      tx,
+      {
+        ownerUserId: 'owner-1',
+        workspaceId: 'ws-1',
+        amount: 5000,
+        type: WalletTransactionType.MANUAL_ADJUSTMENT,
+        sourceType: 'ADMIN_ADJUSTMENT',
+        sourceId: 'admin-1',
+        createdBy: 'admin-1',
+        note: 'Gift',
+      },
+      'CREDIT',
+    );
+    expect(auditLogService.write).toHaveBeenCalledWith({
+      tx,
+      actorUserId: 'admin-1',
+      workspaceId: 'ws-1',
+      action: 'wallet.manual_adjusted',
+      resourceType: 'WalletTransaction',
+      resourceId: 'wt-1',
+      metadataJson: {
+        direction: 'CREDIT',
+        amount: 5000,
+        note: 'Gift',
+        targetOwnerUserId: 'owner-1',
+      },
+    });
+    expect(result).toEqual({
+      walletTransactionId: 'wt-1',
+      ownerUserId: 'owner-1',
+      workspaceId: 'ws-1',
+      direction: 'CREDIT',
+      amount: '5000',
+      balanceBefore: '1000',
+      balanceAfter: '6000',
+      type: 'MANUAL_ADJUSTMENT',
+    });
+  });
+
+  it('rejects when the workspace does not exist, without adjusting or auditing', async () => {
+    prisma.workspace.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.adjustWorkspaceWallet('admin-1', 'missing', dto),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(walletLedgerService.adjust).not.toHaveBeenCalled();
+    expect(auditLogService.write).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-active workspace, without adjusting or auditing', async () => {
+    prisma.workspace.findUnique.mockResolvedValue({
+      ownerUserId: 'owner-1',
+      status: 'DISABLED',
+    });
+
+    await expect(
+      service.adjustWorkspaceWallet('admin-1', 'ws-1', dto),
+    ).rejects.toThrow('Cannot adjust the wallet of a non-active workspace');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(walletLedgerService.adjust).not.toHaveBeenCalled();
+    expect(auditLogService.write).not.toHaveBeenCalled();
+  });
+
+  it('propagates an insufficient-credit DEBIT and skips the audit write', async () => {
+    prisma.workspace.findUnique.mockResolvedValue({
+      ownerUserId: 'owner-1',
+      status: 'ACTIVE',
+    });
+    walletLedgerService.adjust.mockRejectedValue(
+      new BadRequestException('Insufficient credit'),
+    );
+
+    await expect(
+      service.adjustWorkspaceWallet('admin-1', 'ws-1', {
+        direction: 'DEBIT',
+        amount: 9999,
+        note: 'Reverse',
+      }),
+    ).rejects.toThrow('Insufficient credit');
+    expect(walletLedgerService.adjust).toHaveBeenCalledTimes(1);
+    expect(auditLogService.write).not.toHaveBeenCalled();
   });
 });

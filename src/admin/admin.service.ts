@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import { Prisma, WalletTransactionType } from '@prisma/client';
 import {
   AUDIT_ACTIONS,
   AUDIT_RESOURCE_TYPES,
@@ -8,6 +8,8 @@ import {
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
+import { AdjustWalletDto } from './dto/adjust-wallet.dto';
 import { ListOaConnectionsQueryDto } from './dto/list-oa-connections-query.dto';
 import { ListWorkspacesQueryDto } from './dto/list-workspaces-query.dto';
 
@@ -22,6 +24,7 @@ export class AdminService {
     private readonly prismaService: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly jwtService: JwtService,
+    private readonly walletLedgerService: WalletLedgerService,
   ) {}
 
   listUsers() {
@@ -267,5 +270,74 @@ export class AdminService {
         fullName: workspace.owner.fullName,
       },
     };
+  }
+
+  /**
+   * ISSUE-006 (ADR-004): an ADMIN credits/debits the wallet of a workspace's
+   * owner outside the topup flow. The ledger entry and its audit record are
+   * written in one $transaction so neither can exist without the other.
+   */
+  async adjustWorkspaceWallet(
+    adminUserId: string,
+    workspaceId: string,
+    dto: AdjustWalletDto,
+  ) {
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { ownerUserId: true, status: true },
+    });
+
+    if (!workspace) {
+      throw new BadRequestException('Workspace not found');
+    }
+    if (workspace.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'Cannot adjust the wallet of a non-active workspace',
+      );
+    }
+
+    return this.prismaService.$transaction(async (tx) => {
+      const { walletTransactionId, balanceBefore, balanceAfter } =
+        await this.walletLedgerService.adjust(
+          tx,
+          {
+            ownerUserId: workspace.ownerUserId,
+            workspaceId,
+            amount: dto.amount,
+            type: WalletTransactionType.MANUAL_ADJUSTMENT,
+            sourceType: 'ADMIN_ADJUSTMENT',
+            sourceId: adminUserId,
+            createdBy: adminUserId,
+            note: dto.note,
+          },
+          dto.direction,
+        );
+
+      await this.auditLogService.write({
+        tx,
+        actorUserId: adminUserId,
+        workspaceId,
+        action: AUDIT_ACTIONS.WALLET_ADJUSTED,
+        resourceType: AUDIT_RESOURCE_TYPES.WALLET_TRANSACTION,
+        resourceId: walletTransactionId,
+        metadataJson: {
+          direction: dto.direction,
+          amount: dto.amount,
+          note: dto.note,
+          targetOwnerUserId: workspace.ownerUserId,
+        },
+      });
+
+      return {
+        walletTransactionId,
+        ownerUserId: workspace.ownerUserId,
+        workspaceId,
+        direction: dto.direction,
+        amount: String(dto.amount),
+        balanceBefore: balanceBefore.toString(),
+        balanceAfter: balanceAfter.toString(),
+        type: 'MANUAL_ADJUSTMENT' as const,
+      };
+    });
   }
 }
