@@ -1182,7 +1182,7 @@ Response — **mảng** giao dịch, mỗi phần tử:
   "workspaceId": "WS_ID",
   "type": "MESSAGE_DEBIT",
   "status": "SUCCESS",
-  "amount": "-500",
+  "amount": "500",
   "balanceBefore": "500000",
   "balanceAfter": "499500",
   "sourceType": "message_log",
@@ -1193,8 +1193,11 @@ Response — **mảng** giao dịch, mỗi phần tử:
 }
 ```
 - `createdBy`, `note`: nullable.
+- **`amount` LUÔN là số dương với mọi `type`** — kể cả giao dịch trừ tiền. `WalletLedgerService.ledgerData()` ghi `amount` dương và mọi caller truyền chi phí dương; bản ghi **không** mang dấu âm. FE muốn hiện dấu/màu theo chiều tiền thì so `balanceAfter` với `balanceBefore`, **đừng** dựa vào dấu của `amount`. (Ví dụ ở bản guide trước ghi `"-500"` là sai, đã sửa.)
 - **`status`** ∈ `SUCCESS` | `PENDING` | `FAILED` → nhãn: **Thành công** / **Đang xử lý** / **Thất bại**. FE **giữ** cột "Trạng thái" và map 3 nhãn này. **Lưu ý:** field `status` **chưa có trong code hiện tại — chờ backend implement + deploy**; sau khi có, trước mắt mọi bản ghi sẽ là `SUCCESS` (mọi giao dịch ví chỉ ghi sau khi hành động nền đã hoàn tất). Trạng thái "đang xử lý" của **nạp tiền** vẫn xem ở `GET /topups/:topupCode/status` cho tới khi PO chốt có đổ topup PENDING vào bảng này không.
 - `type` ∈ `TOPUP_CREDIT` | `MESSAGE_DEBIT` | `CAMPAIGN_HOLD` | `CAMPAIGN_REFUND` | `MANUAL_ADJUSTMENT` | `REVERSAL` (loại giao dịch, khác với `status`).
+- **`MANUAL_ADJUSTMENT`** là bút toán ADMIN cộng/trừ ví thủ công (mục 14.1, ISSUE-006) — **đã có code sinh thật** từ bản này, FE phải map nhãn cho nó trong bảng giao dịch và cho phép lọc `?type=MANUAL_ADJUSTMENT`. Nhận diện: `sourceType = "ADMIN_ADJUSTMENT"`, `sourceId`/`createdBy` = `userId` của admin thực hiện, `note` luôn có giá trị (lý do điều chỉnh — hiển thị cho user). Chiều cộng/trừ đọc từ `balanceAfter` so với `balanceBefore` (bản ghi không có field `direction`). Loại này **không** cộng vào `totalTopup`/`totalSpent`/`totalRefund` ở mục 9.1 và không vào `monthly`.
+- `REVERSAL` vẫn **chưa có code nào sinh ra** (chỉ tồn tại trong enum) — không kỳ vọng gặp trong dữ liệu thật; việc đảo một điều chỉnh nhầm được làm bằng một `MANUAL_ADJUSTMENT` chiều ngược lại.
 
 ### 9.3 Money Accounts — chọn tài khoản ngân hàng nhận tiền (bắt buộc trước khi tạo topup)
 
@@ -1496,6 +1499,7 @@ Query:
 | `api_key.disabled` | `PATCH /workspaces/:workspaceId/api-keys/:apiKeyId/disable` | OWNER |
 | `api_key.regenerated` | `POST /workspaces/:workspaceId/api-keys/:apiKeyId/regenerate` | OWNER |
 | `workspace.admin_impersonated` | `POST /admin/workspaces/:workspaceId/impersonate` | ADMIN |
+| `wallet.manual_adjusted` | `POST /admin/workspaces/:workspaceId/wallet-adjustment` | ADMIN (`resourceType: "WalletTransaction"`, `metadataJson: { direction, amount, note, targetOwnerUserId }`) |
 | `auth.refresh_token_reused` | `POST /auth/refresh` (gọi bằng refresh token đã bị rotate/thu hồi) | Mọi role — tín hiệu bảo mật, không phải thao tác thường |
 
 > **ISSUE-001 (2026-10-29, PO duyệt):** bỏ action `invoice.issued_via_pdf`, `invoice.pdf_verification_failed` cùng toàn bộ tính năng Invoice — backend không còn ghi 2 action này.
@@ -1601,8 +1605,85 @@ Endpoint ví dụ:
 - `PATCH /admin/users/:userId/lock` body `{ "locked": true }`
 - `GET /admin/workspaces`
 - `PATCH /admin/workspaces/:workspaceId/disable`
+- `POST /admin/workspaces/:workspaceId/wallet-adjustment` — cộng/trừ ví thủ công (mục 14.1)
 - `GET /admin/config/message-pricing` — giá mặc định VND/tin (mặc định 400)
 - `PATCH /admin/config/message-pricing` body `{ "defaultMessageUnitPrice": 400 }`
+
+### 14.1 Điều chỉnh số dư ví thủ công (ISSUE-006)
+
+- `POST /admin/workspaces/:workspaceId/wallet-adjustment` — `UserRole.ADMIN`
+
+ADMIN cộng hoặc trừ số dư ví của **owner** workspace mà không qua luồng topup/thanh toán (BR-WALLET-07) — dùng cho tiền thu ngoài hệ thống (khách chuyển khoản trực tiếp) hoặc tặng credit. Không cần header `x-workspace-id`: đây là thao tác hệ thống, không đi qua `WorkspaceContextGuard`.
+
+Request:
+```json
+{
+  "direction": "CREDIT",
+  "amount": 500000,
+  "note": "Khách chuyển khoản trực tiếp 500k ngày 10/11"
+}
+```
+
+| Field | Kiểu | Bắt buộc | Ghi chú |
+|-------|------|----------|---------|
+| `direction` | `CREDIT` \| `DEBIT` | Có | `CREDIT` tăng số dư, `DEBIT` giảm |
+| `amount` | int ≥ 1 | Có | Số VND **luôn dương**, không gửi số âm. **Không có giới hạn trên** |
+| `note` | string | Có | Lý do điều chỉnh; backend trim trước khi validate nên khoảng trắng không tính là có giá trị |
+
+Response (200):
+```json
+{
+  "walletTransactionId": "WT_ID",
+  "ownerUserId": "OWNER_ID",
+  "workspaceId": "WS_ID",
+  "direction": "CREDIT",
+  "amount": "500000",
+  "balanceBefore": "120000",
+  "balanceAfter": "620000",
+  "type": "MANUAL_ADJUSTMENT"
+}
+```
+`amount`, `balanceBefore`, `balanceAfter` là **string** (Decimal VND) — parse trước khi tính toán. `amount` trả về luôn dương kể cả khi `direction = "DEBIT"`.
+
+```ts
+type WalletAdjustmentResult = {
+  walletTransactionId: string;
+  ownerUserId: string;
+  workspaceId: string;
+  direction: "CREDIT" | "DEBIT";
+  amount: string;
+  balanceBefore: string;
+  balanceAfter: string;
+  type: "MANUAL_ADJUSTMENT";
+};
+
+const result = await comviaFetch<WalletAdjustmentResult>(
+  `/admin/workspaces/${workspaceId}/wallet-adjustment`,
+  {
+    method: "POST",
+    token: accessToken,
+    body: JSON.stringify({ direction, amount, note }),
+  },
+);
+```
+
+Lỗi:
+| HTTP | `message` | Khi nào |
+|------|-----------|---------|
+| `400` | `Workspace not found` | `workspaceId` không tồn tại |
+| `400` | `Cannot adjust the wallet of a non-active workspace` | Workspace không ở `ACTIVE` |
+| `400` | `Insufficient credit` | `DEBIT` vượt số dư hiện tại — reject nguyên lệnh, không clamp về 0 |
+| `400` | `Wallet not initialized` | Owner chưa có ví |
+| `400` | mảng message class-validator | `direction` sai enum, `amount` không phải int ≥ 1, `note` rỗng sau trim |
+| `403` | `You do not have permission to access this resource` | Người gọi không phải `ADMIN` (`RolesGuard`) |
+
+Ghi chú bắt buộc cho FE (chi tiết UI + cảnh báo trên form: `FRONTEND_ADMIN_ROUTER_API_MAP.mdc` mục 3.1):
+- **Ví gắn ở cấp owner, không cấp workspace.** Owner có nhiều workspace thì tất cả dùng chung một ví — cộng "cho workspace A" làm tăng số dư mà workspace B cùng owner cũng tiêu được. `workspaceId` trên bút toán chỉ là ngữ cảnh. Form **phải** nói rõ điều này.
+- **Không có trần số tiền, không có bước duyệt, không có idempotency key.** Gõ thừa một số 0 là sai gấp 10 lần và backend vẫn nhận. Nên có dialog xác nhận hiển thị lại số tiền đã format phân cách hàng nghìn (ví dụ "500.000 ₫") trước khi submit, và disable nút trong lúc request chạy.
+- **Không có hoàn tác.** Muốn sửa một lệnh nhầm phải tạo một điều chỉnh **chiều ngược lại**; nếu owner đã tiêu phần cộng nhầm thì lệnh `DEBIT` đảo bị chặn bởi `Insufficient credit` và không thu hồi được. Loại `REVERSAL` có trong enum nhưng chưa có code nào sinh ra.
+- Chỉ gọi khi workspace `ACTIVE` — ẩn/disable nút ở các trạng thái khác.
+- `MANUAL_ADJUSTMENT` chỉ đổi `balance`: **không** cộng `totalTopup`/`totalSpent`/`totalRefund` (mục 9.1), không tạo order, không tính VAT/doanh thu. Sau khi điều chỉnh chỉ `balance` đổi, các ô tổng giữ nguyên.
+- Mỗi lần gọi thành công ghi `AuditLog` action `wallet.manual_adjusted` trong cùng transaction với bút toán (mục 11.4).
 
 ## 15) Common error handling (frontend)
 
@@ -1659,7 +1740,7 @@ Backend trả enum **UPPER_SNAKE_CASE** (theo Prisma). FE nên map label hiển 
 | `TemplateStatus` | `DRAFT`, `SUBMITTED`, `PENDING_ZALO_APPROVAL`, `APPROVED`, `DISABLED` |
 | `TopupStatus` | `PENDING`, `PAID`, `FAILED`, `EXPIRED` |
 | `OrderStatus` | `PAID`, `CANCELLED` |
-| `WalletTransactionType` | `TOPUP_CREDIT`, `MESSAGE_DEBIT`, `CAMPAIGN_HOLD`, `CAMPAIGN_REFUND`, `MANUAL_ADJUSTMENT`, `REVERSAL` |
+| `WalletTransactionType` | `TOPUP_CREDIT`, `MESSAGE_DEBIT`, `CAMPAIGN_HOLD`, `CAMPAIGN_REFUND`, `MANUAL_ADJUSTMENT`, `REVERSAL` — **lưu ý:** `MANUAL_ADJUSTMENT` đã được sinh thật từ `POST /admin/workspaces/:workspaceId/wallet-adjustment` (mục 14.1); `REVERSAL` tồn tại trong enum nhưng **chưa có code nào tạo** |
 | `SendType` | `TEST`, `SINGLE`, `CAMPAIGN` — **lưu ý:** hiện chỉ `SINGLE` (mục 8.1) và `CAMPAIGN` (mục 7.7) có endpoint gửi thật; `TEST` tồn tại trong enum nhưng chưa có endpoint "gửi thử" nào dùng tới |
 | `MessageStatus` | `PENDING`, `SUCCESS`, `FAILED` |
 | `CampaignStatus` | `DRAFT`, `READY`, `RUNNING`, `PAUSED`, `COMPLETED`, `FAILED`, `CANCELLED` |

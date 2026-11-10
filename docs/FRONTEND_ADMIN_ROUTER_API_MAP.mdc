@@ -21,7 +21,7 @@ Phạm vi:
 |-------|-----------------|------------------|
 | `/admin` | Chưa có API dashboard tổng hợp riêng. Có thể load nhanh từ `GET /admin/users`, `GET /admin/workspaces`. | Không có |
 | `/admin/users` | `GET /admin/users` | `PATCH /admin/users/:userId/lock` |
-| `/admin/workspaces` | `GET /admin/workspaces?page=&limit=&keyword=&status=&ownerUserId=` | `PATCH /admin/workspaces/:workspaceId/disable`, `POST /admin/workspaces/:workspaceId/impersonate` |
+| `/admin/workspaces` | `GET /admin/workspaces?page=&limit=&keyword=&status=&ownerUserId=` | `PATCH /admin/workspaces/:workspaceId/disable`, `POST /admin/workspaces/:workspaceId/impersonate`, `POST /admin/workspaces/:workspaceId/wallet-adjustment` |
 | `/admin/audit-logs` | `GET /admin/audit-logs?workspaceId=&action=&limit=` | Không có |
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
 | Trang đơn hàng (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` | `GET /admin/orders/:orderId` |
@@ -114,6 +114,68 @@ Sắp xếp: `createdAt` giảm dần. **Đây là breaking change so với bả
   - Token cũng tự vô hiệu ngay nếu Owner đổi mật khẩu/reset mật khẩu trong lúc đang bị impersonate (dùng chung cơ chế `tokenVersion` với token đăng nhập thường).
   - **Phạm vi quyền chưa bị giới hạn thêm** trong bản đầu tiên này: phiên impersonate có đầy đủ quyền y như Owner tự đăng nhập (đổi billing, xóa workspace, submit template, tạo topup...). Đây là giới hạn đã biết của phase 1, PO cần xác nhận lại nếu muốn hạn chế thêm hành động nhạy cảm (xem ISSUE-002 mục "Giả định/Câu hỏi mở").
   - Mọi lần gọi thành công đều ghi `AuditLog` action `workspace.admin_impersonated` (`resourceType: "Workspace"`, `resourceId: workspaceId`, `metadataJson: { targetOwnerUserId, targetOwnerEmail, expiresInMinutes }`) — tra lại qua `GET /admin/audit-logs?action=workspace.admin_impersonated`.
+- Điều chỉnh số dư ví (cộng/trừ thủ công) — ISSUE-006:
+  - `POST /admin/workspaces/:workspaceId/wallet-adjustment`
+  - Chỉ hiện/enable nút khi `status === "ACTIVE"` (backend reject workspace ở trạng thái khác).
+  - Nội dung đầy đủ (body, response, lỗi, cảnh báo UX bắt buộc) ở mục **3.1** ngay dưới đây.
+
+### 3.1 Điều chỉnh số dư ví của workspace (ISSUE-006)
+
+- `POST /admin/workspaces/:workspaceId/wallet-adjustment`
+
+**Auth/quyền:** JWT + `UserRole.ADMIN` (`JwtAuthGuard` + `RolesGuard` với `@Roles(ADMIN)` ở class level của `AdminController`). Không dùng `WorkspaceContextGuard` — đây là thao tác hệ thống, admin không cần là member của workspace và **không** gửi header `x-workspace-id`.
+
+**Body:**
+```json
+{
+  "direction": "CREDIT",
+  "amount": 500000,
+  "note": "Khách chuyển khoản trực tiếp 500k ngày 10/11"
+}
+```
+
+| Field | Kiểu | Ghi chú |
+|-------|------|---------|
+| `direction` | enum, bắt buộc | `CREDIT` (cộng) \| `DEBIT` (trừ). Giá trị khác → `400` |
+| `amount` | int ≥ 1, bắt buộc | Số VND **luôn dương**; chiều do `direction` quyết định, **không** gửi số âm. **Không có giới hạn trên** |
+| `note` | string, bắt buộc | Lý do điều chỉnh. Backend trim trước khi validate → chuỗi rỗng hoặc chỉ khoảng trắng → `400` |
+
+**Response (200):**
+```json
+{
+  "walletTransactionId": "WT_ID",
+  "ownerUserId": "OWNER_ID",
+  "workspaceId": "WS_ID",
+  "direction": "CREDIT",
+  "amount": "500000",
+  "balanceBefore": "120000",
+  "balanceAfter": "620000",
+  "type": "MANUAL_ADJUSTMENT"
+}
+```
+`amount`, `balanceBefore`, `balanceAfter` là **string** (Decimal VND) — FE parse trước khi format, đừng cộng trực tiếp. `amount` trả về luôn dương kể cả khi `direction = "DEBIT"`.
+
+**Lỗi:**
+| HTTP | `message` thật từ backend | Ý nghĩa |
+|------|--------------------------|---------|
+| `400` | `Workspace not found` | `workspaceId` không tồn tại |
+| `400` | `Cannot adjust the wallet of a non-active workspace` | Workspace đang `DISABLED`/`SUSPENDED`/`DELETED` |
+| `400` | `Insufficient credit` | `DEBIT` vượt số dư hiện tại — reject nguyên lệnh, **không** tự trừ về 0 |
+| `400` | `Wallet not initialized` | Owner chưa có ví (chưa từng phát sinh giao dịch nào) |
+| `400` | mảng message của class-validator | Validation fail: `direction` sai enum, `amount` không phải số nguyên ≥ 1, `note` rỗng sau trim |
+| `403` | `You do not have permission to access this resource` | Người gọi không phải `UserRole.ADMIN` (`RolesGuard`) |
+
+**Ba điểm UX bắt buộc — đọc kỹ, đây là chỗ dễ làm sai nhất:**
+
+1. **Ví gắn với OWNER, không gắn workspace.** Backend resolve owner từ `workspaceId` rồi đổi số dư **ví của owner đó**. Nếu owner sở hữu nhiều workspace thì tất cả dùng **chung một ví**: cộng tiền "cho workspace A" làm tăng luôn số dư mà workspace B cùng owner tiêu được. `workspaceId` trên bút toán chỉ là **ngữ cảnh** điều chỉnh, không cô lập số dư theo workspace. FE **phải** hiển thị cảnh báo này ngay trên form (ví dụ: "Số dư thuộc về chủ sở hữu `ownerUserId`, dùng chung cho mọi workspace của họ") để admin không hiểu nhầm là ví riêng từng workspace.
+2. **Không có trần số tiền và không có bước duyệt.** `amount` chỉ bị chặn `≥ 1`, không có cap trên, không cần người thứ hai approve — gõ thừa một chữ số 0 là cộng/trừ sai gấp 10 lần và backend vẫn nhận. FE **nên** có dialog xác nhận hiển thị lại số tiền **có phân cách hàng nghìn** (ví dụ "Cộng **500.000 ₫** vào ví của owner `OWNER_ID`?") trước khi submit. Đây là lớp phòng vệ duy nhất trước khi bút toán được chốt.
+3. **Cách sửa khi nhập nhầm.** **Không có chức năng hoàn tác/reversal** — loại `REVERSAL` có trong enum nhưng chưa có code nào sinh ra. Muốn sửa phải thực hiện **một điều chỉnh chiều ngược lại** (`DEBIT` để đảo một `CREDIT` nhầm, `CREDIT` để đảo một `DEBIT` nhầm). **Giới hạn:** nếu owner đã tiêu phần cộng nhầm thì lệnh `DEBIT` đảo sẽ bị chặn bởi `Insufficient credit` — số tiền **không thu hồi được** qua endpoint này. Cũng vì không có idempotency key, double-submit tạo hai bút toán thật và phải đảo thủ công như trên — FE nên disable nút submit trong lúc request đang chạy.
+
+**Điều kiện hiển thị nút:** chỉ render (hoặc chỉ enable) khi `data[].status === "ACTIVE"`; các trạng thái khác backend reject bằng `Cannot adjust the wallet of a non-active workspace`.
+
+**Hệ quả số liệu (FE đừng kỳ vọng ngược lại):** `MANUAL_ADJUSTMENT` chỉ đổi `balance`, **không** cộng vào `totalTopup`/`totalSpent`/`totalRefund`, không tạo order, không tính VAT/doanh thu (BR-WALLET-07, BR-ADMIN-05). Sau khi điều chỉnh, chỉ `balance` ở `GET /workspaces/:workspaceId/wallet/balance` thay đổi; các ô "tổng đã nạp"/"tổng đã dùng" giữ nguyên.
+
+**Audit log:** mỗi lần gọi thành công ghi `AuditLog` action `wallet.manual_adjusted` (`resourceType: "WalletTransaction"`, `resourceId: walletTransactionId`, `metadataJson: { direction, amount, note, targetOwnerUserId }`), ghi trong **cùng transaction** với bút toán — tra lại qua `GET /admin/audit-logs?action=wallet.manual_adjusted`.
 
 ---
 
@@ -388,4 +450,5 @@ Response: `{ "success": true, "message": "Money account deleted successfully" }`
 - **Đơn hàng:** Trang list order gọi `GET /admin/orders`; khi user chọn một dòng, route detail nhận `orderId` và gọi `GET /admin/orders/:orderId`. Không còn tab/khối "Hóa đơn" đi kèm (ISSUE-001).
 - Với webhook dev page, nhớ cảnh báo rõ đây là tool nội bộ/demo, và cập nhật đúng shape Pay2S thật (mục 5) thay vì shape mock cũ.
 - Trang quản lý template (`PATCH /admin/templates/:templateId`): chặn FE gửi `status` nhảy ngoài bảng transition ở mục 7 (hiển thị lỗi 409 rõ ràng thay vì để user đoán); cảnh báo trước khi submit sửa nội dung một template đang `APPROVED` đã có `providerTemplateId`, vì nội dung trên Zalo sẽ không tự cập nhật theo.
+- Điều chỉnh số dư ví (mục 3.1): dialog xác nhận hiển thị lại số tiền đã format phân cách hàng nghìn + `ownerUserId` đích là bắt buộc trong thiết kế, vì backend không có trần số tiền, không có bước duyệt và không có hoàn tác. Disable nút submit khi request đang chạy để tránh double-submit tạo hai bút toán.
 - Trang quản lý tài khoản ngân hàng: ưu tiên nút "Ẩn/Hiện" (`PATCH isActive`) thay vì nút "Xóa" trong UI, vì `DELETE` chỉ soft-delete — tránh gây hiểu lầm là xóa vĩnh viễn.
