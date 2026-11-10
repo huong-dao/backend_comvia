@@ -873,10 +873,15 @@ export class TemplatesService {
           : dto.placeholder_labels === null
             ? Prisma.DbNull
             : (dto.placeholder_labels as Prisma.InputJsonValue),
+      // null clears the per-template price override so the global default
+      // applies again; Prisma.Decimal(null) would throw, hence the explicit
+      // branch rather than a `!== undefined` check.
       unitPricePerMessage:
-        dto.unitPricePerMessage !== undefined
-          ? new Prisma.Decimal(dto.unitPricePerMessage)
-          : undefined,
+        dto.unitPricePerMessage === undefined
+          ? undefined
+          : dto.unitPricePerMessage === null
+            ? null
+            : new Prisma.Decimal(dto.unitPricePerMessage),
     };
 
     if (dto.ctaButtons === undefined) {
@@ -1293,10 +1298,13 @@ export class TemplatesService {
           : dto.placeholder_labels === null
             ? Prisma.DbNull
             : (dto.placeholder_labels as Prisma.InputJsonValue),
+      // See update(): null clears the override, undefined leaves it alone.
       unitPricePerMessage:
-        dto.unitPricePerMessage !== undefined
-          ? new Prisma.Decimal(dto.unitPricePerMessage)
-          : undefined,
+        dto.unitPricePerMessage === undefined
+          ? undefined
+          : dto.unitPricePerMessage === null
+            ? null
+            : new Prisma.Decimal(dto.unitPricePerMessage),
       providerTemplateId: dto.providerTemplateId,
       status: dto.status,
       requiresOwnerRevision: resolvedRequiresOwnerRevision,

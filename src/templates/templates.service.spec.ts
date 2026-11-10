@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   Prisma,
   TemplateCtaType,
+  TemplateStatus,
   TemplateType,
   UserRole,
 } from '@prisma/client';
@@ -738,5 +739,112 @@ describe('TemplatesService placeholder_labels key rules', () => {
     });
 
     expect(template.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A null unitPricePerMessage means "drop the per-template override and fall
+// back to the global default". It used to reach new Prisma.Decimal(null),
+// which throws and surfaced to the caller as a bare 500.
+describe('TemplatesService unitPricePerMessage: null clears the override', () => {
+  let service: TemplatesService;
+
+  const template = {
+    findUnique: jest.fn(),
+    update: jest.fn<unknown, [{ data: Record<string, unknown> }]>(),
+  };
+  const templateSubmissionLog = { create: jest.fn() };
+  const prisma = {
+    template,
+    templateSubmissionLog,
+    $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
+      cb({ template, templateSubmissionLog }),
+    ),
+  };
+  const auditLogService = { write: jest.fn() };
+
+  const stored = {
+    id: 'tpl-1',
+    workspaceId: 'ws-1',
+    name: 'Nhắc lịch hẹn',
+    code: '864901',
+    type: TemplateType.TEXT,
+    title: 'Nhắc lịch hẹn',
+    trackingId: '',
+    content: 'Khách hàng {{ten_KH}}',
+    secondaryContent: null,
+    otpExpiryMinutes: null,
+    placeholdersJson: { ten_KH: 'An' },
+    placeholder_labels: null,
+    unitPricePerMessage: new Prisma.Decimal(400),
+    providerTemplateId: null,
+    status: TemplateStatus.SUBMITTED,
+    requiresOwnerRevision: false,
+    revisionReason: null,
+    // adminOverride re-reads the row through staffGetTemplate before
+    // returning, so the mock has to satisfy that select too.
+    returnedForRevisionAt: null,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    workspace: {
+      id: 'ws-1',
+      name: 'WS',
+      slug: 'ws',
+      status: 'ACTIVE',
+      ownerUserId: 'owner-1',
+    },
+    oaConnection: { id: 'oa-1', connection: null },
+    ctaButtons: [],
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    template.findUnique.mockResolvedValue(stored);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: auditLogService },
+        {
+          provide: SystemConfigService,
+          useValue: {
+            resolveCtaDefaultUnitPrice: jest.fn().mockResolvedValue(0),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get(TemplatesService);
+  });
+
+  it('adminOverride writes null instead of throwing on Decimal(null)', async () => {
+    await service.adminOverride('tpl-1', 'admin-1', {
+      status: TemplateStatus.SUBMITTED,
+      unitPricePerMessage: null,
+      providerTemplateId: null,
+    });
+
+    expect(template.update).toHaveBeenCalledTimes(1);
+    expect(template.update.mock.calls[0][0].data).toMatchObject({
+      unitPricePerMessage: null,
+    });
+  });
+
+  it('adminOverride still converts a numeric price to Decimal', async () => {
+    await service.adminOverride('tpl-1', 'admin-1', {
+      unitPricePerMessage: 550,
+    });
+
+    const written = template.update.mock.calls[0][0].data.unitPricePerMessage;
+    expect(written).toBeInstanceOf(Prisma.Decimal);
+    expect((written as Prisma.Decimal).toNumber()).toBe(550);
+  });
+
+  it('adminOverride leaves the price untouched when the field is omitted', async () => {
+    await service.adminOverride('tpl-1', 'admin-1', { title: 'Đổi tiêu đề' });
+
+    expect(
+      template.update.mock.calls[0][0].data.unitPricePerMessage,
+    ).toBeUndefined();
   });
 });

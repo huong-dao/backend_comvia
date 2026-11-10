@@ -66,16 +66,20 @@ export class AdminOverrideTemplateDto {
   @IsObject()
   placeholder_labels?: Record<string, string> | null;
 
+  // null clears the override (falls back to the global default price).
+  // @IsOptional() already skips validation for null, so the type must admit it.
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  unitPricePerMessage?: number;
+  unitPricePerMessage?: number | null;
 
+  // null clears the Zalo template id; setting status APPROVED then fails with
+  // the usual 400 because providerTemplateId is required for that status.
   @IsOptional()
   @IsString()
   @MinLength(1)
-  providerTemplateId?: string;
+  providerTemplateId?: string | null;
 
   @IsOptional()
   @IsEnum(TemplateStatus)

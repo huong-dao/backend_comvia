@@ -61,11 +61,13 @@ export class UpdateTemplateDto {
   @IsObject()
   placeholder_labels?: Record<string, string> | null;
 
+  // null clears the override (falls back to the global default price).
+  // @IsOptional() already skips validation for null, so the type must admit it.
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  unitPricePerMessage?: number;
+  unitPricePerMessage?: number | null;
 
   // Replaces the template CTA set. Existing rows must carry their id; omitted
   // existing buttons are deleted and new buttons omit id.
