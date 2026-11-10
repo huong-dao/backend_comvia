@@ -202,6 +202,18 @@ approved --> disabled
   - (c) Gửi tin lỗi **không** tạo dòng ví `failed`: gửi lỗi chỉ ghi `MessageLog` status `failed`, không sinh giao dịch ví nào (không trừ tiền nên không có bút toán).
 - Chuyển trạng thái cho phép: `pending → success`, `pending → failed`. `success` và `failed` là trạng thái kết thúc. Đảo một giao dịch `success` là tạo bản ghi mới loại `reversal` (BR-WALLET-03/04), không đổi `status` bản ghi cũ.
 
+### BR-WALLET-07: Điều chỉnh số dư thủ công bởi Admin
+
+- **Quy tắc:** User role hệ thống `ADMIN` được điều chỉnh số dư ví của một workspace mà không qua luồng topup/thanh toán của Owner. Dùng cho trường hợp tiền thu ngoài hệ thống (ví dụ khách chuyển khoản trực tiếp) hoặc tặng credit. Chỉ `ADMIN` được thực hiện; Owner/Member không có thao tác này.
+- Ví gắn ở **cấp owner**, không gắn cấp workspace (BR-WALLET-01): điều chỉnh "cho workspace X" là điều chỉnh ví của owner workspace X — hệ thống xác định owner từ workspace rồi đổi số dư ví đó. Nếu owner sở hữu nhiều workspace, các workspace đó dùng chung số dư này; `workspace_id` trên bút toán chỉ ghi nhận ngữ cảnh điều chỉnh, không cô lập số dư riêng từng workspace.
+- Mỗi lần điều chỉnh tạo đúng một bút toán `manual_adjustment` qua transaction log (không sửa balance trực tiếp — BR-WALLET-04), ghi `balance_before`/`balance_after`, `created_by` = ADMIN thực hiện, và `note` (lý do) **bắt buộc không rỗng**.
+- Chỉ điều chỉnh được ví của workspace ở trạng thái `active`. Workspace `disabled`/`suspended`/`deleted` → **reject**.
+- Cho phép cả **cộng** (tăng số dư) và **trừ** (giảm số dư). `amount` phải `> 0`. Khi trừ: nếu số tiền trừ vượt quá số dư hiện tại thì **reject** (số dư nhỏ nhất là 0, không tự động trừ về 0).
+- **Không có trần số tiền mỗi lần điều chỉnh** — ADMIN nhập tự do, chỉ ràng buộc `amount > 0`. Không cần OWNER approve, không có bước duyệt thứ hai. Đây là quyết định có cân nhắc của PO (2026-11-10), không phải thiếu sót: PO đã được nêu rủi ro gõ nhầm (thừa chữ số 0) cộng/trừ sai lượng lớn, và rủi ro không thu hồi được nếu cộng nhầm rồi owner đã tiêu (lệnh trừ đảo chiều sẽ bị guard chặn vì thiếu số dư), và chấp nhận. Lớp phòng vệ còn lại: `note` bắt buộc, audit log mọi lần, guard chặn số dư âm. Xem ADR-004 mục "Rủi ro đã chấp nhận".
+- `manual_adjustment` **không** tính VAT, **không** tạo order, **không** cộng vào "tổng đã nạp" (`total_topup`, BR-WALLET-02/05), **không** tính vào doanh thu/VAT của dashboard quản trị (BR-ADMIN-05). Việc phân biệt "tiền thật thu ngoài hệ thống" với "credit tặng" dựa vào nội dung `note`.
+- **Đảo một điều chỉnh nhập nhầm:** thực hiện một `manual_adjustment` **chiều ngược lại** (một khoản trừ để đảo một khoản cộng nhầm, một khoản cộng để đảo một khoản trừ nhầm), kèm ràng buộc như trên — lệnh trừ đảo chiều vẫn bị chặn nếu số dư không đủ. Không có cơ chế đảo bút toán tự động: loại `reversal` tồn tại trong enum `WalletTransactionType` nhưng **chưa được triển khai** (không có production code nào tạo bút toán `reversal`), là hướng tương lai, không phải chức năng hiện có.
+- **Nếu vi phạm:** sửa balance trực tiếp không qua transaction log, cho role khác ADMIN thực hiện, `amount <= 0`, `note` rỗng, để số dư âm, hoặc cộng vào total_topup/doanh thu/VAT đều sai rule.
+
 ## Module 7 — Topup Payment
 
 ### BR-TOPUP-01: Quy tắc VAT
@@ -419,7 +431,8 @@ approved --> disabled
 
 ### BR-ADMIN-02: Billing Operator
 
-- Xem topup history, payment callback log, xử lý giao dịch pending/unmatched, manual adjustment credit nếu được phép, xem wallet transaction toàn hệ thống.
+- Xem topup history, payment callback log, xử lý giao dịch pending/unmatched, xem wallet transaction toàn hệ thống.
+- Điều chỉnh số dư ví thủ công (cộng/trừ credit) theo `BR-WALLET-07`: chỉ role hệ thống `ADMIN`, `note` bắt buộc, không cho số dư âm, không tính VAT/doanh thu/total_topup.
 
 ### BR-ADMIN-03: Template Admin/Reviewer
 
