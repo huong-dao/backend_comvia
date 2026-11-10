@@ -17,15 +17,12 @@ export function createPkcePair(): {
   codeChallenge: string;
 } {
   const codeVerifier = makeRandomId(43);
-  // Tài liệu Zalo: code_challenge = Base64.encode(SHA-256.hash(ASCII(code_verifier)))
-  // — chỉ "Base64 (without Padding)", KHÔNG phải base64url. Không được thay
-  // "+"/"/" thành "-"/"_" (đó là base64url, Zalo không dùng) — nếu thay sẽ
-  // làm code_challenge sai lệch với giá trị Zalo tự tính lại từ code_verifier
-  // lúc đổi token, khiến OAuth thất bại bất cứ khi nào hash chứa "+" hoặc "/".
+  // PKCE S256 (RFC 7636): code_challenge = base64url(SHA-256(code_verifier)),
+  // không padding — "+"/"/" phải thành "-"/"_". Dùng base64 chuẩn từng làm
+  // Zalo/relay id.onweb.asia từ chối khi hash chứa "+" hoặc "/".
   const codeChallenge = createHash('sha256')
     .update(codeVerifier, 'utf8')
-    .digest('base64')
-    .replace(/=/g, '');
+    .digest('base64url');
 
   return { codeVerifier, codeChallenge };
 }
