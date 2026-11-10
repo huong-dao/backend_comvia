@@ -12,6 +12,8 @@ type WalletLedgerParams = {
   note?: string;
 };
 
+export type WalletAdjustDirection = 'CREDIT' | 'DEBIT';
+
 /**
  * The wallet row is locked before both its balance and the immutable ledger
  * entry are written. This keeps balanceBefore/balanceAfter true even when a
@@ -76,6 +78,54 @@ export class WalletLedgerService {
     });
 
     return transaction.id;
+  }
+
+  /**
+   * Manual adjustment by an ADMIN (ADR-004): writes a MANUAL_ADJUSTMENT ledger
+   * entry and updates ONLY `balance`. Unlike credit()/debit() it never touches
+   * any cumulative counter (totalTopup/totalSpent/totalRefund) because a manual
+   * adjustment is neither a spend nor a topup/refund. DEBIT reuses the same
+   * insufficient-balance guard as debit() and never clamps to zero.
+   */
+  async adjust(
+    tx: Prisma.TransactionClient,
+    params: WalletLedgerParams,
+    direction: WalletAdjustDirection,
+  ): Promise<{
+    walletTransactionId: string;
+    balanceBefore: Prisma.Decimal;
+    balanceAfter: Prisma.Decimal;
+  }> {
+    const wallet = await this.lock(tx, params.ownerUserId);
+    const amount = new Prisma.Decimal(params.amount);
+
+    let balanceAfter: Prisma.Decimal;
+    if (direction === 'DEBIT') {
+      if (wallet.balance.lessThan(amount)) {
+        throw new BadRequestException('Insufficient credit');
+      }
+      balanceAfter = wallet.balance.minus(amount);
+    } else {
+      balanceAfter = wallet.balance.plus(amount);
+    }
+
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        ...this.ledgerData(params, wallet.balance, balanceAfter),
+      },
+      select: { id: true },
+    });
+
+    await tx.walletAccount.update({
+      where: { ownerUserId: params.ownerUserId },
+      data: { balance: balanceAfter },
+    });
+
+    return {
+      walletTransactionId: transaction.id,
+      balanceBefore: wallet.balance,
+      balanceAfter,
+    };
   }
 
   async lock(

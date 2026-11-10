@@ -1,4 +1,19 @@
-# Delivery Board — Comvia
+# Board — Comvia
+
+Board chung, cập nhật liên tục. Phần đầu là ticket chẻ theo issue (từ ISSUE-006 trở đi). Phần "Closeout board (legacy)" giữ nguyên trạng thái đợt closeout trước, schema cũ.
+
+| Ticket | Issue | Tên | Phụ thuộc | Có thể song song? | Trạng thái |
+|---|---|---|---|---|---|
+| TICKET-007 | ISSUE-006 | WalletLedgerService.adjust() — bút toán MANUAL_ADJUSTMENT trung tính counter | — | — | Todo |
+| TICKET-008 | ISSUE-006 | Endpoint admin điều chỉnh số dư ví thủ công | TICKET-007 | Không | Todo |
+
+## Thứ tự thực thi đề xuất (ticket đang mở)
+1. TICKET-007 (nền móng — method ledger `adjust()`, độc lập module wallet)
+2. TICKET-008 (endpoint admin, gọi `adjust()` — bắt đầu sau khi 007 merge)
+
+---
+
+## Closeout board (legacy)
 
 | ID     | Ưu tiên | Owner        | Trạng thái                                                                                  | Điều kiện để Done                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------ | ------- | ------------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
