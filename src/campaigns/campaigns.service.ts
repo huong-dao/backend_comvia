@@ -19,6 +19,7 @@ import {
   parseCampaignCsv,
   parseReconcileCsv,
   placeholderKeysFromJson,
+  SEQ_COLUMN,
 } from './campaign-csv.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { RetryCampaignDto } from './dto/retry-campaign.dto';
@@ -197,7 +198,9 @@ export class CampaignsService {
     >;
     const rows = await this.prismaService.campaignRow.findMany({
       where: { campaignId: campaign.id },
-      orderBy: { createdAt: 'asc' },
+      // `Stt` is the position in this list, so the tiebreaker is required:
+      // import writes every row in one createMany and createdAt can collide.
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: { id: true, phoneNumber: true, payloadData: true },
     });
     return buildCsvTemplateContent(
@@ -294,9 +297,10 @@ export class CampaignsService {
       });
     }
 
-    const rowIds = parsed.rows.map((row) => row.rowId as string);
+    // Same order as the exported template, so `Stt` N is the Nth row here.
     const existingRows = await this.prismaService.campaignRow.findMany({
-      where: { campaignId: campaign.id, id: { in: rowIds } },
+      where: { campaignId: campaign.id },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
         status: true,
@@ -306,6 +310,20 @@ export class CampaignsService {
     });
     const existingById = new Map(existingRows.map((row) => [row.id, row]));
     const placeholderKeys = placeholderKeysFromJson(placeholders);
+
+    // A positional key only lines up when the file still describes the whole
+    // campaign. Rejecting a count mismatch stops a row deleted after download
+    // from shifting every later line onto the wrong phone number.
+    const usesSeq = parsed.rows.some((row) => row.seq !== undefined);
+    if (usesSeq && parsed.rows.length !== existingRows.length) {
+      throw new BadRequestException({
+        message: 'CSV validation failed',
+        errors: [
+          `CSV has ${parsed.rows.length} data rows but the campaign has ${existingRows.length}. ` +
+            `${SEQ_COLUMN} matches rows by position — download the template again and edit that file.`,
+        ],
+      });
+    }
 
     const errors: string[] = [];
     const changes: {
@@ -318,12 +336,19 @@ export class CampaignsService {
     let unchanged = 0;
 
     for (const row of parsed.rows) {
-      const rowId = row.rowId as string;
-      const existing = existingById.get(rowId);
+      const label =
+        row.seq !== undefined
+          ? `${SEQ_COLUMN} ${row.seq}`
+          : `row_id ${row.rowId}`;
+      const existing =
+        row.seq !== undefined
+          ? existingRows[row.seq - 1]
+          : existingById.get(row.rowId as string);
       if (!existing) {
-        errors.push(`row_id ${rowId}: not found in this campaign`);
+        errors.push(`${label}: not found in this campaign`);
         continue;
       }
+      const rowId = existing.id;
 
       const sameData =
         existing.phoneNumber === row.phoneNumber &&
@@ -339,7 +364,7 @@ export class CampaignsService {
           if (sameData) {
             unchanged++;
           } else {
-            errors.push(`row_id ${rowId}: SUCCESS row cannot be changed`);
+            errors.push(`${label}: SUCCESS row cannot be changed`);
           }
           break;
         case 'FAILED':
@@ -366,7 +391,7 @@ export class CampaignsService {
           break;
         default:
           errors.push(
-            `row_id ${rowId}: row is ${existing.status} and cannot be changed`,
+            `${label}: row is ${existing.status} and cannot be changed`,
           );
       }
     }
