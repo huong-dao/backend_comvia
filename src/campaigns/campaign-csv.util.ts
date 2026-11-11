@@ -1,17 +1,12 @@
 import { normalizeVietnamesePhone } from '../common/utils/vn-phone';
 
 const PHONE_COLUMN = 'Phone';
-/** First column of the template: 1-based line number, human-editable. */
-export const SEQ_COLUMN = 'Stt';
-/** Column written before Stt replaced it. Still accepted on upload. */
 export const ROW_ID_COLUMN = 'row_id';
 const MAX_IMPORT_ROWS = 10_000;
 
 export type ParsedCampaignCsvRow = {
-  /** Set only when a reconcile file carries the legacy `row_id` column. */
+  /** Set only when the file is parsed for reconcile. */
   rowId?: string;
-  /** Set only when a reconcile file carries the `Stt` column. */
-  seq?: number;
   phoneNumber: string;
   payloadData: Record<string, string>;
   rawImportRow: Record<string, string>;
@@ -48,7 +43,6 @@ export function buildCsvColumnPlan(
   const fallbackHeaders = keys.map((key) => placeholderKeyToHeader(key));
   const reserved = new Set([
     PHONE_COLUMN.toLowerCase(),
-    SEQ_COLUMN.toLowerCase(),
     ROW_ID_COLUMN.toLowerCase(),
   ]);
   const placeholderColumns = keys.map((key, index) => {
@@ -72,10 +66,10 @@ export function placeholderKeyToHeader(key: string): string {
 }
 
 /**
- * Template for upload. The first column is `Stt`, the 1-based line number: a
- * campaign that already has rows gets them numbered in export order so a later
- * reconcile upload can match them by position, and an empty campaign gets a
- * single demo line numbered `1` for the user to extend.
+ * Template for upload. When the campaign already has rows, each row is written
+ * with its `row_id` so a later reconcile upload can match it. Otherwise a single
+ * demo line is written with `row_id` left empty and the template's sample
+ * values in the placeholder cells.
  */
 export function buildCsvTemplateContent(
   placeholdersJson: Record<string, unknown>,
@@ -84,34 +78,54 @@ export function buildCsvTemplateContent(
 ): string {
   const plan = buildCsvColumnPlan(placeholdersJson, placeholderLabels);
   const headers = [
-    SEQ_COLUMN,
+    ROW_ID_COLUMN,
     plan.phoneColumn,
     ...plan.placeholderColumns.map((c) => c.header),
   ];
 
+  const toLine = (cells: string[]) => cells.map(escapeCsvCell).join(',');
+
   const dataLines =
     existingRows.length > 0
-      ? existingRows.map((row, index) => {
+      ? existingRows.map((row) => {
           const payload = (row.payloadData ?? {}) as Record<string, unknown>;
-          return [
-            String(index + 1),
+          return toLine([
+            row.id,
             row.phoneNumber,
             ...plan.placeholderColumns.map((c) => String(payload[c.key] ?? '')),
-          ];
+          ]);
         })
       : [
-          [
-            '1',
-            '0901234567',
-            ...plan.placeholderColumns.map((c) =>
-              sampleCellFor(placeholdersJson[c.key], c.key),
-            ),
-          ],
+          // The demo phone is written as an Excel text formula so the leading 0
+          // survives opening the file in Excel. It is emitted unescaped on
+          // purpose: quoting the cell would make Excel show the formula text.
+          ['', excelTextCell(DEMO_PHONE)]
+            .concat(
+              plan.placeholderColumns.map((c) =>
+                escapeCsvCell(sampleCellFor(placeholdersJson[c.key], c.key)),
+              ),
+            )
+            .join(','),
         ];
 
-  return [headers, ...dataLines]
-    .map((cells) => cells.map(escapeCsvCell).join(','))
-    .join('\n');
+  return [toLine(headers), ...dataLines].join('\n');
+}
+
+const DEMO_PHONE = '0901234567';
+
+/** `="0901234567"`: Excel shows the value as text and keeps leading zeros. */
+function excelTextCell(digits: string): string {
+  return `="${digits}"`;
+}
+
+/**
+ * Reverses {@link excelTextCell}. Excel saves the formula's value, but a file
+ * opened in a tool that does not evaluate formulas keeps the wrapper, which
+ * {@link parseCsvLine} reads as `=0901234567` (or `="0901234567"` when quoted).
+ */
+function unwrapExcelTextCell(value: string): string {
+  const match = /^="?([^"]*)"?$/.exec(value);
+  return match ? match[1] : value;
 }
 
 /**
@@ -133,53 +147,33 @@ function escapeCsvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-/** Import (first upload). An `Stt` (or legacy `row_id`) column is ignored. */
+/** Import (first upload). A `row_id` column is accepted but ignored. */
 export function parseCampaignCsv(
   csvText: string,
   placeholdersJson: Record<string, unknown>,
   placeholderLabels?: Record<string, unknown> | null,
 ): { rows: ParsedCampaignCsvRow[]; errors: string[] } {
   return parseCampaignCsvTable(csvText, placeholdersJson, placeholderLabels, {
-    requireKey: false,
+    requireRowId: false,
   });
 }
 
-/**
- * Reconcile (re-upload after execution). Every row must carry the key column:
- * `Stt` in files downloaded now, `row_id` in files downloaded before `Stt`
- * replaced it.
- */
+/** Reconcile (re-upload after execution). Every row must carry a `row_id`. */
 export function parseReconcileCsv(
   csvText: string,
   placeholdersJson: Record<string, unknown>,
   placeholderLabels?: Record<string, unknown> | null,
 ): { rows: ParsedCampaignCsvRow[]; errors: string[] } {
   return parseCampaignCsvTable(csvText, placeholdersJson, placeholderLabels, {
-    requireKey: true,
+    requireRowId: true,
   });
-}
-
-/** `Stt`, or the legacy `row_id`, whichever the file carries. */
-function findKeyColumn(
-  headerCells: string[],
-): { index: number; header: string; kind: 'seq' | 'rowId' } | null {
-  const normalized = headerCells.map((h) => h.trim().toLowerCase());
-  const seqIdx = normalized.indexOf(SEQ_COLUMN.toLowerCase());
-  if (seqIdx >= 0) {
-    return { index: seqIdx, header: SEQ_COLUMN, kind: 'seq' };
-  }
-  const rowIdIdx = normalized.indexOf(ROW_ID_COLUMN.toLowerCase());
-  if (rowIdIdx >= 0) {
-    return { index: rowIdIdx, header: ROW_ID_COLUMN, kind: 'rowId' };
-  }
-  return null;
 }
 
 function parseCampaignCsvTable(
   csvText: string,
   placeholdersJson: Record<string, unknown>,
   placeholderLabels: Record<string, unknown> | null | undefined,
-  options: { requireKey: boolean },
+  options: { requireRowId: boolean },
 ): { rows: ParsedCampaignCsvRow[]; errors: string[] } {
   const plan = buildCsvColumnPlan(placeholdersJson, placeholderLabels);
   const lines = csvText
@@ -196,17 +190,17 @@ function parseCampaignCsvTable(
   }
 
   const allHeaderCells = parseCsvLine(lines[0]);
-  const keyColumn = findKeyColumn(allHeaderCells);
-  if (options.requireKey && !keyColumn) {
-    return { rows: [], errors: [`Missing required column: ${SEQ_COLUMN}`] };
+  const rowIdIdx = allHeaderCells.findIndex(
+    (h) => h.trim().toLowerCase() === ROW_ID_COLUMN,
+  );
+  if (options.requireRowId && rowIdIdx < 0) {
+    return { rows: [], errors: [`Missing required column: ${ROW_ID_COLUMN}`] };
   }
-  const keyIdx = keyColumn?.index ?? -1;
 
-  // Every column except the key column, in file order. Data cells are reduced
-  // the same way.
-  const withoutKey = (cells: string[]) =>
-    cells.filter((_, index) => index !== keyIdx);
-  const headerCells = withoutKey(allHeaderCells);
+  // Every column except row_id, in file order. Data cells are reduced the same way.
+  const withoutRowId = (cells: string[]) =>
+    cells.filter((_, index) => index !== rowIdIdx);
+  const headerCells = withoutRowId(allHeaderCells);
   const headerIndex = buildHeaderIndex(headerCells, plan);
   if (headerIndex.errors.length > 0) {
     return { rows: [], errors: headerIndex.errors };
@@ -222,41 +216,30 @@ function parseCampaignCsvTable(
 
   const rows: ParsedCampaignCsvRow[] = [];
   const errors: string[] = [];
-  const seenKeys = new Set<string>();
+  const seenRowIds = new Set<string>();
 
   for (let i = 0; i < dataLines.length; i++) {
     const lineNumber = i + 2;
     const allCells = parseCsvLine(dataLines[i]);
-    const cells = withoutKey(allCells);
+    const cells = withoutRowId(allCells);
 
     let rowId: string | undefined;
-    let seq: number | undefined;
-    if (options.requireKey && keyColumn) {
-      const rawKey = (allCells[keyIdx] ?? '').trim();
-      if (!rawKey) {
-        errors.push(`Row ${lineNumber}: ${keyColumn.header} is required`);
+    if (options.requireRowId) {
+      rowId = (allCells[rowIdIdx] ?? '').trim();
+      if (!rowId) {
+        errors.push(`Row ${lineNumber}: ${ROW_ID_COLUMN} is required`);
         continue;
       }
-      if (seenKeys.has(rawKey)) {
-        errors.push(`Row ${lineNumber}: duplicate ${keyColumn.header}`);
+      if (seenRowIds.has(rowId)) {
+        errors.push(`Row ${lineNumber}: duplicate ${ROW_ID_COLUMN}`);
         continue;
       }
-      seenKeys.add(rawKey);
-
-      if (keyColumn.kind === 'seq') {
-        if (!/^\d+$/.test(rawKey) || Number(rawKey) < 1) {
-          errors.push(
-            `Row ${lineNumber}: ${SEQ_COLUMN} must be a whole number from 1 up`,
-          );
-          continue;
-        }
-        seq = Number(rawKey);
-      } else {
-        rowId = rawKey;
-      }
+      seenRowIds.add(rowId);
     }
 
-    const rawPhone = (cells[headerIndex.phoneIdx] ?? '').trim();
+    const rawPhone = unwrapExcelTextCell(
+      (cells[headerIndex.phoneIdx] ?? '').trim(),
+    ).trim();
     if (!rawPhone) {
       errors.push(`Row ${lineNumber}: Phone is required`);
       continue;
@@ -285,7 +268,7 @@ function parseCampaignCsvTable(
       continue;
     }
 
-    rows.push({ rowId, seq, phoneNumber: phone, payloadData, rawImportRow });
+    rows.push({ rowId, phoneNumber: phone, payloadData, rawImportRow });
   }
 
   if (rows.length === 0 && errors.length === 0) {

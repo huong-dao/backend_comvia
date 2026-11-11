@@ -10,7 +10,7 @@ describe('buildCsvTemplateContent', () => {
   it('uses slug-based headers when no labels are set', () => {
     const csv = buildCsvTemplateContent(placeholders, null);
 
-    expect(csv.split('\n')[0]).toBe('Stt,Phone,Name,OrderId');
+    expect(csv.split('\n')[0]).toBe('row_id,Phone,Name,OrderId');
   });
 
   it('uses labels as headers and keeps slugs for keys without a label', () => {
@@ -18,7 +18,7 @@ describe('buildCsvTemplateContent', () => {
       name: 'Tên khách hàng',
     });
 
-    expect(csv.split('\n')[0]).toBe('Stt,Phone,Tên khách hàng,OrderId');
+    expect(csv.split('\n')[0]).toBe('row_id,Phone,Tên khách hàng,OrderId');
   });
 
   it('quotes labels that contain commas', () => {
@@ -26,13 +26,13 @@ describe('buildCsvTemplateContent', () => {
       orderId: 'Mã đơn, VIP',
     });
 
-    expect(csv.split('\n')[0]).toBe('Stt,Phone,Name,"Mã đơn, VIP"');
+    expect(csv.split('\n')[0]).toBe('row_id,Phone,Name,"Mã đơn, VIP"');
   });
 
   it('falls back to the slug header when a label collides with Phone', () => {
     const csv = buildCsvTemplateContent(placeholders, { name: 'phone' });
 
-    expect(csv.split('\n')[0]).toBe('Stt,Phone,Name,OrderId');
+    expect(csv.split('\n')[0]).toBe('row_id,Phone,Name,OrderId');
   });
 
   it('writes the sample value stored in placeholdersJson as the demo row', () => {
@@ -42,93 +42,62 @@ describe('buildCsvTemplateContent', () => {
     );
 
     expect(csv.split('\n')[1]).toBe(
-      '1,0901234567,12/12/2024,Dịch vụ khám tổng quát',
+      ',="0901234567",12/12/2024,Dịch vụ khám tổng quát',
     );
   });
 
   it('quotes a sample value that contains a comma', () => {
     const csv = buildCsvTemplateContent({ addr: 'Số 1, Hà Nội' }, null);
 
-    expect(csv.split('\n')[1]).toBe('1,0901234567,"Số 1, Hà Nội"');
+    expect(csv.split('\n')[1]).toBe(',="0901234567","Số 1, Hà Nội"');
   });
 
   it('falls back to demo_<key> when the template stores no usable sample', () => {
     const csv = buildCsvTemplateContent({ name: '', orderId: null }, null);
 
-    expect(csv.split('\n')[1]).toBe('1,0901234567,demo_name,demo_orderId');
+    expect(csv.split('\n')[1]).toBe(',="0901234567",demo_name,demo_orderId');
   });
 
-  it('numbers existing rows from 1 instead of writing their id', () => {
+  it('writes existing rows with their row_id', () => {
     const csv = buildCsvTemplateContent(placeholders, null, [
       {
         id: 'cuid-a',
         phoneNumber: '84901234567',
         payloadData: { name: 'Minh', orderId: 'A1' },
       },
-      {
-        id: 'cuid-b',
-        phoneNumber: '84907654321',
-        payloadData: { name: 'An', orderId: 'A2' },
-      },
     ]);
 
     expect(csv.split('\n')).toEqual([
-      'Stt,Phone,Name,OrderId',
-      '1,84901234567,Minh,A1',
-      '2,84907654321,An,A2',
-    ]);
-  });
-});
-
-describe('parseReconcileCsv', () => {
-  it('reads Stt as a position', () => {
-    const result = parseReconcileCsv(
-      'Stt,Phone,Name,OrderId\n1,0901234567,Minh,A1\n2,0907654321,An,A2',
-      placeholders,
-    );
-
-    expect(result.errors).toEqual([]);
-    expect(result.rows.map((row) => row.seq)).toEqual([1, 2]);
-  });
-
-  it('still reads the legacy row_id column as an id', () => {
-    const result = parseReconcileCsv(
-      'row_id,Phone,Name,OrderId\ncuid-a,0901234567,Minh,A1',
-      placeholders,
-    );
-
-    expect(result.errors).toEqual([]);
-    expect(result.rows[0].rowId).toBe('cuid-a');
-    expect(result.rows[0].seq).toBeUndefined();
-  });
-
-  it('rejects an Stt that is not a whole number from 1 up', () => {
-    const result = parseReconcileCsv(
-      'Stt,Phone,Name,OrderId\n0,0901234567,Minh,A1',
-      placeholders,
-    );
-
-    expect(result.errors).toEqual([
-      'Row 2: Stt must be a whole number from 1 up',
+      'row_id,Phone,Name,OrderId',
+      'cuid-a,84901234567,Minh,A1',
     ]);
   });
 
-  it('rejects a duplicate Stt', () => {
-    const result = parseReconcileCsv(
-      'Stt,Phone,Name,OrderId\n1,0901234567,Minh,A1\n1,0907654321,An,A2',
-      placeholders,
-    );
+  it('round-trips the unedited demo template through import', () => {
+    const csv = '﻿' + buildCsvTemplateContent(placeholders, null);
 
-    expect(result.errors).toEqual(['Row 3: duplicate Stt']);
+    const result = parseCampaignCsv(csv, placeholders, null);
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0].phoneNumber).toBe('84901234567');
   });
 
-  it('reports the key column as missing when neither header is present', () => {
-    const result = parseReconcileCsv(
-      'Phone,Name,OrderId\n0901234567,Minh,A1',
-      placeholders,
-    );
+  it('round-trips an existing-rows template through reconcile', () => {
+    const csv =
+      '﻿' +
+      buildCsvTemplateContent(placeholders, null, [
+        {
+          id: 'cuid-a',
+          phoneNumber: '84901234567',
+          payloadData: { name: 'Minh', orderId: 'A1' },
+        },
+      ]);
 
-    expect(result.errors).toEqual(['Missing required column: Stt']);
+    const result = parseReconcileCsv(csv, placeholders, null);
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      rowId: 'cuid-a',
+      phoneNumber: '84901234567',
+    });
   });
 });
 
