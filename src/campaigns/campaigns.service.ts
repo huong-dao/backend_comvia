@@ -1128,16 +1128,8 @@ export class CampaignsService {
       );
     }
 
-    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
-    // connection is reached via workspaceOaId.
-    const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { workspaceOaId: template.oaConnectionId },
-      select: { status: true },
-    });
-    if (!oa || oa.status !== 'CONNECTED') {
-      throw new BadRequestException('OA is not connected');
-    }
-
+    // Zalo connection status is intentionally not checked when creating or
+    // updating a campaign.
     return template;
   }
 
