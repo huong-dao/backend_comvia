@@ -78,16 +78,16 @@ export class TemplatesService {
     return randomInt(100_000, 1_000_000).toString();
   }
 
-  private async getConnectedOaConnectionOrThrow(workspaceId: string) {
-    // Template.oaConnectionId references WorkspaceOa.id (ADR-001); gate template
-    // creation on the Zalo connection status reached via the OA profile.
+  private async getOaProfileOrThrow(workspaceId: string) {
+    // Template.oaConnectionId references WorkspaceOa.id (ADR-001). Only the OA
+    // profile must exist; the Zalo connection status is intentionally not checked.
     const workspaceOa = await this.prismaService.workspaceOa.findUnique({
       where: { workspaceId },
-      select: { id: true, connection: { select: { status: true } } },
+      select: { id: true },
     });
 
-    if (!workspaceOa || workspaceOa.connection?.status !== 'CONNECTED') {
-      throw new BadRequestException('OA is not connected');
+    if (!workspaceOa) {
+      throw new BadRequestException('Workspace has no OA profile');
     }
 
     return { id: workspaceOa.id };
@@ -379,7 +379,7 @@ export class TemplatesService {
     actorRole: UserRole,
     dto: CreateTemplateDto,
   ) {
-    const oa = await this.getConnectedOaConnectionOrThrow(workspaceId);
+    const oa = await this.getOaProfileOrThrow(workspaceId);
 
     const type = dto.type ?? TemplateType.TEXT;
     this.validateTemplateByTypeOrThrow({

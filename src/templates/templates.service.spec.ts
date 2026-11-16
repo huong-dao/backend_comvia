@@ -48,16 +48,17 @@ describe('TemplatesService.create OA-connection gate', () => {
     service = module.get(TemplatesService);
   });
 
-  it('throws when the OA profile exists but Zalo connection is not CONNECTED', async () => {
+  it('creates the template when the OA profile exists but Zalo is NOT_CONNECTED', async () => {
     workspaceOa.findUnique.mockResolvedValue({
       id: 'oa-1',
       connection: { status: 'NOT_CONNECTED' },
     });
+    template.create.mockResolvedValue({ id: 'tpl-1', oaConnectionId: 'oa-1' });
 
-    await expect(
-      service.create('ws-1', 'user-1', UserRole.USER, dto),
-    ).rejects.toThrow(BadRequestException);
-    expect(template.create).not.toHaveBeenCalled();
+    await service.create('ws-1', 'user-1', UserRole.USER, dto);
+
+    expect(template.create).toHaveBeenCalledTimes(1);
+    expect(template.create.mock.calls[0][0].data.oaConnectionId).toBe('oa-1');
   });
 
   it('throws when no OA profile exists', async () => {
