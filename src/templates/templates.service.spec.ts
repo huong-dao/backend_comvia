@@ -849,3 +849,95 @@ describe('TemplatesService unitPricePerMessage: null clears the override', () =>
     ).toBeUndefined();
   });
 });
+
+describe('TemplatesService.update placeholderOrder', () => {
+  let service: TemplatesService;
+  const stored = {
+    id: 'tpl-1',
+    status: 'DRAFT',
+    requiresOwnerRevision: false,
+    type: TemplateType.TEXT,
+    content: 'Xin chào',
+    placeholdersJson: { a: 'x', b: 'x', c: 'x' },
+    placeholderOrder: ['c', 'a', 'b'],
+    otpExpiryMinutes: null,
+  };
+  const template = { findFirst: jest.fn(), update: jest.fn() };
+
+  const dataOfLastUpdate = () =>
+    (template.update.mock.calls as [{ data: Record<string, unknown> }][])[0][0]
+      .data;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    template.findFirst.mockResolvedValue(stored);
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: { template } },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { resolveCtaDefaultUnitPrice: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('stores the sent order', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      placeholderOrder: ['b', 'c', 'a'],
+    });
+    expect(dataOfLastUpdate().placeholderOrder).toEqual(['b', 'c', 'a']);
+  });
+
+  it('appends missing slugs in placeholdersJson order', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      placeholderOrder: ['c'],
+    });
+    expect(dataOfLastUpdate().placeholderOrder).toEqual(['c', 'a', 'b']);
+  });
+
+  it('rejects unknown and duplicate slugs with 400', async () => {
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+        placeholderOrder: ['a', 'zzz'],
+      }),
+    ).rejects.toThrow('not in placeholdersJson: zzz');
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+        placeholderOrder: ['a', 'a'],
+      }),
+    ).rejects.toThrow('duplicate slugs: a');
+  });
+
+  it('leaves the stored order alone when the client omits the field', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, { name: 'New' });
+    expect(dataOfLastUpdate().placeholderOrder).toBeUndefined();
+  });
+
+  it('drops removed slugs and appends new ones when placeholdersJson changes', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      placeholdersJson: { a: 'x', c: 'x', d: 'x' },
+    });
+    expect(dataOfLastUpdate().placeholderOrder).toEqual(['c', 'a', 'd']);
+  });
+
+  it('keeps legacy null order untouched when placeholdersJson changes', async () => {
+    template.findFirst.mockResolvedValue({ ...stored, placeholderOrder: null });
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      placeholdersJson: { a: 'x' },
+    });
+    expect(dataOfLastUpdate().placeholderOrder).toBeUndefined();
+  });
+
+  it('blocks order changes once the template is locked', async () => {
+    template.findFirst.mockResolvedValue({ ...stored, status: 'APPROVED' });
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+        placeholderOrder: ['a', 'b', 'c'],
+      }),
+    ).rejects.toThrow('Template content can only be edited');
+  });
+});

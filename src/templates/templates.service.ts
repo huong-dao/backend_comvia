@@ -150,6 +150,50 @@ export class TemplatesService {
     }
   }
 
+  /**
+   * Resolves the placeholderOrder to persist.
+   * - returns `undefined` when nothing should be written (field untouched);
+   * - returns `null` to clear;
+   * - otherwise the normalized order: sent/stored slugs that still exist in
+   *   placeholdersJson (in order), then any missing slugs appended in
+   *   placeholdersJson key order.
+   * Sent slugs that are duplicated or not in placeholdersJson -> 400.
+   */
+  private resolvePlaceholderOrderOrThrow(
+    sentOrder: string[] | null | undefined,
+    placeholdersJson: Record<string, unknown> | null | undefined,
+    placeholdersJsonChanged: boolean,
+    storedOrder: unknown,
+  ): string[] | null | undefined {
+    if (sentOrder === null) return null;
+    const slugs = Object.keys(placeholdersJson ?? {});
+    const slugSet = new Set(slugs);
+    if (sentOrder !== undefined) {
+      const duplicated = sentOrder.filter(
+        (slug, i) => sentOrder.indexOf(slug) !== i,
+      );
+      if (duplicated.length > 0) {
+        throw new BadRequestException(
+          `placeholderOrder has duplicate slugs: ${[...new Set(duplicated)].join(', ')}`,
+        );
+      }
+      const unknown = sentOrder.filter((slug) => !slugSet.has(slug));
+      if (unknown.length > 0) {
+        throw new BadRequestException(
+          `placeholderOrder has slugs not in placeholdersJson: ${unknown.join(', ')}`,
+        );
+      }
+    } else if (!placeholdersJsonChanged || !Array.isArray(storedOrder)) {
+      // Old client / legacy template: never touch the stored order.
+      return undefined;
+    }
+    const base: string[] =
+      sentOrder !== undefined ? sentOrder : (storedOrder as string[]);
+    const kept = base.filter((slug) => slugSet.has(slug));
+    const missing = slugs.filter((slug) => !kept.includes(slug));
+    return [...kept, ...missing];
+  }
+
   private canEditTemplateCode(role: UserRole): boolean {
     return role === UserRole.ADMIN || role === UserRole.STAFF;
   }
@@ -393,6 +437,13 @@ export class TemplatesService {
       dto.placeholdersJson,
     );
 
+    const placeholderOrder = this.resolvePlaceholderOrderOrThrow(
+      dto.placeholderOrder,
+      dto.placeholdersJson,
+      true,
+      null,
+    );
+
     const isOtp = type === TemplateType.OTP;
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
     this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
@@ -425,6 +476,9 @@ export class TemplatesService {
             placeholdersJson: dto.placeholdersJson as Prisma.InputJsonValue,
             placeholder_labels: dto.placeholder_labels
               ? (dto.placeholder_labels as Prisma.InputJsonValue)
+              : undefined,
+            placeholderOrder: placeholderOrder
+              ? (placeholderOrder as Prisma.InputJsonValue)
               : undefined,
             // secondaryContent only applies to TABLE templates.
             secondaryContent:
@@ -505,6 +559,7 @@ export class TemplatesService {
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
+        placeholderOrder: true,
         status: true,
         createdAt: true,
         updatedAt: true,
@@ -540,6 +595,7 @@ export class TemplatesService {
           otpExpiryMinutes: true,
           placeholdersJson: true,
           placeholder_labels: true,
+          placeholderOrder: true,
           status: true,
           createdAt: true,
           updatedAt: true,
@@ -642,6 +698,7 @@ export class TemplatesService {
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
+        placeholderOrder: true,
         status: true,
         providerTemplateId: true,
         requiresOwnerRevision: true,
@@ -694,6 +751,7 @@ export class TemplatesService {
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
+        placeholderOrder: true,
         providerTemplateId: true,
         status: true,
         requiresOwnerRevision: true,
@@ -762,6 +820,7 @@ export class TemplatesService {
       dto.content === undefined &&
       dto.placeholdersJson === undefined &&
       dto.placeholder_labels === undefined &&
+      dto.placeholderOrder === undefined &&
       dto.type === undefined &&
       dto.title === undefined &&
       dto.trackingId === undefined &&
@@ -787,6 +846,7 @@ export class TemplatesService {
         type: true,
         content: true,
         placeholdersJson: true,
+        placeholderOrder: true,
         otpExpiryMinutes: true,
       },
     });
@@ -834,6 +894,16 @@ export class TemplatesService {
           : (template.placeholdersJson as Record<string, unknown> | null),
       );
     }
+    const placeholderOrder = adminPriceOnly
+      ? undefined
+      : this.resolvePlaceholderOrderOrThrow(
+          dto.placeholderOrder,
+          dto.placeholdersJson !== undefined
+            ? dto.placeholdersJson
+            : (template.placeholdersJson as Record<string, unknown> | null),
+          dto.placeholdersJson !== undefined,
+          template.placeholderOrder,
+        );
     this.assertCtaPricesAllowed(dto.ctaButtons, actorRole);
     this.validateCtaButtonsOrThrow(dto.ctaButtons);
 
@@ -873,6 +943,12 @@ export class TemplatesService {
           : dto.placeholder_labels === null
             ? Prisma.DbNull
             : (dto.placeholder_labels as Prisma.InputJsonValue),
+      placeholderOrder:
+        placeholderOrder === undefined
+          ? undefined
+          : placeholderOrder === null
+            ? Prisma.DbNull
+            : (placeholderOrder as Prisma.InputJsonValue),
       // null clears the per-template price override so the global default
       // applies again; Prisma.Decimal(null) would throw, hence the explicit
       // branch rather than a `!== undefined` check.
@@ -1194,6 +1270,7 @@ export class TemplatesService {
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
+        placeholderOrder: true,
         unitPricePerMessage: true,
         providerTemplateId: true,
         status: true,
@@ -1217,6 +1294,15 @@ export class TemplatesService {
       dto.placeholdersJson !== undefined
         ? dto.placeholdersJson
         : (template.placeholdersJson as Record<string, unknown> | null),
+    );
+
+    const placeholderOrder = this.resolvePlaceholderOrderOrThrow(
+      dto.placeholderOrder,
+      dto.placeholdersJson !== undefined
+        ? dto.placeholdersJson
+        : (template.placeholdersJson as Record<string, unknown> | null),
+      dto.placeholdersJson !== undefined,
+      template.placeholderOrder,
     );
 
     this.validateTemplateByTypeOrThrow({
@@ -1259,6 +1345,7 @@ export class TemplatesService {
       'otpExpiryMinutes',
       'placeholdersJson',
       'placeholder_labels',
+      'placeholderOrder',
       'ctaButtons',
     ];
     const zaloContentMayBeOutOfSync =
@@ -1298,6 +1385,12 @@ export class TemplatesService {
           : dto.placeholder_labels === null
             ? Prisma.DbNull
             : (dto.placeholder_labels as Prisma.InputJsonValue),
+      placeholderOrder:
+        placeholderOrder === undefined
+          ? undefined
+          : placeholderOrder === null
+            ? Prisma.DbNull
+            : (placeholderOrder as Prisma.InputJsonValue),
       // See update(): null clears the override, undefined leaves it alone.
       unitPricePerMessage:
         dto.unitPricePerMessage === undefined
@@ -1327,6 +1420,8 @@ export class TemplatesService {
         template.placeholdersJson as Prisma.InputJsonValue | null,
       placeholder_labels:
         template.placeholder_labels as Prisma.InputJsonValue | null,
+      placeholderOrder:
+        template.placeholderOrder as Prisma.InputJsonValue | null,
       unitPricePerMessage: template.unitPricePerMessage?.toNumber() ?? null,
       providerTemplateId: template.providerTemplateId,
       status: template.status,
@@ -1356,6 +1451,10 @@ export class TemplatesService {
         dto.placeholder_labels !== undefined
           ? dto.placeholder_labels
           : before.placeholder_labels,
+      placeholderOrder:
+        placeholderOrder !== undefined
+          ? placeholderOrder
+          : before.placeholderOrder,
       unitPricePerMessage:
         dto.unitPricePerMessage !== undefined
           ? dto.unitPricePerMessage

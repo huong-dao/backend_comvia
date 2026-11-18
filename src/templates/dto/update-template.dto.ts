@@ -61,6 +61,13 @@ export class UpdateTemplateDto {
   @IsObject()
   placeholder_labels?: Record<string, string> | null;
 
+  // Slugs in the order the user arranged them. Must be unique and exist in
+  // placeholdersJson; missing slugs are appended. null clears the order.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  placeholderOrder?: string[] | null;
+
   // null clears the override (falls back to the global default price).
   // @IsOptional() already skips validation for null, so the type must admit it.
   @IsOptional()

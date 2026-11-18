@@ -57,6 +57,13 @@ export class CreateTemplateDto {
   @IsObject()
   placeholder_labels?: Record<string, string> | null;
 
+  // Slugs in the order the user arranged them. Must be unique and exist in
+  // placeholdersJson; missing slugs are appended. null clears the order.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  placeholderOrder?: string[] | null;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

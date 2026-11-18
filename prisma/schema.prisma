@@ -581,6 +581,7 @@ model Template {
   otpExpiryMinutes    Int?
   placeholdersJson    Json?
   placeholder_labels  Json?
+  placeholderOrder    Json?
   providerTemplateId  String?
   unitPricePerMessage Decimal?
   status              TemplateStatus @default(DRAFT)

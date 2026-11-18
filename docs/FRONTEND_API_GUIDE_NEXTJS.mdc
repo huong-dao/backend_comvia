@@ -854,6 +854,7 @@ Field mới (BR-05):
 | `secondaryContent` | string | Chỉ dùng khi `type = TABLE` ("nội dung phụ") |
 | `otpExpiryMinutes` | int ≥ 1 | Bắt buộc khi `type = OTP` |
 | `placeholder_labels` | object `{ "<slug>": "<nhãn>" }` \| null | Không — bỏ qua hoặc `null` thì lưu `NULL` (FE dùng slug). Mọi value phải là string; mỗi key phải có trong `placeholdersJson`, không có thì `400`. Không cần đủ nhãn cho mọi placeholder |
+| `placeholderOrder` | string[] \| null | Không — thứ tự slug placeholder do user sắp xếp, ví dụ `["amount","name","orderId"]`. Mỗi phần tử phải có trong `placeholdersJson` và không trùng, vi phạm trả `400` (`placeholderOrder has slugs not in placeholdersJson: ...` / `placeholderOrder has duplicate slugs: ...`). Thiếu slug thì BE tự nối các slug còn thiếu vào cuối theo thứ tự khóa của `placeholdersJson`. Gửi `null` để xóa. Bỏ qua field thì giữ nguyên thứ tự đã lưu |
 
 Ghi chú:
 - `code` do backend gán khi tạo: chuỗi **6 chữ số**, random trong khoảng **100000–999999**, **unique trong workspace**. Frontend lấy `code` từ **response** của `POST` (cùng các field như list/get).
@@ -883,6 +884,7 @@ Mỗi phần tử gồm các field:
 | `otpExpiryMinutes` | int \| null | Chỉ có với `OTP` |
 | `placeholdersJson` | object \| null | Định nghĩa placeholder; `data` khi send phải khớp field này |
 | `placeholder_labels` | object \| null | Nhãn hiển thị theo slug placeholder, ví dụ `{ "name": "Tên khách" }`. `null` (template cũ) nghĩa là FE dùng slug làm nhãn |
+| `placeholderOrder` | string[] \| null | Thứ tự các placeholder user đã sắp xếp. BE chỉ trả mảng đã lưu (đã chuẩn hoá: đủ mọi slug hiện có). `null` (template cũ chưa từng sắp xếp) → FE suy ra từ thứ tự khóa của `placeholdersJson`. Dùng thứ tự này cho form, bảng xem trước (TABLE) và hiển thị khi gửi |
 | `status` | enum | Trạng thái duyệt (ví dụ `DRAFT`, `SUBMITTED`, `APPROVED`, `DISABLED`) |
 | `createdAt` / `updatedAt` | datetime | |
 | `requiresOwnerRevision` | boolean | `true` khi staff trả về để Owner sửa |
@@ -908,6 +910,7 @@ Ghi chú:
 - Chỉ sửa nội dung khi `DRAFT` hoặc `SUBMITTED` có `requiresOwnerRevision=true`; các trạng thái khác trả `409`. `APPROVED` chỉ cho ADMIN cập nhật riêng giá theo whitelist của service, không sửa nội dung.
 - STAFF không được sửa nội dung template. `code` của USER bị chặn `403`; quyền đổi code vẫn chịu kiểm tra trạng thái và vai trò ở service.
 - `placeholder_labels`: gửi object `{ "<slug>": "<nhãn>" }` để cập nhật; mọi value phải là string, mỗi key phải có trong `placeholdersJson` đang lưu (hoặc trong body nếu PATCH có gửi `placeholdersJson`). Vi phạm trả `400`. Gửi `null` để xóa nhãn về `NULL` (FE dùng slug). Bỏ qua field thì giữ nguyên. Chịu cùng quy tắc sửa nội dung ở trên. Không đổi `placeholdersJson`.
+- `placeholderOrder`: mảng slug, xem bảng 7.2. Thuộc nhóm field nội dung nên chịu cùng quy tắc khoá sửa: chỉ sửa được khi `DRAFT` hoặc đang "trả về owner sửa"; template đã `SUBMITTED`/`APPROVED` bị khoá thì `409` (admin dùng `PATCH /admin/templates/:id`). Khi `placeholdersJson` đổi mà không gửi `placeholderOrder`, BE tự loại slug đã xoá và nối slug mới vào cuối (nếu template đã có thứ tự). Ví dụ request: `{ "placeholdersJson": {"name":"A","amount":"1"}, "placeholderOrder": ["amount","name"] }` → response có `"placeholderOrder": ["amount","name"]`.
 - `unitPricePerMessage` (VND/tin): chỉ `ADMIN` set; nếu null thì dùng giá mặc định từ `GET /admin/config/message-pricing`.
 
 ### 7.5 Submit template
