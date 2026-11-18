@@ -73,6 +73,31 @@ describe('buildCsvTemplateContent', () => {
     ]);
   });
 
+  it('orders placeholder columns by placeholderOrder, appending missing slugs', () => {
+    const rows = [
+      {
+        id: 'cuid-a',
+        phoneNumber: '84901234567',
+        payloadData: { name: 'Minh', orderId: 'A1' },
+      },
+    ];
+    expect(
+      buildCsvTemplateContent(placeholders, null, rows, [
+        'orderId',
+        'name',
+      ]).split('\n')[0],
+    ).toBe('row_id,Phone,OrderId,Name');
+    expect(
+      buildCsvTemplateContent(placeholders, null, rows, [
+        'orderId',
+        'gone',
+      ]).split('\n')[0],
+    ).toBe('row_id,Phone,OrderId,Name');
+    expect(
+      buildCsvTemplateContent(placeholders, null, rows, null).split('\n')[0],
+    ).toBe('row_id,Phone,Name,OrderId');
+  });
+
   it('round-trips the unedited demo template through import', () => {
     const csv = '﻿' + buildCsvTemplateContent(placeholders, null);
 

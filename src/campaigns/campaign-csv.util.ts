@@ -31,15 +31,30 @@ export type CampaignCsvColumnPlan = {
 
 export function placeholderKeysFromJson(
   placeholdersJson: Record<string, unknown>,
+  placeholderOrder?: unknown,
 ): string[] {
-  return Object.keys(placeholdersJson);
+  const keys = Object.keys(placeholdersJson);
+  if (!Array.isArray(placeholderOrder)) return keys;
+  // Stored order first (ignoring stale/duplicate slugs), then any slug it misses.
+  const ordered: string[] = [];
+  for (const slug of placeholderOrder as unknown[]) {
+    if (
+      typeof slug === 'string' &&
+      keys.includes(slug) &&
+      !ordered.includes(slug)
+    ) {
+      ordered.push(slug);
+    }
+  }
+  return [...ordered, ...keys.filter((key) => !ordered.includes(key))];
 }
 
 export function buildCsvColumnPlan(
   placeholdersJson: Record<string, unknown>,
   placeholderLabels?: Record<string, unknown> | null,
+  placeholderOrder?: unknown,
 ): CampaignCsvColumnPlan {
-  const keys = placeholderKeysFromJson(placeholdersJson);
+  const keys = placeholderKeysFromJson(placeholdersJson, placeholderOrder);
   const fallbackHeaders = keys.map((key) => placeholderKeyToHeader(key));
   const reserved = new Set([
     PHONE_COLUMN.toLowerCase(),
@@ -75,8 +90,13 @@ export function buildCsvTemplateContent(
   placeholdersJson: Record<string, unknown>,
   placeholderLabels?: Record<string, unknown> | null,
   existingRows: ExistingCampaignRowForCsv[] = [],
+  placeholderOrder?: unknown,
 ): string {
-  const plan = buildCsvColumnPlan(placeholdersJson, placeholderLabels);
+  const plan = buildCsvColumnPlan(
+    placeholdersJson,
+    placeholderLabels,
+    placeholderOrder,
+  );
   const headers = [
     ROW_ID_COLUMN,
     plan.phoneColumn,

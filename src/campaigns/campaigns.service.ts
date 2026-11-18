@@ -39,6 +39,7 @@ type CampaignContext = {
     providerTemplateId: string | null;
     placeholdersJson: Prisma.JsonValue;
     placeholder_labels: Prisma.JsonValue;
+    placeholderOrder: Prisma.JsonValue;
     unitPricePerMessage: Prisma.Decimal | null;
     ctaButtons: { unitPrice: number | null; defaultUnitPrice: number | null }[];
     oaConnectionId: string;
@@ -208,6 +209,7 @@ export class CampaignsService {
         placeholders,
         campaign.template.placeholder_labels as Record<string, unknown> | null,
         rows,
+        campaign.template.placeholderOrder,
       )
     );
   }
