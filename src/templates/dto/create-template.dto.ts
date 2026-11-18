@@ -40,7 +40,17 @@ export class CreateTemplateDto {
 
   @IsOptional()
   @IsString()
-  secondaryContent?: string;
+  secondaryContent?: string | null;
+
+  // Second body block. null clears it, omitted keeps it.
+  @IsOptional()
+  @IsString()
+  content2?: string | null;
+
+  // Second secondary block. null clears it, omitted keeps it.
+  @IsOptional()
+  @IsString()
+  secondaryContent2?: string | null;
 
   @IsOptional()
   @IsInt()

@@ -941,3 +941,66 @@ describe('TemplatesService.update placeholderOrder', () => {
     ).rejects.toThrow('Template content can only be edited');
   });
 });
+
+describe('TemplatesService content2 / secondaryContent2', () => {
+  let service: TemplatesService;
+  const stored = {
+    id: 'tpl-1',
+    status: 'DRAFT',
+    requiresOwnerRevision: false,
+    type: TemplateType.TEXT,
+    content: 'Xin chào',
+    placeholdersJson: { a: 'x' },
+    placeholderOrder: null,
+    otpExpiryMinutes: null,
+  };
+  const template = { findFirst: jest.fn(), update: jest.fn() };
+  const lastData = () =>
+    (template.update.mock.calls as [{ data: Record<string, unknown> }][])[0][0]
+      .data;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    template.findFirst.mockResolvedValue(stored);
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        { provide: PrismaService, useValue: { template } },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { resolveCtaDefaultUnitPrice: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('saves content2 / secondaryContent2 / secondaryContent on a TEXT template', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      content2: 'N2',
+      secondaryContent: 'P1',
+      secondaryContent2: 'P2',
+    });
+    expect(lastData()).toMatchObject({
+      content2: 'N2',
+      secondaryContent: 'P1',
+      secondaryContent2: 'P2',
+    });
+  });
+
+  it('null clears and omitted keeps', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      content2: null,
+    });
+    expect(lastData().content2).toBeNull();
+    expect(lastData().secondaryContent2).toBeUndefined();
+  });
+
+  it('blocks content2 edits once the template is locked', async () => {
+    template.findFirst.mockResolvedValue({ ...stored, status: 'APPROVED' });
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, { content2: 'x' }),
+    ).rejects.toThrow('Template content can only be edited');
+  });
+});

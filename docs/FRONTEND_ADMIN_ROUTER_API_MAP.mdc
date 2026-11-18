@@ -333,7 +333,9 @@ Response gồm đầy đủ field (bao gồm `placeholder_labels`) + `workspace`
   "title": "Tiêu đề",
   "trackingId": "tracking-id",
   "content": "Nội dung mới {{placeholder}}",
-  "secondaryContent": "Chỉ dùng cho TABLE",
+  "secondaryContent": "Nội dung phụ 1 (mọi loại)",
+  "content2": "Nội dung 2",
+  "secondaryContent2": "Nội dung phụ 2",
   "otpExpiryMinutes": 5,
   "placeholdersJson": { "placeholder": "Mô tả" },
   "placeholder_labels": { "placeholder": "Nhãn hiển thị cho placeholder" },
@@ -367,9 +369,10 @@ Response gồm đầy đủ field (bao gồm `placeholder_labels`) + `workspace`
 - Đổi `code` trùng với template khác trong cùng workspace → `400 Bad Request` ("Template code already exists in this workspace").
 - `ctaButtons` dùng đúng semantics như `PATCH /workspaces/:workspaceId/templates/:templateId`: object có `id` = update tại chỗ, object không có `id` = tạo mới, button cũ không được liệt kê = xóa. Admin luôn được set `unitPrice` trên CTA (không bị chặn như role khác).
 - `placeholder_labels`: optional, key phải nằm trong `placeholdersJson` hiệu lực (patch nếu có, không thì bản đang lưu) — key lạ → `400 Bad Request` ("placeholder_labels has keys not in placeholdersJson: ..."); value phải là string. Gửi `null` để xóa hết nhãn (FE sẽ fallback hiển thị slug placeholder); không gửi field này thì giữ nguyên nhãn cũ.
+- `content2`, `secondaryContent`, `secondaryContent2`: optional string, `null` để xóa, không gửi thì giữ nguyên; nhận ở mọi loại. Admin sửa ở mọi trạng thái; owner bị khóa (`409`) như `content`. `content`, `content2`, `secondaryContent`, `secondaryContent2` chỉ được lưu và trả lại để hiển thị ở Comvia; BE không thay biến `{{slug}}`, không kiểm tra placeholder trong các field này và không đưa chúng vào nội dung gửi Zalo (gửi thật dùng `providerTemplateId` + `data`, nội dung do template đã duyệt trên Zalo quyết định, `OTP` cũng vậy). Không có giới hạn độ dài ở BE (cột `TEXT`); FE tự đặt bộ đếm. Thứ tự hiển thị gợi ý: tiêu đề, `content`, `content2`, bảng biến (TABLE), `secondaryContent`, `secondaryContent2`, CTA.
 - `placeholderOrder`: optional, `string[] | null` — thứ tự hiển thị các placeholder. Mỗi slug phải nằm trong `placeholdersJson` hiệu lực và không trùng, nếu không → `400` ("placeholderOrder has slugs not in placeholdersJson: ..." / "placeholderOrder has duplicate slugs: ..."). Thiếu slug thì BE nối slug còn thiếu vào cuối theo thứ tự khóa. Khi `placeholdersJson` đổi mà không gửi field này, BE loại slug đã xoá và nối slug mới (nếu template đã có thứ tự). `null` xoá thứ tự (FE suy từ khóa `placeholdersJson`); không gửi thì giữ nguyên. Cũng được trả ở GET list/detail (`null` với template cũ). Admin được sửa ở mọi trạng thái như các field nội dung khác và field này được tính vào cảnh báo lệch Zalo bên dưới.
 
-**Lưu ý đồng bộ Zalo (KHÔNG tự động):** endpoint này **không** gọi API Zalo. Nếu template đang (hoặc sắp) ở `APPROVED` và bạn sửa `name/type/title/content/secondaryContent/otpExpiryMinutes/placeholdersJson/placeholder_labels/placeholderOrder/ctaButtons` trong khi đã có `providerTemplateId`, nội dung hiển thị thật trên Zalo **không đổi theo** — sẽ lệch với dữ liệu Comvia. Backend ghi cảnh báo vào log server (`TemplatesService` logger) và đánh dấu `metadataJson.zaloContentMayBeOutOfSync: true` trong audit log tương ứng — FE nên hiển thị cảnh báo tương tự trước khi submit nếu template đang `APPROVED`.
+**Lưu ý đồng bộ Zalo (KHÔNG tự động):** endpoint này **không** gọi API Zalo. Nếu template đang (hoặc sắp) ở `APPROVED` và bạn sửa `name/type/title/content/content2/secondaryContent/secondaryContent2/otpExpiryMinutes/placeholdersJson/placeholder_labels/placeholderOrder/ctaButtons` trong khi đã có `providerTemplateId`, nội dung hiển thị thật trên Zalo **không đổi theo** — sẽ lệch với dữ liệu Comvia. Backend ghi cảnh báo vào log server (`TemplatesService` logger) và đánh dấu `metadataJson.zaloContentMayBeOutOfSync: true` trong audit log tương ứng — FE nên hiển thị cảnh báo tương tự trước khi submit nếu template đang `APPROVED`.
 
 **Audit log:** mọi lần gọi thành công đều ghi `AuditLog` với `action: "template.admin_overridden"`, `resourceType: "Template"`, `metadataJson` chứa `{ changedFields, before, after, zaloContentMayBeOutOfSync }` — xem lại qua `GET /admin/audit-logs?action=template.admin_overridden`.
 

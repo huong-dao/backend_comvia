@@ -480,11 +480,10 @@ export class TemplatesService {
             placeholderOrder: placeholderOrder
               ? (placeholderOrder as Prisma.InputJsonValue)
               : undefined,
-            // secondaryContent only applies to TABLE templates.
-            secondaryContent:
-              type === TemplateType.TABLE
-                ? (dto.secondaryContent ?? null)
-                : null,
+            content2: dto.content2 ?? null,
+            // secondaryContent / secondaryContent2 are stored for every type.
+            secondaryContent: dto.secondaryContent ?? null,
+            secondaryContent2: dto.secondaryContent2 ?? null,
             otpExpiryMinutes: isOtp ? dto.otpExpiryMinutes : null,
             ctaButtons: ctaButtonsWithSnapshot
               ? {
@@ -513,6 +512,8 @@ export class TemplatesService {
             trackingId: true,
             content: true,
             secondaryContent: true,
+            content2: true,
+            secondaryContent2: true,
             otpExpiryMinutes: true,
             placeholdersJson: true,
             status: true,
@@ -556,6 +557,8 @@ export class TemplatesService {
         content: true,
         trackingId: true,
         secondaryContent: true,
+        content2: true,
+        secondaryContent2: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
@@ -592,6 +595,8 @@ export class TemplatesService {
           content: true,
           trackingId: true,
           secondaryContent: true,
+          content2: true,
+          secondaryContent2: true,
           otpExpiryMinutes: true,
           placeholdersJson: true,
           placeholder_labels: true,
@@ -695,6 +700,8 @@ export class TemplatesService {
         title: true,
         trackingId: true,
         secondaryContent: true,
+        content2: true,
+        secondaryContent2: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
@@ -748,6 +755,8 @@ export class TemplatesService {
         trackingId: true,
         content: true,
         secondaryContent: true,
+        content2: true,
+        secondaryContent2: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
@@ -825,6 +834,8 @@ export class TemplatesService {
       dto.title === undefined &&
       dto.trackingId === undefined &&
       dto.secondaryContent === undefined &&
+      dto.content2 === undefined &&
+      dto.secondaryContent2 === undefined &&
       dto.otpExpiryMinutes === undefined &&
       dto.ctaButtons === undefined
     );
@@ -932,6 +943,8 @@ export class TemplatesService {
       trackingId: adminPriceOnly ? undefined : dto.trackingId,
       content: adminPriceOnly ? undefined : dto.content,
       secondaryContent: adminPriceOnly ? undefined : dto.secondaryContent,
+      content2: adminPriceOnly ? undefined : dto.content2,
+      secondaryContent2: adminPriceOnly ? undefined : dto.secondaryContent2,
       otpExpiryMinutes: adminPriceOnly ? undefined : dto.otpExpiryMinutes,
       placeholdersJson:
         adminPriceOnly || dto.placeholdersJson === undefined
@@ -1267,6 +1280,8 @@ export class TemplatesService {
         trackingId: true,
         content: true,
         secondaryContent: true,
+        content2: true,
+        secondaryContent2: true,
         otpExpiryMinutes: true,
         placeholdersJson: true,
         placeholder_labels: true,
@@ -1342,6 +1357,8 @@ export class TemplatesService {
       'title',
       'content',
       'secondaryContent',
+      'content2',
+      'secondaryContent2',
       'otpExpiryMinutes',
       'placeholdersJson',
       'placeholder_labels',
@@ -1374,6 +1391,8 @@ export class TemplatesService {
       trackingId: dto.trackingId,
       content: dto.content,
       secondaryContent: dto.secondaryContent,
+      content2: dto.content2,
+      secondaryContent2: dto.secondaryContent2,
       otpExpiryMinutes: dto.otpExpiryMinutes,
       placeholdersJson:
         dto.placeholdersJson !== undefined
@@ -1415,6 +1434,8 @@ export class TemplatesService {
       trackingId: template.trackingId,
       content: template.content,
       secondaryContent: template.secondaryContent,
+      content2: template.content2,
+      secondaryContent2: template.secondaryContent2,
       otpExpiryMinutes: template.otpExpiryMinutes,
       placeholdersJson:
         template.placeholdersJson as Prisma.InputJsonValue | null,
@@ -1440,6 +1461,11 @@ export class TemplatesService {
         dto.secondaryContent !== undefined
           ? dto.secondaryContent
           : before.secondaryContent,
+      content2: dto.content2 !== undefined ? dto.content2 : before.content2,
+      secondaryContent2:
+        dto.secondaryContent2 !== undefined
+          ? dto.secondaryContent2
+          : before.secondaryContent2,
       otpExpiryMinutes:
         dto.otpExpiryMinutes !== undefined
           ? dto.otpExpiryMinutes

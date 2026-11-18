@@ -851,14 +851,16 @@ Field mới (BR-05):
 | `title` | string | Không |
 | `trackingId` | string | Không |
 | `content` | string | Bắt buộc khi `TEXT`/`TABLE`; bỏ khi `OTP` |
-| `secondaryContent` | string | Chỉ dùng khi `type = TABLE` ("nội dung phụ") |
+| `secondaryContent` | string \| null | Không — nội dung phụ 1, nhận ở mọi loại (`TEXT`, `TABLE`, `OTP`), không bị bỏ qua. `null` xóa, bỏ qua field thì giữ nguyên (khi PATCH) |
+| `content2` | string \| null | Không — nội dung 2, cùng quy tắc `null`/bỏ qua |
+| `secondaryContent2` | string \| null | Không — nội dung phụ 2, cùng quy tắc `null`/bỏ qua |
 | `otpExpiryMinutes` | int ≥ 1 | Bắt buộc khi `type = OTP` |
 | `placeholder_labels` | object `{ "<slug>": "<nhãn>" }` \| null | Không — bỏ qua hoặc `null` thì lưu `NULL` (FE dùng slug). Mọi value phải là string; mỗi key phải có trong `placeholdersJson`, không có thì `400`. Không cần đủ nhãn cho mọi placeholder |
 | `placeholderOrder` | string[] \| null | Không — thứ tự slug placeholder do user sắp xếp, ví dụ `["amount","name","orderId"]`. Mỗi phần tử phải có trong `placeholdersJson` và không trùng, vi phạm trả `400` (`placeholderOrder has slugs not in placeholdersJson: ...` / `placeholderOrder has duplicate slugs: ...`). Thiếu slug thì BE tự nối các slug còn thiếu vào cuối theo thứ tự khóa của `placeholdersJson`. Gửi `null` để xóa. Bỏ qua field thì giữ nguyên thứ tự đã lưu |
 
 Ghi chú:
 - `code` do backend gán khi tạo: chuỗi **6 chữ số**, random trong khoảng **100000–999999**, **unique trong workspace**. Frontend lấy `code` từ **response** của `POST` (cùng các field như list/get).
-- `type` và `trackingId` là giá trị nội bộ (không map/đối chiếu loại ZNS Zalo). `OTP` yêu cầu `otpExpiryMinutes`; backend chuẩn hóa placeholder `otp` và `phut`, không lưu placeholder null. Khi gửi OTP, `data.otp` và `data.phut` phải là string/number có giá trị. `TABLE` có thêm `secondaryContent`.
+- `type` và `trackingId` là giá trị nội bộ (không map/đối chiếu loại ZNS Zalo). `OTP` yêu cầu `otpExpiryMinutes`; backend chuẩn hóa placeholder `otp` và `phut`, không lưu placeholder null. Khi gửi OTP, `data.otp` và `data.phut` phải là string/number có giá trị. Mọi loại đều có thể có `secondaryContent`. `content`, `content2`, `secondaryContent`, `secondaryContent2` chỉ được lưu và trả lại để hiển thị ở Comvia; BE không thay biến `{{slug}}`, không kiểm tra placeholder trong các field này và không đưa chúng vào nội dung gửi Zalo (gửi thật dùng `providerTemplateId` + `data`, nội dung do template đã duyệt trên Zalo quyết định, `OTP` cũng vậy). Không có giới hạn độ dài ở BE (cột `TEXT`); FE tự đặt bộ đếm. Thứ tự hiển thị gợi ý: tiêu đề, `content`, `content2`, bảng biến (TABLE), `secondaryContent`, `secondaryContent2`, CTA.
 - Các field mới được trả lại ở list/get.
 
 `ctaButtons` là mảng tối đa 2 nút, mỗi nút có `type`, `position` (0 hoặc 1, không trùng), tùy loại có `label`/`target`. Khi PATCH nút cũ gửi `id` UUID để giữ giá; `unitPrice` chỉ ADMIN được đặt. Giá gửi nội bộ, campaign và Public API = giá template (hoặc mặc định hệ thống) + tổng giá CTA (`unitPrice` override, fallback `defaultUnitPrice` snapshot).
@@ -880,7 +882,9 @@ Mỗi phần tử gồm các field:
 | `title` | string \| null | |
 | `content` | string \| null | Nội dung template (có từ list; `OTP` thường không có) |
 | `trackingId` | string \| null | |
-| `secondaryContent` | string \| null | Chỉ có ý nghĩa với `TABLE` |
+| `secondaryContent` | string \| null | Nội dung phụ 1, mọi loại |
+| `content2` | string \| null | Nội dung 2 (`null` với mẫu cũ) |
+| `secondaryContent2` | string \| null | Nội dung phụ 2 (`null` với mẫu cũ) |
 | `otpExpiryMinutes` | int \| null | Chỉ có với `OTP` |
 | `placeholdersJson` | object \| null | Định nghĩa placeholder; `data` khi send phải khớp field này |
 | `placeholder_labels` | object \| null | Nhãn hiển thị theo slug placeholder, ví dụ `{ "name": "Tên khách" }`. `null` (template cũ) nghĩa là FE dùng slug làm nhãn |
