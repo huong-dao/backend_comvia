@@ -862,6 +862,7 @@ Ghi chú:
 - `code` do backend gán khi tạo: chuỗi **6 chữ số**, random trong khoảng **100000–999999**, **unique trong workspace**. Frontend lấy `code` từ **response** của `POST` (cùng các field như list/get).
 - `type` và `trackingId` là giá trị nội bộ (không map/đối chiếu loại ZNS Zalo). `OTP` yêu cầu `otpExpiryMinutes`; backend chuẩn hóa placeholder `otp` và `phut`, không lưu placeholder null. Khi gửi OTP, `data.otp` và `data.phut` phải là string/number có giá trị. Mọi loại đều có thể có `secondaryContent`. `content`, `content2`, `secondaryContent`, `secondaryContent2` chỉ được lưu và trả lại để hiển thị ở Comvia; BE không thay biến `{{slug}}`, không kiểm tra placeholder trong các field này và không đưa chúng vào nội dung gửi Zalo (gửi thật dùng `providerTemplateId` + `data`, nội dung do template đã duyệt trên Zalo quyết định, `OTP` cũng vậy). Không có giới hạn độ dài ở BE (cột `TEXT`); FE tự đặt bộ đếm. Thứ tự hiển thị gợi ý: tiêu đề, `content`, `content2`, bảng biến (TABLE), `secondaryContent`, `secondaryContent2`, CTA.
 - Các field mới được trả lại ở list/get.
+- Response của `POST` có `providerTemplateId` (luôn `null` ngay sau khi tạo; chỉ có giá trị sau khi staff approve).
 
 `ctaButtons` là mảng tối đa 2 nút, mỗi nút có `type`, `position` (0 hoặc 1, không trùng), tùy loại có `label`/`target`. Khi PATCH nút cũ gửi `id` UUID để giữ giá; `unitPrice` chỉ ADMIN được đặt. Giá gửi nội bộ, campaign và Public API = giá template (hoặc mặc định hệ thống) + tổng giá CTA (`unitPrice` override, fallback `defaultUnitPrice` snapshot).
 
@@ -890,6 +891,7 @@ Mỗi phần tử gồm các field:
 | `placeholder_labels` | object \| null | Nhãn hiển thị theo slug placeholder, ví dụ `{ "name": "Tên khách" }`. `null` (template cũ) nghĩa là FE dùng slug làm nhãn |
 | `placeholderOrder` | string[] \| null | Thứ tự các placeholder user đã sắp xếp. BE chỉ trả mảng đã lưu (đã chuẩn hoá: đủ mọi slug hiện có). `null` (template cũ chưa từng sắp xếp) → FE suy ra từ thứ tự khóa của `placeholdersJson`. Dùng thứ tự này cho form, bảng xem trước (TABLE) và hiển thị khi gửi |
 | `status` | enum | Trạng thái duyệt (ví dụ `DRAFT`, `SUBMITTED`, `APPROVED`, `DISABLED`) |
+| `providerTemplateId` | string \| null | ID template ZNS trên Zalo do staff nhập khi approve. `null` khi chưa được duyệt (mọi template `DRAFT`/`SUBMITTED` và template vừa tạo). Cũng có trong response của `POST` (mục 7.1) và `GET /:templateId` |
 | `createdAt` / `updatedAt` | datetime | |
 | `requiresOwnerRevision` | boolean | `true` khi staff trả về để Owner sửa |
 | `revisionReason` | string \| null | Lý do staff trả về |
