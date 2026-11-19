@@ -968,8 +968,27 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=` — `limit` mặc định `100`, tối đa `500`, không có phân trang. Sắp xếp theo `createdAt`.
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request. **Chỉ xử lý các dòng `PENDING`** (dòng `SUCCESS` không bao giờ bị gửi lại) và `totalCharged = unitPrice × số dòng PENDING` của lần chạy đó. Khi run kết thúc, các dòng `FAILED` của run được hoàn tiền một lần. Sau lần gửi đầu, muốn gửi lại: upload `import-csv/reconcile` để đưa dòng `FAILED` về `PENDING` (kèm sửa dữ liệu), rồi gọi `execute`. Nếu không còn dòng `PENDING`, `execute` trả `400`.
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự).
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request. **Chỉ xử lý các dòng `PENDING`** (dòng `SUCCESS` không bao giờ bị gửi lại) và `totalCharged = unitPrice × số dòng PENDING` của lần chạy đó. Khi run kết thúc, các dòng `FAILED` của run được hoàn tiền một lần. Sau lần gửi đầu, muốn gửi lại: upload `import-csv/reconcile` để đưa dòng `FAILED` về `PENDING` (kèm sửa dữ liệu), rồi gọi `execute`. Nếu không còn dòng `PENDING`, `execute` trả `400`. Nếu campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` thì `execute` hoạt động như `/resume` (không tạo run mới, không trừ ví).
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự). Trả `400` khi campaign đang tạm dừng vì OA mất kết nối (xem `resume` bên dưới).
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` — không có body. Tiếp tục campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` (xem mục "Tạm dừng vì OA mất kết nối" bên dưới). Dùng lại run cũ, **không trừ ví lần nữa**. Response `{ "campaignId": "...", "status": "RUNNING", "runId": "..." }`. Lỗi `400`:
+  - Campaign không `PAUSED` hoặc `pauseReason` khác `OA_DISCONNECTED`: `{ "message": "Campaign is not paused because of a disconnected OA" }`.
+  - OA vẫn chưa `CONNECTED`: `{ "code": "OA_NOT_CONNECTED", "message": "Official Account chưa kết nối với Zalo. ..." }` (message tiếng Việt, hiển thị trực tiếp được). FE nên điều hướng user tới trang kết nối OA.
+  - Workspace không `ACTIVE`, hoặc không còn dòng `PENDING` để tiếp tục.
+
+#### Tạm dừng vì OA mất kết nối (`pauseReason`)
+
+`GET/list campaigns` trả thêm field `pauseReason` (`string | null`) trên campaign:
+| `status` | `pauseReason` | Ý nghĩa | FE nên làm |
+|---|---|---|---|
+| `PAUSED` | `"OA_DISCONNECTED"` | OA chưa kết nối / thiếu token / token hết hạn khi đang gửi. Tin **chưa gửi**, các dòng chưa gửi vẫn `PENDING`, tiền đã giữ ở run đó. | Báo "OA mất kết nối", dẫn user kết nối lại OA, hiện nút **Tiếp tục** gọi `/resume` |
+| `PAUSED` | `null` | Cần đối soát (có dòng `RECONCILIATION_REQUIRED`) | Như mô tả đối soát bên dưới |
+| khác | `null` | | |
+
+Quy tắc:
+- Chỉ dùng `pauseReason` để phân biệt hai kiểu `PAUSED`; các giá trị khác (nếu thêm sau này) FE nên xử lý như không rõ và hiển thị trạng thái chung.
+- Khi `pauseReason = "OA_DISCONNECTED"`: `execute` được coi như `resume` (cùng response của `resume`, **không** phải response `QUEUED`), còn `retry` và `import-csv/reconcile` trả `400`. FE nên ẩn các nút này và chỉ cho **Tiếp tục**.
+- Worker kiểm tra OA trước khi gửi mỗi dòng nên không có dòng nào chuyển `FAILED`/`RECONCILIATION_REQUIRED` vì lỗi OA, và không có `MessageLog` mới. `totalPending` vẫn tính các dòng chưa gửi.
+- Resume không tự động: sau khi user kết nối lại OA, campaign vẫn `PAUSED` cho tới khi gọi `/resume`.
 
 Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`). Worker claim `PENDING → PROCESSING` trước khi gọi provider. Chính sách **at-most-once**: `PROCESSING` gặp restart hoặc request mất response trở thành `RECONCILIATION_REQUIRED`, campaign `PAUSED`; FE phải hiển thị trạng thái cần đối soát và không gọi retry cho row này. Chỉ `FAILED` do provider đã trả lỗi xác định mới được retry; refund chỉ xảy ra một lần theo từng campaign run khi run hoàn tất.
 
