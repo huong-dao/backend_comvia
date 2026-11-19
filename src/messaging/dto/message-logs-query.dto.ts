@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { MessageStatus, SendType } from '@prisma/client';
 
 export class MessageLogsQueryDto {
@@ -10,6 +18,11 @@ export class MessageLogsQueryDto {
   @IsOptional()
   @IsEnum(SendType)
   sendType?: SendType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  phoneNumber?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -200,15 +200,32 @@ export class MessagingService {
     status?: MessageStatus,
     sendType?: SendType,
     limit = 50,
+    phoneNumber?: string,
   ) {
+    const phoneFragment = this.toPhoneSearchFragment(phoneNumber);
     return this.prismaService.messageLog.findMany({
       where: {
         workspaceId,
         ...(status ? { status } : {}),
         ...(sendType ? { sendType } : {}),
+        ...(phoneFragment ? { phoneNumber: { contains: phoneFragment } } : {}),
       },
       orderBy: { sentAt: 'desc' },
       take: limit,
     });
+  }
+
+  /**
+   * Chuẩn hóa chuỗi tìm kiếm SĐT: chỉ giữ chữ số, bỏ đầu số quốc gia 84 / số 0
+   * đầu để khớp cả dạng +84… lẫn 0…, và giới hạn 9 số cuối.
+   */
+  private toPhoneSearchFragment(input?: string): string | undefined {
+    const digits = input?.replace(/\D/g, '') ?? '';
+    if (!digits) return undefined;
+    let core = digits;
+    if (core.startsWith('84') && core.length > 9) core = core.slice(2);
+    else if (core.startsWith('0')) core = core.slice(1);
+    if (!core) core = digits;
+    return core.length > 9 ? core.slice(-9) : core;
   }
 }

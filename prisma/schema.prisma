@@ -678,6 +678,7 @@ model MessageLog {
   @@index([workspaceId, sentAt])
   @@index([templateId, sentAt])
   @@index([phoneNumber, sentAt])
+  @@index([workspaceId, phoneNumber])
   @@index([providerMessageId])
 }
 

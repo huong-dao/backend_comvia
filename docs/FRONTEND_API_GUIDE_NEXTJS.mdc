@@ -1133,7 +1133,8 @@ Endpoint:
 Query:
 - `status` (MessageStatus)
 - `sendType` (SendType)
-- `limit` (optional)
+- `limit` (optional, 1–100, mặc định 50; áp dụng sau khi lọc)
+- `phoneNumber` (string, optional): tìm theo SĐT, khớp một phần (contains), AND với các filter khác. BE bỏ ký tự không phải số (khoảng trắng, `.`, `-`, `()`, `+`), bỏ đầu `84`/`0` và dùng tối đa 9 số cuối nên `0912`, `+84 912`, `912` cho kết quả như nhau. Ví dụ: `?phoneNumber=0912&status=SUCCESS&limit=50`
 
 Provider fields có thể dùng trong mỗi MessageLog:
 - `providerMessageId`: mã đối soát `msg_id` của Zalo.

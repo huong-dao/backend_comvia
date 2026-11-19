@@ -43,6 +43,7 @@ export class MessagingController {
       query.status,
       query.sendType,
       query.limit,
+      query.phoneNumber,
     );
   }
 }
