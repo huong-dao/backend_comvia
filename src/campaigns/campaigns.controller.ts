@@ -157,6 +157,15 @@ export class CampaignsController {
     return this.service.execute(workspaceId, campaignId, req.user.id);
   }
 
+  /** Continue a campaign paused because its OA was disconnected. */
+  @Post(':campaignId/resume')
+  resume(
+    @Param('workspaceId') workspaceId: string,
+    @Param('campaignId') campaignId: string,
+  ) {
+    return this.service.resume(workspaceId, campaignId);
+  }
+
   @Post(':campaignId/retry')
   retry(
     @Request() req: { user: { id: string } },

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OaConnectionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ZaloOAuthClient } from '../integrations/zalo/zalo-oauth.client';
@@ -7,6 +7,7 @@ import {
   SEND_ERROR_CODES,
   sendErrorBody,
 } from '../messaging/send-error-messages';
+import { OaUnavailableException } from './oa-unavailable.exception';
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
@@ -35,13 +36,13 @@ export class OaTokenService {
       });
 
     if (!connection || connection.status !== 'CONNECTED') {
-      throw new BadRequestException(
+      throw new OaUnavailableException(
         sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
       );
     }
 
     if (!connection.accessToken || !connection.refreshToken) {
-      throw new BadRequestException(
+      throw new OaUnavailableException(
         sendErrorBody(SEND_ERROR_CODES.OA_TOKEN_MISSING),
       );
     }
@@ -94,7 +95,7 @@ export class OaTokenService {
         },
       });
 
-      throw new BadRequestException(
+      throw new OaUnavailableException(
         sendErrorBody(SEND_ERROR_CODES.OA_TOKEN_EXPIRED),
       );
     }

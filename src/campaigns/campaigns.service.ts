@@ -10,7 +10,12 @@ import {
   WalletTransactionType,
 } from '@prisma/client';
 import { OaMessagingService } from '../oa/oa-messaging.service';
+import { OaUnavailableException } from '../oa/oa-unavailable.exception';
 import { ZaloZnsRejectedError } from '../integrations/zalo/zalo-zns.client';
+import {
+  SEND_ERROR_CODES,
+  sendErrorBody,
+} from '../messaging/send-error-messages';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
@@ -31,6 +36,7 @@ type CampaignContext = {
   oaConnectionId: string;
   templateId: string;
   status: CampaignStatus;
+  pauseReason: string | null;
   lastRunAt: Date | null;
   unitPriceAtCreate: Prisma.Decimal;
   template: {
@@ -49,6 +55,9 @@ type CampaignContext = {
     status: string;
   };
 };
+
+/** Campaign paused because its OA cannot send; resumable via `resume`. */
+export const PAUSE_REASON_OA_DISCONNECTED = 'OA_DISCONNECTED';
 
 @Injectable()
 export class CampaignsService {
@@ -565,6 +574,11 @@ export class CampaignsService {
     operatorUserId: string,
   ) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
+    // Rows left PENDING by an OA pause are already paid for under the paused
+    // run; executing again would hold their cost a second time. Resume instead.
+    if (campaign.pauseReason === PAUSE_REASON_OA_DISCONNECTED) {
+      return this.resume(workspaceId, campaignId);
+    }
     this.assertCanRun(campaign);
 
     const pendingRows = await this.prismaService.campaignRow.findMany({
@@ -591,6 +605,7 @@ export class CampaignsService {
     dto: RetryCampaignDto,
   ) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
+    this.assertCampaignNotOaPaused(campaign);
     this.assertCanRun(campaign);
 
     const rows = await this.prismaService.campaignRow.findMany({
@@ -671,6 +686,7 @@ export class CampaignsService {
         where: { id: campaign.id },
         data: {
           status: 'RUNNING' satisfies CampaignStatus,
+          pauseReason: null,
           unitPriceAtCreate: unitPrice,
         },
       });
@@ -732,7 +748,7 @@ export class CampaignsService {
     if (campaignIds.length) {
       await this.prismaService.campaign.updateMany({
         where: { id: { in: campaignIds } },
-        data: { status: 'PAUSED' satisfies CampaignStatus },
+        data: { status: 'PAUSED' satisfies CampaignStatus, pauseReason: null },
       });
       await Promise.all(campaignIds.map((id) => this.syncCampaignCounters(id)));
     }
@@ -754,21 +770,119 @@ export class CampaignsService {
     });
     if (!row) return this.finalizeCampaignRun(run.id);
 
+    const campaign = await this.getCampaignContextById(run.campaignId);
+
+    // Fail fast before claiming: with the OA down nothing can be sent, so keep
+    // every remaining row PENDING instead of burning through them one by one.
+    if (!(await this.isOaConnected(campaign.oaConnectionId))) {
+      return this.pauseRunForOaUnavailable(run.id, campaign.id);
+    }
+
     const claimed = await this.prismaService.campaignRow.updateMany({
       where: { id: row.id, status: 'PENDING', campaignRunId: run.id },
       data: { status: 'PROCESSING', dispatchStartedAt: new Date() },
     });
     if (!claimed.count) return;
 
-    const campaign = await this.getCampaignContextById(run.campaignId);
-    await this.sendOneRow({
+    const result = await this.sendOneRow({
       campaign,
       row,
       unitPrice: Number(run.unitPrice),
       operatorUserId: run.operatorUserId,
       isRetry: row.retryCount > 0,
     });
+    if (result.oaUnavailable) {
+      return this.pauseRunForOaUnavailable(run.id, campaign.id);
+    }
     await this.syncCampaignCounters(campaign.id);
+  }
+
+  private async isOaConnected(workspaceOaId: string): Promise<boolean> {
+    const connection =
+      await this.prismaService.workspaceOaConnection.findUnique({
+        where: { workspaceOaId },
+        select: { status: true },
+      });
+    return connection?.status === 'CONNECTED';
+  }
+
+  /**
+   * Pauses a run whose OA cannot send. Rows stay PENDING under the same run, so
+   * the wallet hold is kept (no refund, no second charge) and `resume` simply
+   * continues where the run stopped.
+   */
+  private async pauseRunForOaUnavailable(runId: string, campaignId: string) {
+    await this.prismaService.$transaction([
+      this.prismaService.campaignRun.updateMany({
+        where: { id: runId, status: 'RUNNING' },
+        data: { status: 'PAUSED' satisfies CampaignRunStatus },
+      }),
+      this.prismaService.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'PAUSED' satisfies CampaignStatus,
+          pauseReason: PAUSE_REASON_OA_DISCONNECTED,
+        },
+      }),
+    ]);
+    await this.syncCampaignCounters(campaignId);
+  }
+
+  /**
+   * Continues a campaign paused because its OA was disconnected. Reuses the
+   * original run (and its wallet hold) — it never charges again.
+   */
+  async resume(workspaceId: string, campaignId: string) {
+    const campaign = await this.getCampaignContext(workspaceId, campaignId);
+    if (
+      campaign.status !== 'PAUSED' ||
+      campaign.pauseReason !== PAUSE_REASON_OA_DISCONNECTED
+    ) {
+      throw new BadRequestException(
+        'Campaign is not paused because of a disconnected OA',
+      );
+    }
+    if (campaign.workspace.status !== 'ACTIVE') {
+      throw new BadRequestException('Workspace is not active');
+    }
+    if (!(await this.isOaConnected(campaign.oaConnectionId))) {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
+      );
+    }
+
+    const pendingRow = await this.prismaService.campaignRow.findFirst({
+      where: {
+        campaignId: campaign.id,
+        status: 'PENDING',
+        campaignRunId: { not: null },
+      },
+      select: { campaignRunId: true },
+    });
+    const runId = pendingRow?.campaignRunId;
+    if (!runId) {
+      throw new BadRequestException('Campaign has no pending rows to resume');
+    }
+
+    await this.prismaService.$transaction(async (tx) => {
+      const resumed = await tx.campaignRun.updateMany({
+        where: { id: runId, status: 'PAUSED' },
+        data: { status: 'RUNNING' satisfies CampaignRunStatus },
+      });
+      if (!resumed.count) {
+        throw new BadRequestException('Campaign run is not paused');
+      }
+      await tx.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'RUNNING' satisfies CampaignStatus,
+          pauseReason: null,
+        },
+      });
+    });
+
+    await this.syncCampaignCounters(campaign.id);
+    return { campaignId: campaign.id, status: 'RUNNING', runId };
   }
 
   private async sendOneRow(params: {
@@ -777,7 +891,7 @@ export class CampaignsService {
     unitPrice: number;
     operatorUserId: string;
     isRetry: boolean;
-  }): Promise<{ success: boolean }> {
+  }): Promise<{ success: boolean; oaUnavailable?: boolean }> {
     const { campaign, row, unitPrice, operatorUserId } = params;
     const templateData = row.payloadData as Record<string, unknown>;
     const payloadSnapshot = {
@@ -830,6 +944,20 @@ export class CampaignsService {
 
       return { success: true };
     } catch (error) {
+      // OA disconnected / token missing or expired: thrown before Zalo was
+      // called, so the row is certainly unsent. Put it back in the queue with
+      // no MessageLog; the caller pauses the run until the OA is reconnected.
+      if (error instanceof OaUnavailableException) {
+        await this.prismaService.campaignRow.update({
+          where: { id: row.id },
+          data: {
+            status: 'PENDING' satisfies CampaignRowStatus,
+            dispatchStartedAt: null,
+          },
+        });
+        return { success: false, oaUnavailable: true };
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : 'Zalo ZNS send failed';
 
@@ -905,7 +1033,7 @@ export class CampaignsService {
         });
         await tx.campaign.update({
           where: { id: run.campaignId },
-          data: { status: 'PAUSED' },
+          data: { status: 'PAUSED', pauseReason: null },
         });
         return;
       }
@@ -941,6 +1069,7 @@ export class CampaignsService {
         where: { id: run.campaignId },
         data: {
           status: 'COMPLETED',
+          pauseReason: null,
           lastRunAt: new Date(),
           unitPriceAtCreate: run.unitPrice,
         },
@@ -1172,7 +1301,16 @@ export class CampaignsService {
     }
   }
 
+  private assertCampaignNotOaPaused(campaign: CampaignContext) {
+    if (campaign.pauseReason === PAUSE_REASON_OA_DISCONNECTED) {
+      throw new BadRequestException(
+        'Campaign is paused because the OA is disconnected; reconnect the OA and resume it first',
+      );
+    }
+  }
+
   private assertCanReconcile(campaign: CampaignContext) {
+    this.assertCampaignNotOaPaused(campaign);
     if (campaign.status === 'CANCELLED') {
       throw new BadRequestException('Campaign is cancelled');
     }

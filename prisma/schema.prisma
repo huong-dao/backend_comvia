@@ -718,6 +718,9 @@ model Campaign {
   templateId           String
   name                 String
   status               CampaignStatus @default(DRAFT)
+  // Why a PAUSED campaign stopped, e.g. OA_DISCONNECTED (resumable via /resume
+  // once the OA is reconnected). Null when not paused or paused for reconciliation.
+  pauseReason          String?
   totalData            Int            @default(0)
   totalValid           Int            @default(0)
   totalInvalid         Int            @default(0)
