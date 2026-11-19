@@ -122,9 +122,14 @@ export class CampaignsService {
       data.name = dto.name;
     }
 
-    if (dto.templateId !== undefined && dto.templateId !== campaign.templateId) {
+    if (
+      dto.templateId !== undefined &&
+      dto.templateId !== campaign.templateId
+    ) {
       if (campaign.status === 'RUNNING') {
-        throw new BadRequestException('Cannot change template while campaign is running');
+        throw new BadRequestException(
+          'Cannot change template while campaign is running',
+        );
       }
       if (campaign.lastRunAt != null) {
         throw new BadRequestException(

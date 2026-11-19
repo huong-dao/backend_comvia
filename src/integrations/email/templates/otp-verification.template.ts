@@ -29,7 +29,10 @@ function resolveLogo(filename: string, cid: string) {
 function formatOtpDigits(otpCode: string): string {
   return otpCode
     .split('')
-    .map((digit) => `<span style="display:inline-block;min-width:28px;text-align:center;">${digit}</span>`)
+    .map(
+      (digit) =>
+        `<span style="display:inline-block;min-width:28px;text-align:center;">${digit}</span>`,
+    )
     .join('<span style="display:inline-block;width:12px;"></span>');
 }
 
