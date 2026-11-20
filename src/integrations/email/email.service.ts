@@ -37,10 +37,16 @@ export class EmailService {
     }
 
     const smtpUser = this.configService.get<string>('email.smtpUser');
-    const smtpPass = this.configService.get<string>('email.smtpPass');
+    const clientId = this.configService.get<string>('email.googleClientId');
+    const clientSecret = this.configService.get<string>(
+      'email.googleClientSecret',
+    );
+    const refreshToken = this.configService.get<string>(
+      'email.googleRefreshToken',
+    );
 
-    if (!smtpUser || !smtpPass) {
-      throw new InternalServerErrorException('SMTP chưa được cấu hình');
+    if (!smtpUser || !clientId || !clientSecret || !refreshToken) {
+      throw new InternalServerErrorException('Gmail OAuth2 chưa được cấu hình');
     }
 
     this.transporter = nodemailer.createTransport({
@@ -48,8 +54,11 @@ export class EmailService {
       port: this.configService.get<number>('email.smtpPort'),
       secure: this.configService.get<boolean>('email.smtpSecure'),
       auth: {
+        type: 'OAuth2',
         user: smtpUser,
-        pass: smtpPass,
+        clientId,
+        clientSecret,
+        refreshToken,
       },
     });
 
