@@ -191,7 +191,7 @@ describe('AnalyticsService', () => {
       expect(result.activeTemplates.changePercent).toBeNull();
     });
 
-    it('đếm "tin đã gửi" chỉ lọc sentAt trong kỳ, không lọc status (PENDING sentAt=null tự loại)', async () => {
+    it('đếm "tin đã gửi" chỉ tính SUCCESS có sentAt trong kỳ (tin lỗi cũng có sentAt nhưng không tính)', async () => {
       messageLogCount.mockResolvedValue(0);
       templateCount.mockResolvedValue(0);
 
@@ -199,8 +199,7 @@ describe('AnalyticsService', () => {
 
       const sentCall = messageLogCount.mock.calls[0][0];
       expect(sentCall.where).toHaveProperty('sentAt');
-      expect(sentCall.where).not.toHaveProperty('status');
-      expect(sentCall.where).toMatchObject({ workspaceId });
+      expect(sentCall.where).toMatchObject({ workspaceId, status: 'SUCCESS' });
     });
 
     it('tỷ lệ thành công: mẫu số 0 → value=null; snapshot APPROVED dùng TemplateStatus.APPROVED', async () => {

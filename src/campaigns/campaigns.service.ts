@@ -14,8 +14,14 @@ import { OaUnavailableException } from '../oa/oa-unavailable.exception';
 import { ZaloZnsRejectedError } from '../integrations/zalo/zalo-zns.client';
 import {
   SEND_ERROR_CODES,
+  SEND_ERROR_MESSAGES,
+  type SendErrorCode,
   sendErrorBody,
 } from '../messaging/send-error-messages';
+import {
+  failureReasonFromError,
+  recordFailedMessage,
+} from '../messaging/message-failure-log';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
@@ -807,9 +813,18 @@ export class CampaignsService {
       isRetry: row.retryCount > 0,
     });
     if (result.oaUnavailable) {
-      return this.pauseRun(run.id, campaign.id, PAUSE_REASON_OA_DISCONNECTED);
+      return this.pauseRun(
+        run.id,
+        campaign.id,
+        PAUSE_REASON_OA_DISCONNECTED,
+        result.failureReason,
+      );
     }
     await this.syncCampaignCounters(campaign.id);
+  }
+
+  private pendingReason(code: SendErrorCode): string {
+    return `${code}: ${SEND_ERROR_MESSAGES[code]}`;
   }
 
   private async isOaConnected(workspaceOaId: string): Promise<boolean> {
@@ -833,8 +848,24 @@ export class CampaignsService {
    * the wallet hold is kept (no refund, no second charge) and `resume` simply
    * continues where the run stopped.
    */
-  private async pauseRun(runId: string, campaignId: string, reason: string) {
+  private async pauseRun(
+    runId: string,
+    campaignId: string,
+    reason: string,
+    rowFailureReason?: string,
+  ) {
+    // Every row left waiting records why it was not sent, so no message is
+    // without a reason. Cleared again by `resume`, or overwritten on send.
+    const pendingRowReason =
+      rowFailureReason ??
+      (reason === PAUSE_REASON_OA_DISCONNECTED
+        ? this.pendingReason(SEND_ERROR_CODES.OA_NOT_CONNECTED)
+        : this.pendingReason(SEND_ERROR_CODES.SUBSCRIPTION_EXPIRED));
     await this.prismaService.$transaction([
+      this.prismaService.campaignRow.updateMany({
+        where: { campaignRunId: runId, status: 'PENDING' },
+        data: { failureReason: pendingRowReason },
+      }),
       this.prismaService.campaignRun.updateMany({
         where: { id: runId, status: 'RUNNING' },
         data: { status: 'PAUSED' satisfies CampaignRunStatus },
@@ -893,6 +924,11 @@ export class CampaignsService {
       if (!resumed.count) {
         throw new BadRequestException('Campaign run is not paused');
       }
+      // Drop the "waiting because OA/subscription" reason; rows are queued again.
+      await tx.campaignRow.updateMany({
+        where: { campaignRunId: runId, status: 'PENDING' },
+        data: { failureReason: null },
+      });
       await tx.campaign.update({
         where: { id: campaign.id },
         data: {
@@ -912,7 +948,11 @@ export class CampaignsService {
     unitPrice: number;
     operatorUserId: string;
     isRetry: boolean;
-  }): Promise<{ success: boolean; oaUnavailable?: boolean }> {
+  }): Promise<{
+    success: boolean;
+    oaUnavailable?: boolean;
+    failureReason?: string;
+  }> {
     const { campaign, row, unitPrice, operatorUserId } = params;
     const templateData = row.payloadData as Record<string, unknown>;
     const payloadSnapshot = {
@@ -967,7 +1007,8 @@ export class CampaignsService {
     } catch (error) {
       // OA disconnected / token missing or expired: thrown before Zalo was
       // called, so the row is certainly unsent. Put it back in the queue with
-      // no MessageLog; the caller pauses the run until the OA is reconnected.
+      // no MessageLog; the caller pauses the run until the OA is reconnected
+      // and stamps the reason on the pending rows (CampaignRow.failureReason).
       if (error instanceof OaUnavailableException) {
         await this.prismaService.campaignRow.update({
           where: { id: row.id },
@@ -976,32 +1017,33 @@ export class CampaignsService {
             dispatchStartedAt: null,
           },
         });
-        return { success: false, oaUnavailable: true };
+        return {
+          success: false,
+          oaUnavailable: true,
+          failureReason: failureReasonFromError(error, 500),
+        };
       }
-
-      const errorMessage =
-        error instanceof Error ? error.message : 'Zalo ZNS send failed';
 
       // Only a parsed provider rejection is safe to retry. A network failure or
       // lost response is ambiguous and must not be resent automatically.
       const isConfirmedFailure = error instanceof ZaloZnsRejectedError;
-      const messageLog = await this.prismaService.messageLog.create({
-        data: {
-          workspaceId: campaign.workspaceId,
-          oaConnectionId: campaign.oaConnectionId,
-          templateId: campaign.templateId,
-          sendType: 'CAMPAIGN' satisfies SendType,
-          phoneNumber: row.phoneNumber,
-          payloadSnapshot,
-          status: (isConfirmedFailure
-            ? 'FAILED'
-            : 'PENDING') satisfies MessageStatus,
-          errorCode: errorMessage.slice(0, 255),
-          costAtTime: unitPrice,
-          operatorUserId,
-        },
+      const messageLogId = await recordFailedMessage(this.prismaService, {
+        workspaceId: campaign.workspaceId,
+        oaConnectionId: campaign.oaConnectionId,
+        templateId: campaign.templateId,
+        sendType: 'CAMPAIGN' satisfies SendType,
+        phoneNumber: row.phoneNumber,
+        payloadSnapshot,
+        error,
+        costAtTime: unitPrice,
+        operatorUserId,
+        status: isConfirmedFailure ? 'FAILED' : 'PENDING',
       });
 
+      const reason = failureReasonFromError(
+        error,
+        isConfirmedFailure ? 500 : 440,
+      );
       await this.prismaService.campaignRow.update({
         where: { id: row.id },
         data: {
@@ -1009,9 +1051,9 @@ export class CampaignsService {
             ? 'FAILED'
             : 'RECONCILIATION_REQUIRED') satisfies CampaignRowStatus,
           failureReason: isConfirmedFailure
-            ? errorMessage.slice(0, 500)
-            : `Dispatch outcome requires reconciliation: ${errorMessage.slice(0, 440)}`,
-          messageLogId: messageLog.id,
+            ? reason
+            : `Dispatch outcome requires reconciliation: ${reason}`,
+          messageLogId: messageLogId ?? null,
           dispatchStartedAt: null,
         },
       });

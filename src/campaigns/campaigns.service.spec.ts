@@ -65,7 +65,7 @@ function build(opts: {
     update: jest.fn().mockResolvedValue({}),
   };
   const messageLog = { create: jest.fn() };
-  const tx = { campaignRun, campaign };
+  const tx = { campaignRun, campaign, campaignRow };
   const prisma = {
     campaignRow,
     campaignRun,
@@ -104,7 +104,14 @@ describe('CampaignsService OA-unavailable handling', () => {
 
     await (service as any).processCampaignRun('run-1');
 
-    expect(prisma.campaignRow.updateMany).not.toHaveBeenCalled();
+    // No row is claimed (PROCESSING); pending rows only get the waiting reason.
+    expect(prisma.campaignRow.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.campaignRow.updateMany).toHaveBeenCalledWith({
+      where: { campaignRunId: 'run-1', status: 'PENDING' },
+      data: {
+        failureReason: expect.stringMatching(/^OA_NOT_CONNECTED: /),
+      },
+    });
     expect(oaMessaging.dispatchZnsTemplate).not.toHaveBeenCalled();
     expect(prisma.messageLog.create).not.toHaveBeenCalled();
     expect(prisma.campaignRun.updateMany).toHaveBeenCalledWith({
@@ -124,7 +131,13 @@ describe('CampaignsService OA-unavailable handling', () => {
 
     await (service as any).processCampaignRun('run-1');
 
-    expect(prisma.campaignRow.updateMany).not.toHaveBeenCalled();
+    expect(prisma.campaignRow.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.campaignRow.updateMany).toHaveBeenCalledWith({
+      where: { campaignRunId: 'run-1', status: 'PENDING' },
+      data: {
+        failureReason: expect.stringMatching(/^SUBSCRIPTION_EXPIRED: /),
+      },
+    });
     expect(oaMessaging.dispatchZnsTemplate).not.toHaveBeenCalled();
     expect(prisma.campaign.update).toHaveBeenCalledWith({
       where: { id: 'camp-1' },
@@ -149,6 +162,11 @@ describe('CampaignsService OA-unavailable handling', () => {
       where: { id: 'row-1' },
       data: { status: 'PENDING', dispatchStartedAt: null },
     });
+    // The specific cause (token expired) is stamped on the waiting rows.
+    expect(prisma.campaignRow.updateMany).toHaveBeenCalledWith({
+      where: { campaignRunId: 'run-1', status: 'PENDING' },
+      data: { failureReason: expect.stringMatching(/^OA_TOKEN_EXPIRED: /) },
+    });
     expect(prisma.campaign.update).toHaveBeenCalledWith({
       where: { id: 'camp-1' },
       data: { status: 'PAUSED', pauseReason: 'OA_DISCONNECTED' },
@@ -164,7 +182,11 @@ describe('CampaignsService OA-unavailable handling', () => {
 
     expect(prisma.messageLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'PENDING' }),
+        data: expect.objectContaining({
+          status: 'PENDING',
+          errorCode: 'SEND_FAILED: socket hang up',
+          sentAt: expect.any(Date),
+        }),
       }),
     );
     expect(prisma.campaignRow.update).toHaveBeenCalledWith(

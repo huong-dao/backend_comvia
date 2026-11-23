@@ -70,6 +70,103 @@ describe('PublicApiService.sendSingle pricing', () => {
   });
 });
 
+describe('PublicApiService.sendSingle failure logging', () => {
+  function build(oaStatus = 'CONNECTED', dispatch = jest.fn()) {
+    const messageLog = {
+      create: jest.fn().mockResolvedValue({ id: 'log-1' }),
+    };
+    const prisma = {
+      template: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'template-1',
+          type: 'TEXT',
+          workspaceId: 'workspace-1',
+          status: 'APPROVED',
+          oaConnectionId: 'oa-1',
+          content: 'content',
+          providerTemplateId: 'provider-1',
+          unitPricePerMessage: 400,
+          ctaButtons: [],
+        }),
+      },
+      workspaceOaConnection: {
+        findUnique: jest.fn().mockResolvedValue({ status: oaStatus }),
+      },
+      workspace: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+          status: 'ACTIVE',
+          ownerUserId: 'owner-1',
+        }),
+      },
+      walletAccount: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ ownerUserId: 'owner-1', balance: 1_000 }),
+      },
+      messageLog,
+    };
+    const service = new PublicApiService(
+      prisma as never,
+      { dispatchZnsTemplate: dispatch } as never,
+      {} as never,
+      { resolveTemplateUnitPrice: jest.fn().mockResolvedValue(400) } as never,
+      { assertCanSend: jest.fn() } as never,
+    );
+    return { service, prisma };
+  }
+
+  const request = {
+    templateId: 'template-1',
+    phoneNumber: '0900000000',
+    data: {},
+  };
+
+  it('logs a FAILED MessageLog with reason and time when the OA is not connected', async () => {
+    const { service, prisma } = build('NOT_CONNECTED');
+
+    await expect(
+      service.sendSingle({ workspaceId: 'workspace-1' }, request),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'OA is not connected',
+        code: 'OA_NOT_CONNECTED',
+        messageLogId: 'log-1',
+      },
+    });
+
+    expect(prisma.messageLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: 'FAILED',
+        sendType: 'SINGLE',
+        errorCode: expect.stringMatching(/^OA_NOT_CONNECTED: /),
+        sentAt: expect.any(Date),
+        operatorUserId: null,
+      }),
+    });
+  });
+
+  it('logs dispatch failures with the reason and time', async () => {
+    const { service, prisma } = build(
+      'CONNECTED',
+      jest.fn().mockRejectedValue(new Error('socket hang up')),
+    );
+
+    await expect(
+      service.sendSingle({ workspaceId: 'workspace-1' }, request),
+    ).rejects.toMatchObject({
+      response: { message: 'socket hang up', messageLogId: 'log-1' },
+    });
+
+    expect(prisma.messageLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        errorCode: 'SEND_FAILED: socket hang up',
+        sentAt: expect.any(Date),
+      }),
+    });
+  });
+});
+
 describe('PublicApiService workspace status', () => {
   it('does not expose templates from a disabled workspace', async () => {
     const prisma = {

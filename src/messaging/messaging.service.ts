@@ -18,6 +18,16 @@ import {
   sendErrorBody,
   toSendErrorBody,
 } from './send-error-messages';
+import { recordFailedMessage, withMessageLogId } from './message-failure-log';
+
+type SendTemplate = {
+  type: string;
+  status: string;
+  providerTemplateId: string | null;
+  oaConnectionId: string;
+  unitPricePerMessage: Prisma.Decimal | null;
+  ctaButtons: { unitPrice: number | null; defaultUnitPrice: number | null }[];
+};
 
 @Injectable()
 export class MessagingService {
@@ -34,8 +44,10 @@ export class MessagingService {
     operatorUserId: string,
     dto: SendSingleDto,
   ) {
+    // Scoped by workspace only: an unapproved template must still resolve so
+    // the rejection can be logged against it (MessageLog needs a templateId).
     const template = await this.prismaService.template.findFirst({
-      where: { id: dto.templateId, workspaceId, status: 'APPROVED' },
+      where: { id: dto.templateId, workspaceId },
       select: {
         id: true,
         type: true,
@@ -51,70 +63,9 @@ export class MessagingService {
     });
 
     if (!template) {
+      // No template row means no FK target for a MessageLog: nothing to log against.
       throw new BadRequestException(
         sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_APPROVED),
-      );
-    }
-
-    if (!template.providerTemplateId) {
-      throw new BadRequestException(
-        sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_SYNCED),
-      );
-    }
-
-    if (template.type === 'OTP') {
-      assertOtpPayloadData(dto.data);
-    }
-
-    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
-    // connection is reached via workspaceOaId.
-    const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { workspaceOaId: template.oaConnectionId },
-      select: { status: true },
-    });
-
-    if (!oa || oa.status !== 'CONNECTED') {
-      throw new BadRequestException(
-        sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
-      );
-    }
-
-    const workspace = await this.prismaService.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { id: true, ownerUserId: true, status: true },
-    });
-    if (!workspace || workspace.status !== 'ACTIVE') {
-      throw new BadRequestException(
-        sendErrorBody(SEND_ERROR_CODES.WORKSPACE_INACTIVE),
-      );
-    }
-
-    // Subscription phải còn hạn mới được gửi (kiểm tra trước khi đụng tới ví).
-    await this.subscriptionAccessService.assertCanSend(workspaceId);
-
-    const wallet = await this.prismaService.walletAccount.findUnique({
-      where: { ownerUserId: workspace.ownerUserId },
-      select: { ownerUserId: true, balance: true },
-    });
-    if (!wallet) {
-      throw new BadRequestException(
-        sendErrorBody(SEND_ERROR_CODES.WALLET_NOT_INITIALIZED),
-      );
-    }
-
-    const unitCost =
-      (await this.systemConfigService.resolveTemplateUnitPrice(
-        template.unitPricePerMessage,
-      )) +
-      template.ctaButtons.reduce(
-        (sum, button) =>
-          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
-        0,
-      );
-    const walletBefore = Number(wallet.balance);
-    if (walletBefore < unitCost) {
-      throw new BadRequestException(
-        sendErrorBody(SEND_ERROR_CODES.INSUFFICIENT_CREDIT),
       );
     }
 
@@ -124,6 +75,24 @@ export class MessagingService {
       data: dto.data,
     } as Prisma.InputJsonValue;
 
+    let preflight: Awaited<ReturnType<MessagingService['preflight']>>;
+    try {
+      preflight = await this.preflight(workspaceId, template, dto);
+    } catch (error) {
+      const failedLogId = await recordFailedMessage(this.prismaService, {
+        workspaceId,
+        oaConnectionId: template.oaConnectionId,
+        templateId: template.id,
+        sendType: 'SINGLE' satisfies SendType,
+        phoneNumber: dto.phoneNumber,
+        payloadSnapshot,
+        error,
+        operatorUserId,
+      });
+      throw withMessageLogId(error, failedLogId);
+    }
+    const { workspace, unitCost } = preflight;
+
     let dispatchResult: Awaited<
       ReturnType<OaMessagingService['dispatchZnsTemplate']>
     >;
@@ -131,30 +100,24 @@ export class MessagingService {
       dispatchResult = await this.oaMessagingService.dispatchZnsTemplate({
         oaConnectionId: template.oaConnectionId,
         phoneNumber: dto.phoneNumber,
-        providerTemplateId: template.providerTemplateId,
+        providerTemplateId: template.providerTemplateId!,
         templateData: dto.data,
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Zalo ZNS send failed';
-
-      const failedLog = await this.prismaService.messageLog.create({
-        data: {
-          workspaceId: workspace.id,
-          oaConnectionId: template.oaConnectionId,
-          templateId: template.id,
-          sendType: 'SINGLE' satisfies SendType,
-          phoneNumber: dto.phoneNumber,
-          payloadSnapshot,
-          status: 'FAILED' satisfies MessageStatus,
-          errorCode: errorMessage.slice(0, 255),
-          operatorUserId,
-        },
+      const failedLogId = await recordFailedMessage(this.prismaService, {
+        workspaceId: workspace.id,
+        oaConnectionId: template.oaConnectionId,
+        templateId: template.id,
+        sendType: 'SINGLE' satisfies SendType,
+        phoneNumber: dto.phoneNumber,
+        payloadSnapshot,
+        error,
+        operatorUserId,
       });
 
       throw new BadRequestException({
         ...toSendErrorBody(error),
-        messageLogId: failedLog.id,
+        messageLogId: failedLogId,
       });
     }
 
@@ -198,6 +161,87 @@ export class MessagingService {
         messageLogId: messageLog.id,
       };
     });
+  }
+
+  /**
+   * Every check that can reject a send before Zalo is called. Throws on the
+   * first failure; the caller records it as a FAILED MessageLog.
+   */
+  private async preflight(
+    workspaceId: string,
+    template: SendTemplate,
+    dto: SendSingleDto,
+  ): Promise<{
+    workspace: { id: string; ownerUserId: string };
+    unitCost: number;
+  }> {
+    if (template.status !== 'APPROVED') {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_APPROVED),
+      );
+    }
+
+    if (!template.providerTemplateId) {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.TEMPLATE_NOT_SYNCED),
+      );
+    }
+
+    if (template.type === 'OTP') {
+      assertOtpPayloadData(dto.data);
+    }
+
+    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
+    // connection is reached via workspaceOaId.
+    const oa = await this.prismaService.workspaceOaConnection.findUnique({
+      where: { workspaceOaId: template.oaConnectionId },
+      select: { status: true },
+    });
+    if (!oa || oa.status !== 'CONNECTED') {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
+      );
+    }
+
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, ownerUserId: true, status: true },
+    });
+    if (!workspace || workspace.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.WORKSPACE_INACTIVE),
+      );
+    }
+
+    // Subscription phải còn hạn mới được gửi (kiểm tra trước khi đụng tới ví).
+    await this.subscriptionAccessService.assertCanSend(workspaceId);
+
+    const wallet = await this.prismaService.walletAccount.findUnique({
+      where: { ownerUserId: workspace.ownerUserId },
+      select: { ownerUserId: true, balance: true },
+    });
+    if (!wallet) {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.WALLET_NOT_INITIALIZED),
+      );
+    }
+
+    const unitCost =
+      (await this.systemConfigService.resolveTemplateUnitPrice(
+        template.unitPricePerMessage,
+      )) +
+      template.ctaButtons.reduce(
+        (sum, button) =>
+          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
+        0,
+      );
+    if (Number(wallet.balance) < unitCost) {
+      throw new BadRequestException(
+        sendErrorBody(SEND_ERROR_CODES.INSUFFICIENT_CREDIT),
+      );
+    }
+
+    return { workspace, unitCost };
   }
 
   listMessageLogs(

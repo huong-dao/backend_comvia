@@ -27,7 +27,7 @@ export interface MetricValue {
 export interface AnalyticsOverview {
   period: AnalyticsPeriod;
   range: PeriodRanges;
-  /** Tin nhắn đã gửi = số MessageLog có sentAt trong kỳ (PENDING sentAt=null tự loại). */
+  /** Tin nhắn đã gửi = số MessageLog SUCCESS có sentAt trong kỳ (tin FAILED/PENDING không tính). */
   messagesSent: MetricValue;
   /** Tỷ lệ gửi thành công (%) = SUCCESS/(SUCCESS+FAILED); mẫu số 0 → value=null. */
   successRate: MetricValue;
@@ -155,11 +155,15 @@ export class AnalyticsService {
     };
   }
 
-  /** Đếm MessageLog có sentAt trong [start, end) — null tự loại vì so sánh gte/lt. */
+  /**
+   * Đếm MessageLog gửi thành công có sentAt trong [start, end). Tin lỗi cũng có
+   * sentAt (thời điểm thử gửi) nhưng không tính là "đã gửi".
+   */
   private countSent(workspaceId: string, range: PeriodRange): Promise<number> {
     return this.prismaService.messageLog.count({
       where: {
         workspaceId,
+        status: 'SUCCESS',
         sentAt: { gte: range.start, lt: range.end },
       },
     });

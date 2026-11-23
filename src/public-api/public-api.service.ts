@@ -6,6 +6,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { SubscriptionAccessService } from '../subscriptions/subscription-access.service';
+import {
+  recordFailedMessage,
+  withMessageLogId,
+} from '../messaging/message-failure-log';
+import {
+  SEND_ERROR_CODES,
+  type SendErrorCode,
+} from '../messaging/send-error-messages';
 
 type PublicRequestContext = {
   workspaceId: string;
@@ -102,65 +110,9 @@ export class PublicApiService {
       },
     });
 
-    if (!template || template.status !== 'APPROVED') {
+    if (!template) {
+      // No template row means no FK target for a MessageLog: nothing to log against.
       throw new BadRequestException('Template not approved');
-    }
-
-    if (!template.providerTemplateId) {
-      throw new BadRequestException(
-        'Template is missing Zalo providerTemplateId',
-      );
-    }
-
-    if (template.type === 'OTP') {
-      assertOtpPayloadData(dto.data);
-    }
-
-    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
-    // connection is reached via workspaceOaId.
-    const oa = await this.prismaService.workspaceOaConnection.findUnique({
-      where: { workspaceOaId: template.oaConnectionId },
-      select: { status: true },
-    });
-
-    if (!oa || oa.status !== 'CONNECTED') {
-      throw new BadRequestException('OA is not connected');
-    }
-
-    const workspace = await this.prismaService.workspace.findUnique({
-      where: { id: ctx.workspaceId },
-      select: { id: true, status: true, ownerUserId: true },
-    });
-
-    if (!workspace || workspace.status !== 'ACTIVE') {
-      throw new BadRequestException('Workspace is not active');
-    }
-
-    // Subscription phải còn hạn mới được gửi.
-    await this.subscriptionAccessService.assertCanSend(ctx.workspaceId);
-
-    const unitCost =
-      (await this.systemConfigService.resolveTemplateUnitPrice(
-        template.unitPricePerMessage,
-      )) +
-      template.ctaButtons.reduce(
-        (sum, button) =>
-          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
-        0,
-      );
-
-    const wallet = await this.prismaService.walletAccount.findUnique({
-      where: { ownerUserId: workspace.ownerUserId },
-      select: { ownerUserId: true, balance: true },
-    });
-
-    if (!wallet) {
-      throw new BadRequestException('Wallet not initialized');
-    }
-
-    const balanceNumber = Number(wallet.balance);
-    if (balanceNumber < unitCost) {
-      throw new BadRequestException('Insufficient credit');
     }
 
     const payloadSnapshot: Prisma.InputJsonValue = {
@@ -169,6 +121,24 @@ export class PublicApiService {
       data: dto.data,
     } as Prisma.InputJsonValue;
 
+    let preflight: Awaited<ReturnType<PublicApiService['preflight']>>;
+    try {
+      preflight = await this.preflight(ctx, template, dto);
+    } catch (error) {
+      const failedLogId = await recordFailedMessage(this.prismaService, {
+        workspaceId: ctx.workspaceId,
+        oaConnectionId: template.oaConnectionId,
+        templateId: template.id,
+        sendType: 'SINGLE' satisfies SendType,
+        phoneNumber: dto.phoneNumber,
+        payloadSnapshot,
+        error,
+        operatorUserId: null,
+      });
+      throw withMessageLogId(error, failedLogId);
+    }
+    const { workspace, unitCost } = preflight;
+
     let dispatchResult: Awaited<
       ReturnType<OaMessagingService['dispatchZnsTemplate']>
     >;
@@ -176,30 +146,27 @@ export class PublicApiService {
       dispatchResult = await this.oaMessagingService.dispatchZnsTemplate({
         oaConnectionId: template.oaConnectionId,
         phoneNumber: dto.phoneNumber,
-        providerTemplateId: template.providerTemplateId,
+        providerTemplateId: template.providerTemplateId!,
         templateData: dto.data,
       });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Zalo ZNS send failed';
 
-      const failedLog = await this.prismaService.messageLog.create({
-        data: {
-          workspaceId: workspace.id,
-          oaConnectionId: template.oaConnectionId,
-          templateId: template.id,
-          sendType: 'SINGLE' satisfies SendType,
-          phoneNumber: dto.phoneNumber,
-          payloadSnapshot,
-          status: 'FAILED' satisfies MessageStatus,
-          errorCode: errorMessage.slice(0, 255),
-          operatorUserId: null,
-        },
+      const failedLogId = await recordFailedMessage(this.prismaService, {
+        workspaceId: workspace.id,
+        oaConnectionId: template.oaConnectionId,
+        templateId: template.id,
+        sendType: 'SINGLE' satisfies SendType,
+        phoneNumber: dto.phoneNumber,
+        payloadSnapshot,
+        error,
+        operatorUserId: null,
       });
 
       throw new BadRequestException({
         message: errorMessage,
-        messageLogId: failedLog.id,
+        messageLogId: failedLogId,
       });
     }
 
@@ -245,6 +212,115 @@ export class PublicApiService {
       providerMessageId: dispatchResult.providerMessageId,
       messageLogId: result.messageLog.id,
     };
+  }
+
+  /**
+   * Every check that can reject a public send before Zalo is called. Messages
+   * stay as they were for API clients; a stable `code` is added so the failure
+   * can be logged and matched. The caller records it as a FAILED MessageLog.
+   */
+  private async preflight(
+    ctx: PublicRequestContext,
+    template: {
+      type: string;
+      status: string;
+      oaConnectionId: string;
+      providerTemplateId: string | null;
+      unitPricePerMessage: Prisma.Decimal | null;
+      ctaButtons: {
+        unitPrice: number | null;
+        defaultUnitPrice: number | null;
+      }[];
+    },
+    dto: { data: Record<string, unknown> },
+  ): Promise<{
+    workspace: { id: string; ownerUserId: string };
+    unitCost: number;
+  }> {
+    if (template.status !== 'APPROVED') {
+      throw this.reject(
+        SEND_ERROR_CODES.TEMPLATE_NOT_APPROVED,
+        'Template not approved',
+      );
+    }
+
+    if (!template.providerTemplateId) {
+      throw this.reject(
+        SEND_ERROR_CODES.TEMPLATE_NOT_SYNCED,
+        'Template is missing Zalo providerTemplateId',
+      );
+    }
+
+    if (template.type === 'OTP') {
+      assertOtpPayloadData(dto.data);
+    }
+
+    // template.oaConnectionId references WorkspaceOa.id (ADR-001); the Zalo
+    // connection is reached via workspaceOaId.
+    const oa = await this.prismaService.workspaceOaConnection.findUnique({
+      where: { workspaceOaId: template.oaConnectionId },
+      select: { status: true },
+    });
+    if (!oa || oa.status !== 'CONNECTED') {
+      throw this.reject(
+        SEND_ERROR_CODES.OA_NOT_CONNECTED,
+        'OA is not connected',
+      );
+    }
+
+    const workspace = await this.prismaService.workspace.findUnique({
+      where: { id: ctx.workspaceId },
+      select: { id: true, status: true, ownerUserId: true },
+    });
+    if (!workspace || workspace.status !== 'ACTIVE') {
+      throw this.reject(
+        SEND_ERROR_CODES.WORKSPACE_INACTIVE,
+        'Workspace is not active',
+      );
+    }
+
+    // Subscription phải còn hạn mới được gửi.
+    await this.subscriptionAccessService.assertCanSend(ctx.workspaceId);
+
+    const unitCost =
+      (await this.systemConfigService.resolveTemplateUnitPrice(
+        template.unitPricePerMessage,
+      )) +
+      template.ctaButtons.reduce(
+        (sum, button) =>
+          sum + (button.unitPrice ?? button.defaultUnitPrice ?? 0),
+        0,
+      );
+
+    const wallet = await this.prismaService.walletAccount.findUnique({
+      where: { ownerUserId: workspace.ownerUserId },
+      select: { ownerUserId: true, balance: true },
+    });
+    if (!wallet) {
+      throw this.reject(
+        SEND_ERROR_CODES.WALLET_NOT_INITIALIZED,
+        'Wallet not initialized',
+      );
+    }
+
+    if (Number(wallet.balance) < unitCost) {
+      throw this.reject(
+        SEND_ERROR_CODES.INSUFFICIENT_CREDIT,
+        'Insufficient credit',
+      );
+    }
+
+    return { workspace, unitCost };
+  }
+
+  /** 400 with the legacy English message plus a stable `code`. */
+  private reject(code: SendErrorCode, message: string) {
+    return new BadRequestException({
+      statusCode: 400,
+      message,
+      error: 'Bad Request',
+      code,
+    });
   }
 
   private async assertActiveWorkspace(workspaceId: string) {
