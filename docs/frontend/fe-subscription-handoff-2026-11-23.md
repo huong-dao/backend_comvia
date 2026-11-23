@@ -54,12 +54,12 @@ Không tự thêm endpoint, field, quyền hay state ngoài guide. Câu hỏi v�
 |---|---|---|
 | `/app/subscription` | Trang trạng thái + mua/gia hạn gói. **Email nhắc trỏ vào đây** | `COMVIA_APP_BASE_URL` |
 | `/app/wallet` | Trang ví. Email "ví sắp hết" trỏ vào đây | `COMVIA_APP_BASE_URL` |
-| `/subscription/success` | **Trang Pay2S redirect về sau khi thanh toán** (`${FRONTEND_URL}/subscription/success`). Route mới, tương tự `/topup/success` | `redirectPath` ở backend |
+| `/subscription/success` | **Không bắt buộc** (xem ghi chú bên dưới) | `redirectPath` ở backend |
 | Menu Admin → Subscriptions | Gói, danh sách subscription; Cấu hình chung. Path FE tự chọn (ví dụ `/admin/subscriptions`) | Admin map 8A |
 
-Nếu FE dùng path khác cho 3 route đầu, **báo BE đổi** (email và `redirectPath` nằm ở backend).
+Nếu FE dùng path khác cho hai route `/app/subscription` và `/app/wallet`, **báo BE đổi** (link trong email nằm ở backend).
 
-`/subscription/success` nên: lấy `purchaseCode` đã lưu ở client, poll mục 3.3, rồi gọi lại `GET /subscriptions/current`. Backend chỉ gửi Pay2S đường dẫn trơn (`/subscription/success`, không kèm tham số); chưa rõ Pay2S có tự thêm tham số vào URL hay không, nên **đừng phụ thuộc vào query string** — nếu không còn `purchaseCode` ở client thì chuyển user sang lịch sử mua (3.4).
+**Về `/subscription/success` (đã đính chính):** luồng mua gói **không có bước redirect về FE**. Khách quét QR bằng app ngân hàng; Pay2S báo cho backend bằng webhook (server-to-server); FE biết kết quả bằng cách **poll** mục 3.3. Backend vẫn gửi Pay2S tham số `redirectUrl = ${FRONTEND_URL}/subscription/success` khi tạo yêu cầu (topup cũng vậy với `/topup/success`), nhưng luồng QR không dùng URL này và chưa xác nhận Pay2S có bao giờ redirect tới đó. Vì vậy route này **không bắt buộc**; nếu muốn phòng hờ thì thêm route đơn giản chuyển về `/app/subscription`. FE hãy cho biết topup hiện có `/topup/success` không, để thống nhất.
 
 ---
 
@@ -139,7 +139,7 @@ Quyền: mọi member `ACTIVE`. Query: `page`, `limit` (mặc định 20, tối 
 
 - `qrCodeUrl` là ảnh PNG: `<img src={qrCodeUrl} />` trực tiếp (URL gốc backend, **không** có `/api/v1`).
 - `expectedStartsAt/expectedEndsAt` chỉ là **dự kiến nếu trả ngay**. Ngày thật tính lại lúc nhận tiền. Hiển thị với nhãn "dự kiến".
-- Lưu `purchaseCode` (state/sessionStorage) để poll và để trang `/subscription/success` dùng lại.
+- Lưu `purchaseCode` (state, hoặc sessionStorage nếu muốn giữ qua reload) để poll. Hiển thị QR ngay trên trang `/app/subscription` (modal hoặc khối), không cần chuyển trang.
 
 **Bước 3 — poll trạng thái:** `GET /subscriptions/purchases/:purchaseCode/status` (OWNER) — cùng shape như response bước 2 nhưng **không có** `expected*`. Không thấy đơn → `404`.
 
@@ -350,7 +350,7 @@ const PAY2S_UNAVAILABLE = 'PAY2S_UNAVAILABLE'; // topup + mua gói
 - [ ] Danh sách gói hiển thị đủ giá chưa VAT, VAT, tổng; có tìm kiếm/lọc theo năm, phân trang.
 - [ ] OWNER mua được: chọn tài khoản ngân hàng → QR → poll → `PAID` cập nhật banner. Member không phải owner không thấy nút mua.
 - [ ] `PAY2S_UNAVAILABLE` hiển thị thông báo + Thử lại, cho cả mua gói và topup. Các lỗi `400` thường hiển thị `message`.
-- [ ] Route `/subscription/success`, `/app/subscription`, `/app/wallet` tồn tại.
+- [ ] Route `/app/subscription` và `/app/wallet` tồn tại (email trỏ vào). `/subscription/success` không bắt buộc.
 - [ ] Lịch sử mua có lọc `status`, hiển thị `startsAt/endsAt/order` khi `PAID`.
 - [ ] Gửi đơn lẻ / campaign / (nếu có) test Public API hiển thị `message` của `SUBSCRIPTION_REQUIRED` / `SUBSCRIPTION_EXPIRED` và dẫn tới trang mua.
 - [ ] Campaign `PAUSED` + `SUBSCRIPTION_EXPIRED`: hiển thị lý do, ẩn Retry/Reconcile/Execute, chỉ cho **Tiếp tục** khi `canSend = true`.
@@ -372,7 +372,7 @@ const PAY2S_UNAVAILABLE = 'PAY2S_UNAVAILABLE'; // topup + mua gói
 | # | Nội dung | Ảnh hưởng FE |
 |---|---|---|
 | 1 | **ISSUE-010** — kỳ `UPCOMING`: `/current` trả `NONE` nhưng gửi tin trả `SUBSCRIPTION_EXPIRED`; có thể thêm field `upcoming` | Banner chỉ dựa `status` của `/current`; chờ BE xác nhận trước khi làm UI "gói sẽ có hiệu lực từ …" |
-| 2 | Route `/subscription/success`: xác nhận FE có làm, hay BE đổi `redirectPath` | Cần FE trả lời BE |
+| 2 | `redirectUrl` (`/subscription/success`, `/topup/success`) backend gửi Pay2S: luồng QR không dùng, chưa xác nhận Pay2S có redirect không | Không chặn FE. BE có thể xác nhận với Pay2S rồi bỏ hoặc giữ |
 | 3 | PO chưa chốt có chặn ngay ở bước Admin tạo gói khi tổng < 10.000đ | Hiện chỉ chặn lúc mua; FE nên cảnh báo ở form |
 | 4 | **Rủi ro release:** bật chặn ngay, không backfill. Mọi workspace hiện có **không gửi được tin** cho tới khi Admin tạo gói và cấp tay hoặc owner mua | Màn Admin "cấp tay" phải xong trước/ngay khi deploy |
 | 5 | Pay2S trên live là **thanh toán thật** (không còn sandbox): test mua gói là chuyển khoản thật | QA dùng gói test giá thấp (tổng ≥ 10.000đ), tắt gói sau khi test |
@@ -383,7 +383,7 @@ const PAY2S_UNAVAILABLE = 'PAY2S_UNAVAILABLE'; // topup + mua gói
 
 1. Route + helper gọi API (header `x-workspace-id`, xử lý lỗi `code`), enum/type (mục 6).
 2. Admin: gói → cấp tay → danh sách/sửa subscription → cấu hình chung (cần có sớm để cấp cho workspace cũ khi deploy).
-3. Workspace: `/current` + banner → danh sách gói → mua + QR + poll + `/subscription/success` → lịch sử.
+3. Workspace: `/current` + banner → danh sách gói → mua + QR + poll (ngay trên `/app/subscription`) → lịch sử.
 4. Chặn gửi tin: xử lý `SUBSCRIPTION_*` ở send-single/campaign; `pauseReason = SUBSCRIPTION_EXPIRED`.
 5. `PAY2S_UNAVAILABLE` cho cả topup.
 6. Smoke test trên môi trường đã deploy cùng BE (mục 9, dòng 4 và 5).

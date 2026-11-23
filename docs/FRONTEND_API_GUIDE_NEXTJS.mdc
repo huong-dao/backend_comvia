@@ -1523,7 +1523,8 @@ Response:
 - **Mua khi còn hạn → cộng dồn:** kỳ mới bắt đầu từ lúc kỳ cuối cùng hết hạn. Hết hạn rồi → bắt đầu từ lúc thanh toán thành công.
 - Thời hạn tính theo số **năm** Admin nhập (1, 2, 3…); hệ thống tự tính ra số ngày và ngày hết hạn.
 - Khi Pay2S báo thanh toán thành công backend tạo **Order** (`type: "SUBSCRIPTION"`, hiện trong `GET /workspaces/:workspaceId/orders`) và kỳ subscription. **Không cộng tiền vào ví.** Lưu ý `GET /workspaces/:workspaceId/orders` trả **mảng thô** (kèm `items`), **không phân trang, không có `meta`**, khác các list có phân trang ở mục này.
-- **Route redirect sau thanh toán:** khi tạo QR, backend gửi Pay2S `redirectUrl = ${FRONTEND_URL}/subscription/success`. FE **cần có route `/subscription/success`** (trang kết quả; nên poll 9B.4 bằng `purchaseCode` đang lưu ở client rồi gọi lại 9B.2), hoặc báo BE đổi path.
+- **Cách FE biết đã thanh toán:** khách quét QR bằng app ngân hàng (không qua trang thanh toán nào của Pay2S); Pay2S báo cho backend bằng webhook (server-to-server) và đơn chuyển `PAID`. **FE không nhận redirect hay callback nào từ Pay2S**: hiển thị QR (modal hoặc khối trên trang), poll 9B.4 bằng `purchaseCode` đang giữ ở client, khi `PAID` thì gọi lại 9B.2 và đóng QR.
+- Backend vẫn gửi Pay2S tham số `redirectUrl = ${FRONTEND_URL}/subscription/success` khi tạo yêu cầu (giống topup dùng `/topup/success`). Luồng QR hiện tại **không dùng** URL này và chưa xác nhận Pay2S có bao giờ redirect tới đó; FE **không bắt buộc** có route này. Nếu muốn phòng hờ thì thêm route đơn giản chuyển về `/app/subscription`.
 
 ### 9B.4 Polling trạng thái đơn mua
 `GET /subscriptions/purchases/:purchaseCode/status` — `OWNER`
