@@ -9,7 +9,8 @@
 3. [Project closeout plan](../planning/project-closeout-plan.md): task hiện hành, owner và thứ tự làm.
 4. [Delivery board](../tickets/board.md): trạng thái task.
 5. [FE execution handoff — 2026-10-27](./fe-execution-handoff-2026-10-27.md): thứ tự implement, role contract, acceptance criteria và blocker deploy.
-6. [FE handoff — Subscription (SUB-01) — 2026-11-23](./fe-subscription-handoff-2026-11-23.md): toàn bộ contract, màn hình, lỗi, route và acceptance criteria của tính năng Subscription (workspace + Admin) và lỗi `PAY2S_UNAVAILABLE`.
+6. [FE quick reference — 2026-11-23](./fe-quickref-2026-11-23.md): **bản ngắn, đọc trước** — Subscriptions (route, API, lỗi, Admin) và danh sách thay đổi docs từ 2026-11-10.
+7. [FE handoff — Subscription (SUB-01) — 2026-11-23](./fe-subscription-handoff-2026-11-23.md): toàn bộ contract, màn hình, lỗi, route và acceptance criteria của tính năng Subscription (workspace + Admin) và lỗi `PAY2S_UNAVAILABLE`.
 
 ## Quy tắc nhận yêu cầu
 
