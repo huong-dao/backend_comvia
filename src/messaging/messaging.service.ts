@@ -9,6 +9,7 @@ import { OaMessagingService } from '../oa/oa-messaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
+import { SubscriptionAccessService } from '../subscriptions/subscription-access.service';
 import { SendSingleDto } from './dto/send-single.dto';
 import { assertOtpPayloadData } from '../templates/otp-template.util';
 import {
@@ -25,6 +26,7 @@ export class MessagingService {
     private readonly oaMessagingService: OaMessagingService,
     private readonly systemConfigService: SystemConfigService,
     private readonly walletLedgerService: WalletLedgerService,
+    private readonly subscriptionAccessService: SubscriptionAccessService,
   ) {}
 
   async sendSingle(
@@ -86,6 +88,9 @@ export class MessagingService {
         sendErrorBody(SEND_ERROR_CODES.WORKSPACE_INACTIVE),
       );
     }
+
+    // Subscription phải còn hạn mới được gửi (kiểm tra trước khi đụng tới ví).
+    await this.subscriptionAccessService.assertCanSend(workspaceId);
 
     const wallet = await this.prismaService.walletAccount.findUnique({
       where: { ownerUserId: workspace.ownerUserId },

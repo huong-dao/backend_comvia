@@ -20,6 +20,12 @@ export const AUDIT_ACTIONS = {
   WORKSPACE_IMPERSONATED: 'workspace.admin_impersonated',
   AUTH_REFRESH_TOKEN_REUSED: 'auth.refresh_token_reused',
   WALLET_ADJUSTED: 'wallet.manual_adjusted',
+  SUBSCRIPTION_PLAN_CREATED: 'subscription_plan.created',
+  SUBSCRIPTION_PLAN_UPDATED: 'subscription_plan.updated',
+  SUBSCRIPTION_PURCHASED: 'subscription.purchased',
+  SUBSCRIPTION_PURCHASE_FAILED: 'subscription.purchase_failed',
+  SUBSCRIPTION_ADMIN_GRANTED: 'subscription.admin_granted',
+  SUBSCRIPTION_ADMIN_UPDATED: 'subscription.admin_updated',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -36,6 +42,9 @@ export const AUDIT_RESOURCE_TYPES = {
   TOPUP_REQUEST: 'TopupRequest',
   USER: 'User',
   WALLET_TRANSACTION: 'WalletTransaction',
+  SUBSCRIPTION_PLAN: 'SubscriptionPlan',
+  SUBSCRIPTION_PURCHASE: 'SubscriptionPurchase',
+  WORKSPACE_SUBSCRIPTION: 'WorkspaceSubscription',
 } as const;
 
 export type AuditResourceType =

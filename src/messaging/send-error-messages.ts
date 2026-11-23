@@ -10,6 +10,8 @@ export const SEND_ERROR_CODES = {
   WORKSPACE_INACTIVE: 'WORKSPACE_INACTIVE',
   WALLET_NOT_INITIALIZED: 'WALLET_NOT_INITIALIZED',
   INSUFFICIENT_CREDIT: 'INSUFFICIENT_CREDIT',
+  SUBSCRIPTION_REQUIRED: 'SUBSCRIPTION_REQUIRED',
+  SUBSCRIPTION_EXPIRED: 'SUBSCRIPTION_EXPIRED',
   ZALO_REJECTED: 'ZALO_REJECTED',
   SEND_FAILED: 'SEND_FAILED',
 } as const;
@@ -31,6 +33,10 @@ export const SEND_ERROR_MESSAGES: Record<SendErrorCode, string> = {
   WORKSPACE_INACTIVE: 'Workspace đang tạm khóa. Vui lòng liên hệ hỗ trợ.',
   WALLET_NOT_INITIALIZED: 'Ví chưa được khởi tạo. Vui lòng liên hệ hỗ trợ.',
   INSUFFICIENT_CREDIT: 'Số dư không đủ để gửi tin. Vui lòng nạp thêm tiền.',
+  SUBSCRIPTION_REQUIRED:
+    'Workspace chưa đăng ký gói subscription. Vui lòng mua gói để gửi tin.',
+  SUBSCRIPTION_EXPIRED:
+    'Gói subscription của workspace đã hết hạn. Vui lòng gia hạn để tiếp tục gửi tin.',
   ZALO_REJECTED:
     'Zalo từ chối gửi tin. Vui lòng kiểm tra lại mẫu tin và thử lại sau.',
   SEND_FAILED: 'Gửi tin thất bại. Vui lòng thử lại sau.',

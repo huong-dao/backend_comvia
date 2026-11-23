@@ -11,6 +11,12 @@ import {
   OtpVerificationTemplateInput,
 } from './templates/otp-verification.template';
 import { buildWorkspaceInvitationTemplate } from './templates/workspace-invitation.template';
+import {
+  buildSubscriptionExpiryTemplate,
+  buildWalletLowBalanceTemplate,
+  SubscriptionExpiryTemplateInput,
+  WalletLowBalanceTemplateInput,
+} from './templates/reminder.templates';
 
 export type SendOtpVerificationEmailInput = OtpVerificationTemplateInput & {
   to: string;
@@ -140,6 +146,63 @@ export class EmailService {
       throw new InternalServerErrorException(
         'Workspace invitation email delivery failed',
       );
+    }
+  }
+
+  /** Đường dẫn FE (app) dùng trong mail nhắc, ví dụ /app/subscription. */
+  buildAppUrl(path: string): string {
+    const appBaseUrl =
+      this.configService.get<string>('email.appBaseUrl') ||
+      'https://app.comvia.cloud';
+    try {
+      return new URL(path, appBaseUrl).toString();
+    } catch {
+      return appBaseUrl;
+    }
+  }
+
+  async sendSubscriptionExpiryReminderEmail(
+    input: SubscriptionExpiryTemplateInput & { to: string },
+  ): Promise<void> {
+    await this.sendReminder(
+      input.to,
+      'COMVIA - Gói subscription sắp hết hạn',
+      buildSubscriptionExpiryTemplate(input),
+    );
+  }
+
+  async sendWalletLowBalanceEmail(
+    input: WalletLowBalanceTemplateInput & { to: string },
+  ): Promise<void> {
+    await this.sendReminder(
+      input.to,
+      'COMVIA - Số dư ví sắp hết',
+      buildWalletLowBalanceTemplate(input),
+    );
+  }
+
+  private async sendReminder(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<void> {
+    const fromName =
+      this.configService.get<string>('email.fromName') || 'COMVIA';
+    const fromEmail =
+      this.configService.get<string>('email.fromEmail') ||
+      this.configService.get<string>('email.smtpUser');
+    try {
+      await this.getTransporter().sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to,
+        subject,
+        html,
+      });
+    } catch (error) {
+      this.logger.error(
+        `[Email] Failed to send "${subject}" to ${to}: ${String(error)}`,
+      );
+      throw new InternalServerErrorException('Gửi email nhắc thất bại');
     }
   }
 

@@ -50,6 +50,7 @@ describe('PublicApiService.sendSingle pricing', () => {
       } as never,
       ledger as never,
       { resolveTemplateUnitPrice: jest.fn().mockResolvedValue(400) } as never,
+      { assertCanSend: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await service.sendSingle(
@@ -82,11 +83,59 @@ describe('PublicApiService workspace status', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
       service.listApprovedTemplates({ workspaceId: 'workspace-1' }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.template.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('PublicApiService.sendSingle subscription gate', () => {
+  it('rejects before touching the wallet when the subscription is not valid', async () => {
+    const prisma = {
+      template: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'template-1',
+          type: 'TEXT',
+          workspaceId: 'workspace-1',
+          status: 'APPROVED',
+          oaConnectionId: 'oa-1',
+          content: 'content',
+          providerTemplateId: 'provider-1',
+          unitPricePerMessage: 400,
+          ctaButtons: [],
+        }),
+      },
+      workspaceOaConnection: {
+        findUnique: jest.fn().mockResolvedValue({ status: 'CONNECTED' }),
+      },
+      workspace: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+          status: 'ACTIVE',
+          ownerUserId: 'owner-1',
+        }),
+      },
+      walletAccount: { findUnique: jest.fn() },
+    };
+    const gate = new BadRequestException({ code: 'SUBSCRIPTION_EXPIRED' });
+    const service = new PublicApiService(
+      prisma as never,
+      { dispatchZnsTemplate: jest.fn() } as never,
+      {} as never,
+      { resolveTemplateUnitPrice: jest.fn().mockResolvedValue(400) } as never,
+      { assertCanSend: jest.fn().mockRejectedValue(gate) } as never,
+    );
+
+    await expect(
+      service.sendSingle(
+        { workspaceId: 'workspace-1' },
+        { templateId: 'template-1', phoneNumber: '0900000000', data: {} },
+      ),
+    ).rejects.toBe(gate);
+    expect(prisma.walletAccount.findUnique).not.toHaveBeenCalled();
   });
 });

@@ -1138,12 +1138,15 @@ Bảng `code`:
 | `WORKSPACE_INACTIVE` | Workspace không hoạt động |
 | `WALLET_NOT_INITIALIZED` | Ví chưa khởi tạo |
 | `INSUFFICIENT_CREDIT` | Số dư không đủ (không có `messageLogId`) |
+| `SUBSCRIPTION_REQUIRED` | Workspace chưa có subscription (xem mục 9B.6) |
+| `SUBSCRIPTION_EXPIRED` | Subscription của workspace đã hết hạn (xem mục 9B.6) |
 | `ZALO_REJECTED` | Zalo từ chối; có `detail` là lỗi gốc |
 | `SEND_FAILED` | Lỗi khác |
 
 `messageLogId` chỉ có khi tin đã được ghi nhận là `FAILED` (lỗi sau khi gọi Zalo). Các lỗi kiểm tra trước đó không tạo log.
 
 Ghi chú nghiệp vụ:
+- **Subscription (từ 2026-11-23):** workspace phải có subscription còn hạn, nếu không trả `400` `SUBSCRIPTION_REQUIRED` / `SUBSCRIPTION_EXPIRED` (mục 9B.6), kiểm tra trước khi đụng tới ví.
 - **Chỉ trừ ví** khi Zalo trả success.
 - Nếu Zalo fail, backend vẫn tạo `MessageLog` với `status: FAILED` (có `messageLogId` trong body lỗi).
 
@@ -1422,6 +1425,119 @@ Ghi chú:
   - FE dùng `range.current`/`range.previous` trong response để biết chính xác mốc hai kỳ.
 - Chỉ số **"Khách hàng tương tác" backend KHÔNG tính** — FE tự hiển thị số demo tĩnh giai đoạn này.
 - Mốc kỳ tính theo giờ VN (Asia/Ho_Chi_Minh).
+
+## 9B) Subscription (gói dịch vụ theo thời hạn — theo workspace)
+
+> **Tính năng mới (2026-11-23, PO duyệt).** Sau khi đăng ký owner vẫn dùng mọi chức năng, nhưng **mọi thao tác gửi tin** (gửi đơn lẻ `POST /workspaces/:workspaceId/messages/send-single`, chạy/retry/resume campaign, Public API `POST /public/messages/send`) bị chặn nếu workspace **chưa có** subscription hoặc subscription **đã hết hạn**. Subscription tính theo **workspace**, có ngày bắt đầu/hết hạn cụ thể. Bật kiểm tra ngay, không có gói miễn phí tự động — Admin cấp tay cho workspace cũ (xem Admin map mục 8A).
+
+Mọi endpoint dưới đây dùng header `Authorization: Bearer <accessToken>` + `x-workspace-id: <workspaceId>` (giống mục 9.4). Quyền: `GET` gói và tình trạng → mọi member `ACTIVE`; mua/trạng thái đơn/lịch sử → `OWNER`.
+
+### 9B.1 Danh sách gói đang bán (phân trang + lọc)
+`GET /subscription-plans?page=1&limit=20&keyword=&durationYears=`
+
+- `keyword`: tìm theo tên hoặc mã gói (không phân biệt hoa thường); `durationYears`: lọc theo số năm. Chỉ trả gói `isActive=true`, sắp theo `sortOrder`.
+
+Response:
+```json
+{
+  "data": [
+    {
+      "id": "PLAN_ID",
+      "code": "ZBS-PRO-1A2B",
+      "name": "ZBS PRO",
+      "description": "Gói 1 năm",
+      "durationYears": 1,
+      "priceExclVat": 2000000,
+      "vatPercent": 10,
+      "vatAmount": 200000,
+      "totalAmountInclVat": 2200000,
+      "isActive": true,
+      "sortOrder": 0,
+      "createdAt": "...",
+      "updatedAt": "..."
+    }
+  ],
+  "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 }
+}
+```
+`totalAmountInclVat` = giá chưa VAT + VAT (Admin nhập `%` VAT trên từng gói, hệ thống tự tính) — đây là số khách phải chuyển khoản; FE hiển thị đủ breakdown.
+
+### 9B.2 Tình trạng subscription của workspace
+`GET /subscriptions/current`
+
+```json
+{
+  "status": "ACTIVE",
+  "canSend": true,
+  "plan": { "id": "PLAN_ID", "code": "ZBS-PRO-1A2B", "name": "ZBS PRO" },
+  "startsAt": "2026-11-23T03:00:00.000Z",
+  "endsAt": "2028-11-23T03:00:00.000Z",
+  "daysRemaining": 730,
+  "expiredAt": null
+}
+```
+- `status`: `NONE` (chưa từng có gói) | `ACTIVE` | `EXPIRED` (`expiredAt` có giá trị). `canSend=false` khi `NONE`/`EXPIRED`.
+- `endsAt` đã **cộng dồn** các kỳ mua liền kề — đây là ngày hết hạn thật. `plan`/`startsAt` là của kỳ đang chạy.
+- Gợi ý FE: gọi khi vào app/đổi workspace để hiện banner "chưa đăng ký" / "sắp hết hạn" / "đã hết hạn".
+
+### 9B.3 Tạo đơn mua + QR thanh toán (giống nạp ví)
+`POST /subscriptions/purchase/create-with-pay2s` — `OWNER`
+
+```json
+{ "planId": "PLAN_ID", "moneyAccountId": "MONEY_ACCOUNT_ID" }
+```
+- `moneyAccountId` lấy từ mục 9.3 (cùng danh sách tài khoản ngân hàng dùng cho topup).
+- Gói phải đang `isActive`, ngược lại `400`.
+
+Response:
+```json
+{
+  "id": "PURCHASE_ID",
+  "purchaseCode": "COMVIA_SUB_A1B2C3D4",
+  "planId": "PLAN_ID",
+  "planName": "ZBS PRO",
+  "durationYears": 1,
+  "amountExclVat": 2000000,
+  "vatPercent": 10,
+  "vatAmount": 200000,
+  "amountInclVat": 2200000,
+  "status": "PENDING",
+  "qrCodeUrl": "http://<BACKEND_URL>/public/qrcodes/COMVIA_SUB_A1B2C3D4/qr_code.png",
+  "paidAt": null,
+  "createdAt": "...",
+  "expectedStartsAt": "...",
+  "expectedEndsAt": "..."
+}
+```
+- `qrCodeUrl` là URL ảnh QR (dùng `<img>` trực tiếp), cách dùng y hệt 9.4. Tạo Pay2S lỗi → `400` và đơn chuyển `FAILED`.
+- `expectedStartsAt/expectedEndsAt` chỉ là **dự kiến** nếu thanh toán ngay; ngày thật tính lại lúc nhận tiền.
+- **Mua khi còn hạn → cộng dồn:** kỳ mới bắt đầu từ lúc kỳ cuối cùng hết hạn. Hết hạn rồi → bắt đầu từ lúc thanh toán thành công.
+- Thời hạn tính theo số **năm** Admin nhập (1, 2, 3…); hệ thống tự tính ra số ngày và ngày hết hạn.
+- Khi Pay2S báo thanh toán thành công backend tạo **Order** (`type: "SUBSCRIPTION"`, hiện trong `GET /workspaces/:workspaceId/orders`) và kỳ subscription. **Không cộng tiền vào ví.**
+
+### 9B.4 Polling trạng thái đơn mua
+`GET /subscriptions/purchases/:purchaseCode/status` — `OWNER`
+
+Trả cùng shape như response 9B.3 (không có `expected*`). FE poll tới khi `status` = `PAID` (rồi gọi lại 9B.2) hoặc `FAILED`. Không tìm thấy → `404`.
+
+### 9B.5 Lịch sử mua
+`GET /subscriptions/history?page=1&limit=20&status=PAID` — `OWNER`
+
+`status` ∈ `PENDING | PAID | FAILED`. Mỗi phần tử = shape 9B.3 thêm `order: { id, orderCode } | null`, `startsAt`, `endsAt` (null nếu chưa thanh toán). Kèm `meta` phân trang như 9B.1.
+
+### 9B.6 Lỗi khi gửi tin mà subscription không hợp lệ
+Các API gửi tin trả `400` với body chuẩn của mục 8.1:
+
+| `code` | Khi nào | `message` |
+|--------|---------|-----------|
+| `SUBSCRIPTION_REQUIRED` | Workspace chưa từng có subscription | "Workspace chưa đăng ký gói subscription. Vui lòng mua gói để gửi tin." |
+| `SUBSCRIPTION_EXPIRED` | Subscription đã hết hạn | "Gói subscription của workspace đã hết hạn. Vui lòng gia hạn để tiếp tục gửi tin." |
+
+- Kiểm tra diễn ra **trước** khi giữ/trừ ví nên không phát sinh `MessageLog` hay giao dịch ví.
+- **Campaign đang chạy mà hết hạn giữa chừng:** campaign chuyển `PAUSED` với `pauseReason: "SUBSCRIPTION_EXPIRED"`, các dòng còn lại giữ `PENDING` và tiền đã giữ không đổi. Sau khi gia hạn, gọi `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` (hoặc `execute`, tự chuyển sang resume) để chạy tiếp mà không bị trừ tiền lần nữa. Hết hạn mà gọi resume → `400` `SUBSCRIPTION_EXPIRED`.
+
+### 9B.7 Email nhắc
+Backend tự gửi email cho owner (không có API FE): (1) subscription còn ≤ N ngày (N = "số ngày nhắc" ở Cấu hình chung, mặc định 7; mỗi kỳ nhắc 1 lần, không nhắc nếu đã mua cộng dồn kỳ nối tiếp); (2) ví còn ≤ ngưỡng sau một giao dịch (tối đa 1 email/ngày theo giờ Việt Nam). Link trong email trỏ `/app/subscription` và `/app/wallet` của `COMVIA_APP_BASE_URL` — FE cần có route tương ứng hoặc báo BE đổi đường dẫn.
 
 ## 10) API Key Management (owner)
 
@@ -1774,6 +1890,10 @@ Backend trả enum **UPPER_SNAKE_CASE** (theo Prisma). FE nên map label hiển 
 | `TemplateStatus` | `DRAFT`, `SUBMITTED`, `PENDING_ZALO_APPROVAL`, `APPROVED`, `DISABLED` |
 | `TopupStatus` | `PENDING`, `PAID`, `FAILED`, `EXPIRED` |
 | `OrderStatus` | `PAID`, `CANCELLED` |
+| `OrderType` | `TOPUP`, `SUBSCRIPTION` |
+| `SubscriptionPurchaseStatus` | `PENDING`, `PAID`, `FAILED` |
+| `WorkspaceSubscriptionStatus` | `ACTIVE`, `CANCELLED` (trạng thái lưu); `state` suy ra theo thời gian: `ACTIVE`, `UPCOMING`, `EXPIRED`, `CANCELLED` |
+| Subscription hiển thị (`GET /subscriptions/current`) | `NONE`, `ACTIVE`, `EXPIRED` |
 | `WalletTransactionType` | `TOPUP_CREDIT`, `MESSAGE_DEBIT`, `CAMPAIGN_HOLD`, `CAMPAIGN_REFUND`, `MANUAL_ADJUSTMENT`, `REVERSAL` — **lưu ý:** `MANUAL_ADJUSTMENT` đã được sinh thật từ `POST /admin/workspaces/:workspaceId/wallet-adjustment` (mục 14.1); `REVERSAL` tồn tại trong enum nhưng **chưa có code nào tạo** |
 | `SendType` | `TEST`, `SINGLE`, `CAMPAIGN` — **lưu ý:** hiện chỉ `SINGLE` (mục 8.1) và `CAMPAIGN` (mục 7.7) có endpoint gửi thật; `TEST` tồn tại trong enum nhưng chưa có endpoint "gửi thử" nào dùng tới |
 | `MessageStatus` | `PENDING`, `SUCCESS`, `FAILED` |

@@ -32,6 +32,7 @@ const CAMPAIGN = {
 
 function build(opts: {
   oaStatus?: string;
+  subscriptionActive?: boolean;
   dispatch?: jest.Mock;
   campaign?: Record<string, unknown>;
   pendingRunId?: string | null;
@@ -87,6 +88,10 @@ function build(opts: {
     {} as never,
     oaMessaging as never,
     {} as never,
+    {
+      canSend: jest.fn().mockResolvedValue(opts.subscriptionActive ?? true),
+      assertCanSend: jest.fn(),
+    } as never,
   );
   return { service, prisma, oaMessaging };
 }
@@ -109,6 +114,21 @@ describe('CampaignsService OA-unavailable handling', () => {
     expect(prisma.campaign.update).toHaveBeenCalledWith({
       where: { id: 'camp-1' },
       data: { status: 'PAUSED', pauseReason: 'OA_DISCONNECTED' },
+    });
+  });
+
+  it('pauses with SUBSCRIPTION_EXPIRED before claiming any row when the subscription expired', async () => {
+    const { service, prisma, oaMessaging } = build({
+      subscriptionActive: false,
+    });
+
+    await (service as any).processCampaignRun('run-1');
+
+    expect(prisma.campaignRow.updateMany).not.toHaveBeenCalled();
+    expect(oaMessaging.dispatchZnsTemplate).not.toHaveBeenCalled();
+    expect(prisma.campaign.update).toHaveBeenCalledWith({
+      where: { id: 'camp-1' },
+      data: { status: 'PAUSED', pauseReason: 'SUBSCRIPTION_EXPIRED' },
     });
   });
 

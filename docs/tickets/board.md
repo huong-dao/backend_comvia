@@ -6,6 +6,16 @@ Board chung, cập nhật liên tục. Phần đầu là ticket chẻ theo issue
 |---|---|---|---|---|---|
 | TICKET-007 | ISSUE-006 | WalletLedgerService.adjust() — bút toán MANUAL_ADJUSTMENT trung tính counter | — | — | Todo |
 | TICKET-008 | ISSUE-006 | Endpoint admin điều chỉnh số dư ví thủ công | TICKET-007 | Không | Todo |
+| SUB-01 | PO request 2026-11-23 | Quản lý Subscription (gói, mua QR Pay2S, chặn gửi tin khi hết hạn, email nhắc) | — | — | Code ready `dev2` (commit thêm migration `20261123100000_subscriptions`); migration/deploy/FE integration pending |
+
+### SUB-01 — handoff (BE, 2026-11-23)
+
+- **Phạm vi:** `src/subscriptions/` (plan, purchase, payments, access, admin, worker nhắc hết hạn), `src/wallet/wallet-low-balance.worker.ts`, `src/integrations/pay2s/pay2s-collection.service.ts` (tách khỏi topup), gate gửi tin ở messaging/public-api/campaigns, `admin/config/general`, `Order.type`. Thiết kế: `docs/architecture/modules/subscription/component-design.md`; rule: BR-SUB-01…06; contract FE: guide mục 9B, admin map mục 8A.
+- **Checks (2026-11-23):** `npm run build` PASS; `npx jest` 36 suites / 253 tests PASS (mới: pricing, access, payments, expiry reminder, wallet low balance, campaign pause SUBSCRIPTION_EXPIRED, public-api gate). ESLint: file production mới sạch; lỗi `no-unsafe-*` còn lại nằm trong spec và `topups.service.ts`/`pay2s.util.ts` (debt cũ). Chưa chạy `test:e2e`.
+- **Chưa kiểm chứng:** migration chưa chạy trên PostgreSQL (không có `DATABASE_URL` local; SQL sinh bằng `prisma migrate diff`); chưa smoke Pay2S sandbox (IPN + bank webhook với `COMVIA_SUB_*`), chưa gửi email thật, chưa deploy.
+- **Rủi ro release:** bật chặn ngay, không backfill → mọi workspace hiện tại không gửi được tin cho tới khi Admin cấp tay (`POST /admin/workspaces/:id/subscriptions`) hoặc owner mua gói. Admin cần tạo ít nhất 1 gói và cấp cho workspace đang chạy **trước/ngay khi deploy**.
+- **Owner:** BE → DevOps (migrate/deploy) → FE (màn hình mua gói + admin Subscriptions + Cấu hình chung; route `/app/subscription`, `/app/wallet` dùng trong email) → QA.
+- **Single next action:** DevOps chạy `prisma migrate deploy`, Admin tạo gói và cấp cho workspace đang chạy, rồi QA smoke mua gói bằng Pay2S sandbox (QR → webhook → `GET /subscriptions/current` ACTIVE → gửi single OK; hết hạn → `SUBSCRIPTION_EXPIRED`).
 
 ## Thứ tự thực thi đề xuất (ticket đang mở)
 1. TICKET-007 (nền móng — method ledger `adjust()`, độc lập module wallet)

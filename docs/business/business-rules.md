@@ -247,7 +247,7 @@ approved --> disabled
 
 ### BR-ORDER-01: Order
 
-- Mỗi topup thành công tạo đúng **1 order** (`order_type=topup`, `currency=VND`, `status=paid`). Order `paid` không được sửa.
+- Mỗi topup thành công tạo đúng **1 order** (`order_type=topup`; mỗi lần mua subscription thành công cũng tạo đúng 1 order `order_type=subscription`, xem BR-SUB-03, `currency=VND`, `status=paid`). Order `paid` không được sửa.
 - Field: `order_id`, `order_code`, `workspace_id`, `owner_user_id`, `order_type`, `currency`, `total_amount_excl_vat`, `total_vat_amount`, `total_amount_incl_vat`, `payment_method`, `payment_ref`, `status`, `created_at`, `paid_at`.
 
 ### BR-ORDER-02: Order Item
@@ -326,7 +326,7 @@ approved --> disabled
 ### BR-MSG-02: Send Single
 
 - Input: OA, template approved, số điện thoại, dữ liệu map theo template.
-- Backend: validate input → check OA connected + template approved → lấy đơn giá hiện hành → check ví đủ tiền → trừ credit → gọi API Zalo → ghi wallet transaction + message log.
+- Backend: validate input → check OA connected + template approved → **check subscription còn hạn (BR-SUB-04)** → lấy đơn giá hiện hành → check ví đủ tiền → trừ credit → gọi API Zalo → ghi wallet transaction + message log.
 
 ### BR-MSG-03: Message Logs
 
@@ -390,6 +390,7 @@ approved --> disabled
 ### BR-CAMPAIGN-06: Xử lý khi chạy
 
 - Lấy row `pending` → đẩy queue → worker gửi từng dòng: check OA connected, template approved, workspace active → gọi API provider → update row → tạo message log.
+- Trước khi claim từng dòng, worker kiểm tra subscription còn hạn (BR-SUB-04); hết hạn → campaign `PAUSED` với `pauseReason=SUBSCRIPTION_EXPIRED`, resume được sau khi gia hạn.
 - Kết thúc: tổng hợp failed count → refund credit failed → cập nhật `completed`.
 
 ### BR-CAMPAIGN-07: Rule quan trọng
@@ -447,7 +448,7 @@ approved --> disabled
 ### BR-NOTI-01: Kênh & sự kiện
 
 - Kênh: email, SMS (có thể mở rộng in-app).
-- Gửi cho user: OTP đăng ký/quên mật khẩu, invitation workspace, topup thành công, low balance warning, template approved/rejected.
+- Gửi cho user: OTP đăng ký/quên mật khẩu, invitation workspace, topup thành công, low balance warning (ngưỡng cấu hình, tối đa 1 email/ngày/ví — BR-SUB-06), subscription sắp hết hạn (số ngày cấu hình — BR-SUB-06), template approved/rejected.
 - Gửi cho nội bộ: template mới submit, payment exception, OA token lỗi.
 
 ### BR-AUDIT-01: Audit log tối thiểu
@@ -457,6 +458,46 @@ approved --> disabled
 ### BR-JOB-01: Background jobs cần có
 
 - OTP expiry cleanup, webhook retry/reconciliation, OA token refresh, OA health check, low balance warning, template reminder, campaign queue processor, campaign finalize refund, payment exception monitoring.
+
+## Module 15 — Subscription
+
+> Thay đổi 2026-11-23 (PO duyệt, SUB-01): thêm quản lý gói Subscription. Tài khoản owner mới đăng ký dùng được mọi chức năng, nhưng **gửi tin** yêu cầu workspace có subscription còn hạn.
+
+### BR-SUB-01: Gói subscription (Admin quản lý)
+
+- Chỉ role hệ thống `ADMIN` tạo/sửa/bật-tắt gói. Mỗi gói: tên, mô tả ngắn, **giá chưa VAT**, **% VAT** (Admin nhập trên từng gói), **thời hạn theo năm** (số nguyên ≥ 1; không có tháng).
+- Tổng tiền gói = giá chưa VAT + `round(giá × %VAT / 100)`; hệ thống tự tính, khách chuyển khoản đúng tổng này. Ví dụ "ZBS PRO" 2.000.000 + 10% = 2.200.000, 1 năm.
+- Gói không bị xoá; ngừng bán bằng `isActive=false`. Đổi giá/thời hạn gói chỉ áp dụng cho lần mua sau; đơn đã mua giữ snapshot.
+- Các gói chỉ khác nhau về thời hạn (cùng quyền lợi): không có nâng/hạ cấp giữa kỳ.
+
+### BR-SUB-02: Subscription thuộc về workspace
+
+- Subscription tính cho **workspace**, mỗi kỳ có `startsAt`, `endsAt`, `durationDays` (số ngày tính từ ngày bắt đầu đến ngày hết hạn theo số năm của gói). Workspace có thể có nhiều kỳ.
+- Workspace "đang có hạn" khi tồn tại kỳ `ACTIVE` với `startsAt ≤ now < endsAt`. Hết hạn được suy ra từ `endsAt` (không phụ thuộc cron).
+- Trạng thái hiển thị: `NONE` (chưa từng có gói), `ACTIVE`, `EXPIRED`.
+
+### BR-SUB-03: Mua gói & thanh toán
+
+- Chỉ `OWNER` mua. Luồng giống topup: chọn gói + tài khoản ngân hàng → tạo đơn `PENDING` + QR Pay2S (tổng gồm VAT) → Pay2S báo thành công qua IPN/bank webhook.
+- Khi thanh toán thành công, trong **một transaction**: đơn mua → `PAID`; tạo **Order** (`type=SUBSCRIPTION`, 1 order item theo giá/VAT của gói) và kỳ subscription. **Không cộng ví.**
+- **Mua khi còn hạn thì cộng dồn:** kỳ mới bắt đầu từ lúc kỳ cuối cùng hết hạn; nếu đã hết hạn/chưa có thì bắt đầu từ lúc thanh toán thành công. Ngày tính lúc nhận tiền (không phải lúc tạo QR).
+- Idempotency như BR-CORE-09: callback lặp không tạo 2 order/2 kỳ; sai số tiền bị bỏ qua; mã đơn subscription `COMVIA_SUB_*` / nội dung chuyển khoản `COMVIASUB*` được tách khỏi đơn nạp ví.
+
+### BR-SUB-04: Chặn gửi tin khi không còn hạn
+
+- Mọi đường gửi tin — gửi đơn lẻ, chạy/retry/resume campaign, Public API — kiểm tra subscription **trước** khi giữ/trừ ví. Không có gói → lỗi `SUBSCRIPTION_REQUIRED`; hết hạn → `SUBSCRIPTION_EXPIRED` (kèm thông báo tiếng Việt).
+- Campaign đang chạy mà hết hạn: worker tạm dừng campaign (`PAUSED`, `pauseReason=SUBSCRIPTION_EXPIRED`), giữ nguyên các dòng `PENDING` và tiền đã giữ; sau khi gia hạn thì resume, không trừ tiền lần nữa.
+- Bật kiểm tra ngay khi phát hành, không có gói miễn phí tự động cho workspace cũ.
+
+### BR-SUB-05: Admin chỉnh subscription
+
+- Admin có thể cấp tay một kỳ cho workspace và sửa gói / ngày bắt đầu / ngày hết hạn / trạng thái (`CANCELLED` = thu hồi) của một kỳ đang dùng. Mọi thay đổi ghi audit log. Đổi `endsAt` reset cờ đã nhắc hết hạn.
+
+### BR-SUB-06: Email nhắc (Cấu hình chung)
+
+- **Sắp hết hạn:** cấu hình `subscriptionExpiryReminderDays` (mặc định 7). Cron gửi email cho owner khi kỳ cuối còn ≤ N ngày; mỗi kỳ nhắc đúng 1 lần; không nhắc nếu đã có kỳ nối tiếp.
+- **Ví sắp hết:** cấu hình `walletLowBalanceThreshold` (VND; 0/null = tắt). Khi ví có giao dịch và số dư ≤ ngưỡng thì gửi email cho owner, **tối đa 1 email/ngày** (theo giờ Việt Nam) cho mỗi ví, và chỉ nhắc lại khi có giao dịch mới kể từ lần nhắc trước.
+- Gửi email thất bại thì được thử lại ở lần quét sau (không đánh dấu là đã nhắc).
 
 ## Business Rules cốt lõi toàn hệ thống (áp dụng xuyên module)
 
@@ -496,3 +537,7 @@ approved --> disabled
 ### BR-CORE-09: Payment idempotency
 
 - Webhook lặp không được cộng tiền 2 lần; không tạo 2 order; phải lưu raw callback log để audit. Callback Pay2S được dedupe theo cặp provider/event ID trong cùng transaction với việc chuyển topup `PENDING → PAID` hoặc `PENDING → FAILED`.
+
+### BR-CORE-10: Subscription
+
+- Gửi tin (single, campaign, Public API) yêu cầu workspace có subscription còn hạn; mua subscription tạo Order và không cộng ví; mua khi còn hạn thì cộng dồn (BR-SUB-01 → BR-SUB-06).

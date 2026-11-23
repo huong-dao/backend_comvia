@@ -26,6 +26,8 @@ Phạm vi:
 | `/admin/dev/payment-webhook` | **Đã ngừng dùng; cần gỡ route mock** | Không gọi `/webhooks/pay2s` từ browser |
 | Trang đơn hàng (admin, toàn hệ thống; path FE tùy dự án) | `GET /admin/orders` | `GET /admin/orders/:orderId` |
 | Trang quản lý template (admin, toàn hệ thống; path FE tùy dự án, ví dụ `/admin/templates`) | `GET /admin/templates`, `GET /admin/templates/:templateId` | `PATCH /admin/templates/:templateId` (override toàn quyền), `PATCH /admin/templates/:templateId/cta-buttons/:ctaButtonId/unit-price` |
+| Menu Subscriptions (admin; path FE tùy dự án, ví dụ `/admin/subscriptions`) | `GET /admin/subscription-plans`, `GET /admin/subscriptions` | `POST/PATCH /admin/subscription-plans`, `PATCH /admin/subscriptions/:id`, `POST /admin/workspaces/:workspaceId/subscriptions` (mục 8A) |
+| Cấu hình chung (admin) | `GET /admin/config/general` | `PATCH /admin/config/general` (mục 8A) |
 | Trang quản lý tài khoản ngân hàng (admin; path FE tùy dự án, ví dụ `/admin/money-accounts`) | `GET /money-accounts`, `GET /money-accounts/all` | `POST /money-accounts`, `PATCH /money-accounts/:id`, `DELETE /money-accounts/:id` |
 
 ---
@@ -446,6 +448,86 @@ Request: mọi field ở DTO tạo đều optional, gửi field muốn đổi (v
 - `DELETE /money-accounts/:id`
 
 Response: `{ "success": true, "message": "Money account deleted successfully" }`. Đây thực chất là **soft delete** — backend chỉ set `isActive: false` (giống hệt `PATCH { "isActive": false }`), record vẫn còn trong DB nên các topup cũ tham chiếu tài khoản này không bị ảnh hưởng.
+
+---
+
+## 8A) Subscriptions & Cấu hình chung (Admin)
+
+> **Tính năng mới (2026-11-23, PO duyệt).** Menu `Subscriptions` dành cho `ADMIN` (`@Roles(ADMIN)`; STAFF không gọi được). Global prefix `api/v1`. Mọi list có phân trang `{ data, meta: { page, limit, total, totalPages } }`. Luồng phía workspace (mua gói, QR) xem `FRONTEND_API_GUIDE_NEXTJS.mdc` mục 9B.
+
+### Gói subscription (menu Subscriptions → Gói)
+
+| API | Mô tả |
+|-----|-------|
+| `GET /admin/subscription-plans?page=&limit=&keyword=&isActive=&durationYears=` | Danh sách mọi gói (kể cả đã tắt). `keyword` tìm theo tên/mã. |
+| `POST /admin/subscription-plans` | Tạo gói |
+| `GET /admin/subscription-plans/:planId` | Chi tiết |
+| `PATCH /admin/subscription-plans/:planId` | Sửa / bật-tắt bán (`isActive`) |
+
+Body tạo:
+```json
+{
+  "name": "ZBS PRO",
+  "description": "Gói 1 năm",
+  "priceExclVat": 2000000,
+  "vatPercent": 10,
+  "durationYears": 1,
+  "isActive": true,
+  "sortOrder": 0
+}
+```
+- `code` không bắt buộc (tự sinh từ tên, ví dụ `ZBS-PRO-1A2B`; trùng → `409`). `priceExclVat` là giá **chưa VAT**; `vatPercent` do Admin nhập; `durationYears` số nguyên 1-20.
+- Response (tạo/sửa/chi tiết/list) có thêm `vatAmount` và `totalAmountInclVat` do hệ thống tính (ví dụ 2.000.000 + 10% = 2.200.000) — FE hiển thị live khi nhập form bằng cùng công thức `round(price × vat / 100)`.
+- Sửa gói **không** ảnh hưởng đơn đã mua (snapshot tên/giá/thời hạn theo đơn) và không đổi các subscription đang chạy. Không xoá gói; muốn ngừng bán đặt `isActive=false`.
+
+### Subscription của workspace (menu Subscriptions → Danh sách)
+
+| API | Mô tả |
+|-----|-------|
+| `GET /admin/subscriptions` | Danh sách kỳ subscription của mọi workspace |
+| `GET /admin/subscriptions/:subscriptionId` | Chi tiết |
+| `PATCH /admin/subscriptions/:subscriptionId` | **Sửa gói / ngày bắt đầu / ngày hết hạn / trạng thái** của kỳ đang dùng |
+| `POST /admin/workspaces/:workspaceId/subscriptions` | **Cấp tay** một kỳ cho workspace (không qua thanh toán) |
+
+Query của list: `page`, `limit` (≤100), `workspaceId`, `keyword` (tên/slug workspace hoặc email owner), `planId`, `state` ∈ `ACTIVE | UPCOMING | EXPIRED | CANCELLED` (theo thời điểm hiện tại), `endsAtFrom`, `endsAtTo` (ISO, lọc theo ngày hết hạn).
+
+Mỗi phần tử:
+```json
+{
+  "id": "SUB_ID",
+  "workspace": { "id": "...", "name": "...", "slug": "...", "status": "ACTIVE", "owner": { "id": "...", "email": "...", "fullName": "..." } },
+  "plan": { "id": "...", "code": "...", "name": "ZBS PRO", "durationYears": 1 },
+  "orderId": "ORDER_ID | null",
+  "order": { "id": "...", "orderCode": "ORD_COMVIA_SUB_..." },
+  "purchaseId": "PURCHASE_ID | null",
+  "source": "PURCHASE | ADMIN_GRANT",
+  "startsAt": "...", "endsAt": "...", "durationDays": 365,
+  "status": "ACTIVE", "state": "ACTIVE", "daysRemaining": 300,
+  "note": null, "createdAt": "...", "updatedAt": "..."
+}
+```
+- `status` là trạng thái lưu (`ACTIVE | CANCELLED`); `state` là trạng thái suy ra theo thời gian (kể cả `EXPIRED`/`UPCOMING`).
+
+Body sửa (mọi field tùy chọn): `{ "planId", "startsAt", "endsAt", "status": "ACTIVE|CANCELLED", "note" }` — ngày dạng ISO; `endsAt` phải sau `startsAt` (`400`). Đổi `endsAt` sẽ reset cờ đã nhắc hết hạn để nhắc lại theo hạn mới. `status: "CANCELLED"` = thu hồi ngay (workspace không gửi được tin nếu không còn kỳ khác).
+
+Body cấp tay: `{ "planId", "startsAt"?, "endsAt"?, "note"? }` — bỏ trống ngày = tính như mua cộng dồn theo số năm của gói; chỉ gửi `startsAt` thì `endsAt = startsAt + số năm`. Dùng cho workspace cũ chưa có gói (không có gói miễn phí tự động).
+
+Mọi thay đổi đều ghi audit log (`subscription_plan.created|updated`, `subscription.purchased`, `subscription.admin_granted|admin_updated`).
+
+### Cấu hình chung (`admin/config`)
+
+- `GET /admin/config/general`
+- `PATCH /admin/config/general`
+
+```json
+{ "subscriptionExpiryReminderDays": 7, "walletLowBalanceThreshold": 100000 }
+```
+- `subscriptionExpiryReminderDays` (1-365, mặc định 7): số ngày trước khi hết hạn thì gửi email nhắc owner (mỗi kỳ một lần).
+- `walletLowBalanceThreshold` (VND, ≥ 0; `0` hoặc `null` = tắt): khi ví có giao dịch mà số dư ≤ ngưỡng thì gửi email nhắc owner, **tối đa 1 email/ngày** (theo giờ Việt Nam) cho mỗi ví.
+- PATCH chỉ cập nhật field được gửi; response trả lại cấu hình hiện hành.
+
+### Đơn hàng (mục 6)
+`GET /admin/orders` thêm filter `type` ∈ `TOPUP | SUBSCRIPTION`; mỗi order có `type` và `subscriptionPurchaseId` (đơn subscription không có `topupRequestId`).
 
 ---
 

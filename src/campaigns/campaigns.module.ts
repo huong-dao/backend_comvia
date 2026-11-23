@@ -4,9 +4,10 @@ import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
 import { CampaignWorkerService } from './campaign-worker.service';
 import { WalletModule } from '../wallet/wallet.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
-  imports: [OaConnectionsModule, WalletModule],
+  imports: [OaConnectionsModule, WalletModule, SubscriptionsModule],
   controllers: [CampaignsController],
   providers: [CampaignsService, CampaignWorkerService],
   exports: [CampaignsService],

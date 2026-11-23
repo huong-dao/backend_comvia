@@ -77,6 +77,7 @@ model User {
   walletTransactions    WalletTransaction[]
   topupRequests         TopupRequest[]
   orders                Order[]
+  subscriptionPurchases SubscriptionPurchase[]
   auditLogs             AuditLog[]
   quickChatSessions     QuickChatSession[]      @relation("QuickChatSessionUser")
   quickChatMessages     QuickChatMessage[]      @relation("QuickChatMessageUser")
@@ -129,6 +130,8 @@ model Workspace {
   topupRequests      TopupRequest[]
   paymentCallbackLogs PaymentCallbackLog[]
   orders             Order[]
+  subscriptionPurchases SubscriptionPurchase[]
+  subscriptions      WorkspaceSubscription[]
   templates          Template[]
   messageLogs        MessageLog[]
   campaigns          Campaign[]
@@ -326,6 +329,7 @@ enum WalletTransactionStatus {
 }
 
 model WalletAccount {
+  lowBalanceEmailSentAt DateTime? // lần gần nhất gửi mail nhắc ví sắp hết
   id          String  @id @default(cuid())
   ownerUserId String  @unique
   balance     Decimal @default(0)
@@ -413,6 +417,7 @@ model PaymentCallbackLog {
   source         String
   status         PaymentCallbackStatus
   topupRequestId String?
+  subscriptionPurchaseId String?
   payloadJson    Json
   processedAt    DateTime              @default(now())
   createdAt      DateTime              @default(now())
@@ -420,6 +425,7 @@ model PaymentCallbackLog {
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId  String
   topupRequest TopupRequest? @relation(fields: [topupRequestId], references: [id], onDelete: SetNull)
+  subscriptionPurchase SubscriptionPurchase? @relation(fields: [subscriptionPurchaseId], references: [id], onDelete: SetNull)
 
   @@unique([provider, eventId])
   @@index([topupRequestId, createdAt])
@@ -429,6 +435,11 @@ model PaymentCallbackLog {
 enum OrderStatus {
   PAID
   CANCELLED
+}
+
+enum OrderType {
+  TOPUP
+  SUBSCRIPTION
 }
 
 model Order {
@@ -441,11 +452,16 @@ model Order {
   totalVatAmount     Decimal
   totalAmountInclVat Decimal
   status             OrderStatus @default(PAID) // Vì khi tạo từ Webhook là đã xong rồi
+  type               OrderType   @default(TOPUP)
   paidAt             DateTime?
 
   // Liên kết ngược lại Topup
   topupRequestId String?       @unique
   topupRequest   TopupRequest? @relation(fields: [topupRequestId], references: [id])
+
+  subscriptionPurchaseId String?               @unique
+  subscriptionPurchase   SubscriptionPurchase? @relation(fields: [subscriptionPurchaseId], references: [id])
+  workspaceSubscriptions WorkspaceSubscription[]
 
   owner     User      @relation(fields: [ownerUserId], references: [id])
   workspace Workspace @relation(fields: [workspaceId], references: [id])
@@ -563,6 +579,10 @@ model SystemConfig {
   id                      String   @id @default("singleton")
   defaultMessageUnitPrice Decimal  @default(400)
   ctaPricingJson          Json?
+  // Số ngày trước khi subscription hết hạn thì gửi mail nhắc owner.
+  subscriptionExpiryReminderDays Int      @default(7)
+  // Ví còn <= ngưỡng này (VND) sau một giao dịch thì gửi mail nhắc; null/0 = tắt.
+  walletLowBalanceThreshold      Decimal?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -892,4 +912,107 @@ model MoneyAccount {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Subscription (gói dịch vụ theo thời hạn, tính cho workspace)
+// ---------------------------------------------------------------------------
+
+model SubscriptionPlan {
+  id            String  @id @default(cuid())
+  code          String  @unique
+  name          String
+  description   String?
+  priceExclVat  Decimal // giá chưa VAT
+  vatPercent    Decimal @default(10) // % VAT do admin nhập
+  durationYears Int // số năm, >= 1
+  isActive      Boolean @default(true)
+  sortOrder     Int     @default(0)
+
+  purchases     SubscriptionPurchase[]
+  subscriptions WorkspaceSubscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+enum SubscriptionPurchaseStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// Đơn mua subscription chờ thanh toán qua Pay2S (tương tự TopupRequest).
+// Snapshot tên/giá để đổi giá gói sau này không ảnh hưởng đơn cũ.
+model SubscriptionPurchase {
+  id           String @id @default(cuid())
+  purchaseCode String @unique
+  workspaceId  String
+  ownerUserId  String
+  planId       String
+
+  planName      String
+  durationYears Int
+  amountExclVat Decimal
+  vatPercent    Decimal
+  vatAmount     Decimal
+  amountInclVat Decimal
+
+  paymentProvider String
+  paymentRef      String?
+  qrCodeUrl       String?
+
+  status SubscriptionPurchaseStatus @default(PENDING)
+  paidAt DateTime?
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id])
+  owner     User             @relation(fields: [ownerUserId], references: [id])
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  order               Order?
+  subscription        WorkspaceSubscription?
+  paymentCallbackLogs PaymentCallbackLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
+enum WorkspaceSubscriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+// Một kỳ subscription của workspace. Mua cộng dồn => kỳ mới bắt đầu từ lúc kỳ
+// cuối cùng hết hạn. Hết hạn được suy ra từ endsAt, không cần cron.
+model WorkspaceSubscription {
+  id          String  @id @default(cuid())
+  workspaceId String
+  planId      String
+  purchaseId  String? @unique // null = admin cấp tay
+  orderId     String?
+
+  startsAt     DateTime
+  endsAt       DateTime
+  durationDays Int
+  status       WorkspaceSubscriptionStatus @default(ACTIVE)
+
+  // Đã gửi mail nhắc sắp hết hạn cho kỳ này chưa.
+  expiryReminderSentAt DateTime?
+  grantedByUserId      String? // admin cấp/sửa tay
+  note                 String?
+
+  workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan      @relation(fields: [planId], references: [id])
+  purchase  SubscriptionPurchase? @relation(fields: [purchaseId], references: [id])
+  order     Order?                @relation(fields: [orderId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workspaceId, endsAt])
+  @@index([status, endsAt])
 }

@@ -47,6 +47,8 @@ describe('TopupsService callback lifecycle', () => {
       {} as never,
       { write: jest.fn() } as never,
       walletLedger as never,
+      {} as never,
+      {} as never,
     );
     return { service, tx, walletLedger };
   }

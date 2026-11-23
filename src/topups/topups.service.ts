@@ -10,15 +10,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import { CreateTopupPay2sDto } from './dto/create-topup-pay2s.dto';
 import { calculateTopupAmounts, TOPUP_VAT_RATE } from './topup-vat';
+import { verifyPay2sSignature } from '../integrations/pay2s/pay2s.util';
+import { Pay2sCollectionService } from '../integrations/pay2s/pay2s-collection.service';
+import { SubscriptionPaymentsService } from '../subscriptions/subscription-payments.service';
 import {
-  createPay2sCollectionLink,
-  Pay2sBankAccount,
-  verifyPay2sSignature,
-} from '../integrations/pay2s/pay2s.util';
-
-import * as QRCode from 'qrcode';
-import * as fs from 'fs';
-import * as path from 'path';
+  SUBSCRIPTION_BANK_CONTENT_PREFIX,
+  SUBSCRIPTION_CODE_PREFIX,
+} from '../subscriptions/subscription.constants';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Pay2SWebhookDto } from './dto/pay2s-webhook.dto';
@@ -50,74 +48,12 @@ export class TopupsService {
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
     private readonly walletLedgerService: WalletLedgerService,
+    private readonly pay2sCollectionService: Pay2sCollectionService,
+    private readonly subscriptionPaymentsService: SubscriptionPaymentsService,
   ) {}
 
   private generateCode(prefix: string) {
     return `${prefix}_${randomBytes(4).toString('hex')}`;
-  }
-
-  private async saveQrCodeImage(
-    qrCodeContent: string,
-    topupCode: string,
-  ): Promise<string> {
-    try {
-      // 1. Xác định đường dẫn thư mục tuyệt đối
-      const rootDir = process.cwd();
-      const targetDir = path.join(rootDir, 'public', 'qrcodes', topupCode);
-
-      // 2. Tạo thư mục nếu chưa có (recursive: true để tạo cả folder cha)
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-
-      const fileName = `qr_code.png`;
-      const filePath = path.join(targetDir, fileName);
-
-      // 3. Xử lý lưu dữ liệu
-      if (qrCodeContent.startsWith('data:image')) {
-        /**
-         * TRƯỜNG HỢP BASE64: Pay2S gửi sẵn hình ảnh mã hóa
-         * Ví dụ: "data:image/png;base64,iVBORw0KG..."
-         */
-        // Tách bỏ phần tiền tố "data:image/png;base64," để lấy nội dung ảnh thuần túy
-        const base64Data = qrCodeContent.split(';base64,').pop();
-
-        if (!base64Data) {
-          throw new Error('Dữ liệu Base64 không hợp lệ');
-        }
-
-        // Ghi dữ liệu nhị phân (Buffer) trực tiếp ra file
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-
-        console.log(`[Success] Đã lưu ảnh QR từ Base64 cho: ${topupCode}`);
-      } else {
-        /**
-         * TRƯỜNG HỢP TEXT: Pay2S gửi chuỗi văn bản (VietQR)
-         * Ví dụ: "00020101021138580010A000000727..."
-         */
-        await QRCode.toFile(filePath, qrCodeContent, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: 'M',
-        });
-
-        console.log(`[Success] Đã tạo ảnh QR từ Text cho: ${topupCode}`);
-      }
-
-      // 4. Trả về URL public dựa trên cấu hình Static Assets trong main.ts
-      const baseUrl =
-        this.configService.get('BACKEND_URL') || 'http://localhost:3000';
-
-      // Theo cấu hình của bạn: prefix là '/public/'
-      return `${baseUrl}/public/qrcodes/${topupCode}/${fileName}`;
-    } catch (error) {
-      // Log lỗi chi tiết để dễ dàng kiểm tra
-      console.error(
-        `[Error] Lỗi khi lưu ảnh QR cho ${topupCode}:`,
-        error.message,
-      );
-      return '';
-    }
   }
 
   async createTopupWithPay2S(
@@ -163,103 +99,18 @@ export class TopupsService {
 
     // Tạo collection request cho Pay2S
     try {
-      // Lấy chi tiết tài khoản ngân hàng
-      const moneyAccount = await this.prismaService.moneyAccount.findUnique({
-        where: { id: moneyAccountId },
-        select: {
-          id: true,
-          accountNumber: true,
-          bankName: true,
-          bankCode: true,
-          pay2sBankId: true,
-          isActive: true,
-        },
+      // orderInfo: topupCode bỏ ký tự đặc biệt và chữ "TOPUP" (10-32 ký tự,
+      // chỉ chữ + số) — processPay2sBankTransaction suy ngược lại từ đây.
+      const qrCodeUrl = await this.pay2sCollectionService.createCollectionQr({
+        code: topup.topupCode,
+        orderInfo: topup.topupCode
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .replace('TOPUP', '')
+          .substring(0, 32),
+        amountInclVat: amountIncl,
+        moneyAccountId,
+        redirectPath: '/topup/success',
       });
-
-      if (!moneyAccount || !moneyAccount.isActive) {
-        throw new BadRequestException(
-          'Tài khoản ngân hàng không hợp lệ hoặc không hoạt động',
-        );
-      }
-
-      if (!moneyAccount.pay2sBankId) {
-        throw new BadRequestException(
-          'Tài khoản ngân hàng không có ID ngân hàng Pay2S được cấu hình',
-        );
-      }
-
-      // Lấy cấu hình Pay2S
-      const pay2sConfig = this.configService.get('pay2s');
-      if (!pay2sConfig) {
-        throw new BadRequestException('Cấu hình Pay2S không được tìm thấy');
-      }
-
-      // Chuẩn bị tài khoản ngân hàng cho Pay2S
-      const bankAccounts: Pay2sBankAccount[] = [
-        {
-          account_number: moneyAccount.accountNumber,
-          bank_id: moneyAccount.pay2sBankId,
-        },
-      ];
-
-      // Tạo liên kết thu tiền của Pay2S
-      const pay2sResponse = await createPay2sCollectionLink({
-        amount: Math.round(amountIncl), // Pay2S yêu cầu số tiền là số nguyên
-        orderId: topup.topupCode,
-        orderInfo:
-          `${topup.topupCode.replace(/[^a-zA-Z0-9]/g, '').replace('TOPUP', '')}`.substring(
-            0,
-            32,
-          ), // Giới hạn 10-32 ký tự, chỉ chấp nhậ ký tự chữ + số, không dấu gạch ngang hoặc đặc biêt.
-        bankAccounts,
-        redirectUrl: `${process.env.FRONTEND_URL}/topup/success`, // URL chuyển hướng sau khi thanh toán trên màn hình pay2s
-        ipnUrl: `${process.env.BACKEND_URL}/api/v1/webhooks/pay2s`, // API nhận kết quả thanh toán của đối tác.
-        requestType: 'pay2s',
-        pay2sConfigData: {
-          partner_code: pay2sConfig.partnerCode,
-          partner_name: pay2sConfig.partnerName,
-          api_key: pay2sConfig.apiKey,
-          api_secret: pay2sConfig.apiSecret,
-          api_url: pay2sConfig.apiUrl,
-        },
-      });
-
-      // Handle Pay2S response format - could be { status: false, message: ... } or { resultCode: ..., ... }
-      const responseStatus = pay2sResponse?.status ?? pay2sResponse?.resultCode;
-
-      if (!pay2sResponse) {
-        throw new BadRequestException(
-          'Pay2S API error: No response from Pay2S service',
-        );
-      }
-
-      // Check for error response (status: false or resultCode !== 0)
-      if (
-        responseStatus === false ||
-        (typeof responseStatus === 'number' && responseStatus !== 0)
-      ) {
-        const errorMessage =
-          pay2sResponse.message ||
-          pay2sResponse.resultMessage ||
-          'Unknown error';
-        throw new BadRequestException(`Pay2S API error: ${errorMessage}`);
-      }
-
-      // Extract QR code from response
-      let qrCodeUrl: string | undefined;
-      const qrCode = pay2sResponse.qrList?.[0]?.qrCode;
-      console.log('qrCode:', qrCode);
-      if (!qrCode) {
-        throw new BadRequestException('No QR code received from Pay2S');
-      }
-
-      if (qrCode) {
-        qrCodeUrl = await this.saveQrCodeImage(qrCode, topup.topupCode);
-
-        if (!qrCodeUrl) {
-          throw new BadRequestException('Lỗi tạo ảnh QR code');
-        }
-      }
 
       // Cập nhật lại qrCodeUrl của topup request
       await this.prismaService.topupRequest.update({
@@ -438,6 +289,12 @@ export class TopupsService {
       return { success: false, message: 'Invalid signature' };
     }
 
+    // Đơn mua subscription (orderId COMVIA_SUB_...) đi theo luồng riêng:
+    // không cộng ví, chỉ kích hoạt subscription + tạo Order.
+    if (dto.orderId.startsWith(`${SUBSCRIPTION_CODE_PREFIX}_`)) {
+      return this.subscriptionPaymentsService.handlePay2sIpn(dto, rawBody);
+    }
+
     // 1. Kiểm tra trạng thái giao dịch từ Pay2S
     if (dto.resultCode !== 0) {
       console.error(`Pay2S IPN báo lỗi: ${dto.message}`);
@@ -526,6 +383,10 @@ export class TopupsService {
     if (tx.transferType !== 'IN') return; // chỉ quan tâm tiền vào
 
     const content = tx.content?.trim() ?? '';
+    if (content.startsWith(SUBSCRIPTION_BANK_CONTENT_PREFIX)) {
+      await this.subscriptionPaymentsService.handleBankTransaction(tx, content);
+      return;
+    }
     const CODE_PREFIX = 'COMVIA';
     if (!content.startsWith(CODE_PREFIX)) {
       console.error(

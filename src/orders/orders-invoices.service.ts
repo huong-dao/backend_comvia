@@ -19,6 +19,9 @@ export class OrdersInvoicesService {
     if (query.status !== undefined) {
       where.status = query.status;
     }
+    if (query.type !== undefined) {
+      where.type = query.type;
+    }
     if (query.orderCode) {
       where.orderCode = {
         contains: query.orderCode,
@@ -70,8 +73,10 @@ export class OrdersInvoicesService {
           totalVatAmount: true,
           totalAmountInclVat: true,
           status: true,
+          type: true,
           paidAt: true,
           topupRequestId: true,
+          subscriptionPurchaseId: true,
           createdAt: true,
           workspace: {
             select: {

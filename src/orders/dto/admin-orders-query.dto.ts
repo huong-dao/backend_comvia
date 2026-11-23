@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, OrderType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
@@ -35,6 +35,10 @@ export class AdminOrdersQueryDto {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  @IsOptional()
+  @IsEnum(OrderType)
+  type?: OrderType;
 
   @IsOptional()
   @IsString()

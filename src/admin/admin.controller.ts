@@ -22,6 +22,7 @@ import { TemplatesService } from '../templates/templates.service';
 import { InternalTemplatesQueryDto } from '../templates/dto/internal-templates-query.dto';
 import { AdminOverrideTemplateDto } from '../templates/dto/admin-override-template.dto';
 import { AdjustWalletDto } from './dto/adjust-wallet.dto';
+import { UpdateGeneralConfigDto } from './dto/update-general-config.dto';
 
 @Controller('admin')
 @Roles(UserRole.ADMIN)
@@ -132,6 +133,17 @@ export class AdminController {
     return this.systemConfigService.updateDefaultMessageUnitPrice(
       dto.defaultMessageUnitPrice,
     );
+  }
+
+  // "Cấu hình chung": ngưỡng nhắc subscription sắp hết hạn + ví sắp hết tiền.
+  @Get('config/general')
+  getGeneralConfig() {
+    return this.systemConfigService.getGeneralConfig();
+  }
+
+  @Patch('config/general')
+  updateGeneralConfig(@Body() dto: UpdateGeneralConfigDto) {
+    return this.systemConfigService.updateGeneralConfig(dto);
   }
 
   @Get('config/cta-pricing')

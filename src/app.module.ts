@@ -23,6 +23,7 @@ import { MoneyAccountsModule } from './money-accounts/money-accounts.module';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import pay2sConfig from './config/pay2s.config';
 import zaloConfig from './config/zalo.config';
 import emailConfig from './config/email.config';
@@ -52,6 +53,7 @@ import emailConfig from './config/email.config';
     AdminModule,
     MoneyAccountsModule,
     AnalyticsModule,
+    SubscriptionsModule,
   ],
   controllers: [AppController],
   providers: [

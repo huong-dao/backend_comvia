@@ -5,6 +5,7 @@ import { assertOtpPayloadData } from '../templates/otp-template.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
+import { SubscriptionAccessService } from '../subscriptions/subscription-access.service';
 
 type PublicRequestContext = {
   workspaceId: string;
@@ -17,6 +18,7 @@ export class PublicApiService {
     private readonly oaMessagingService: OaMessagingService,
     private readonly walletLedgerService: WalletLedgerService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly subscriptionAccessService: SubscriptionAccessService,
   ) {}
 
   async listApprovedTemplates(ctx: PublicRequestContext) {
@@ -133,6 +135,9 @@ export class PublicApiService {
     if (!workspace || workspace.status !== 'ACTIVE') {
       throw new BadRequestException('Workspace is not active');
     }
+
+    // Subscription phải còn hạn mới được gửi.
+    await this.subscriptionAccessService.assertCanSend(ctx.workspaceId);
 
     const unitCost =
       (await this.systemConfigService.resolveTemplateUnitPrice(

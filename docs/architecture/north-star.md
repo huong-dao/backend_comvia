@@ -49,6 +49,7 @@ flowchart TB
 | `workspaces/` | Workspace và billing profile |
 | `wallet/` | Ví credit owner, transaction và thống kê theo workspace |
 | `topups/` | QR Pay2S, webhook và sinh order/invoice |
+| `subscriptions/` | Gói subscription, mua qua Pay2S, kỳ subscription của workspace, chặn gửi tin khi hết hạn, email nhắc hết hạn — xem `modules/subscription/component-design.md` |
 | `webhooks/` | Controller nhận webhook Pay2S (đăng ký qua TopupsModule) |
 
 ## 3. Quyết định nền tảng
@@ -81,6 +82,7 @@ flowchart TB
 | Danh tính | `User`, `UserCredential`, `OtpRequest` |
 | Tổ chức | `Workspace`, `WorkspaceMember`, `WorkspaceBillingProfile` |
 | Tài chính | `WalletAccount`, `WalletTransaction`, `TopupRequest`, `Order`, `Invoice` |
+| Subscription | `SubscriptionPlan`, `SubscriptionPurchase`, `WorkspaceSubscription` |
 | Giao tiếp | `WorkspaceOa`, `WorkspaceOaConnection`, `Template`, `MessageLog`, `Campaign` |
 | Dữ liệu lịch sử Quick Chat | `QuickChatAgentProfile`, `QuickChatSession`, `QuickChatMessage` (giữ lại sau REL-01, chờ quyết định retention) |
 

@@ -16,6 +16,41 @@ export class SystemConfigService {
     return this.ensureSingleton();
   }
 
+  /** "Cấu hình chung": các ngưỡng nhắc (hết hạn subscription, ví sắp hết). */
+  async getGeneralConfig() {
+    const config = await this.ensureSingleton();
+    return {
+      subscriptionExpiryReminderDays: config.subscriptionExpiryReminderDays,
+      walletLowBalanceThreshold:
+        config.walletLowBalanceThreshold == null
+          ? null
+          : Number(config.walletLowBalanceThreshold),
+    };
+  }
+
+  async updateGeneralConfig(input: {
+    subscriptionExpiryReminderDays?: number;
+    walletLowBalanceThreshold?: number | null;
+  }) {
+    const data: Prisma.SystemConfigUpdateInput = {};
+    if (input.subscriptionExpiryReminderDays !== undefined) {
+      data.subscriptionExpiryReminderDays =
+        input.subscriptionExpiryReminderDays;
+    }
+    if (input.walletLowBalanceThreshold !== undefined) {
+      data.walletLowBalanceThreshold =
+        input.walletLowBalanceThreshold === null
+          ? null
+          : new Prisma.Decimal(input.walletLowBalanceThreshold);
+    }
+    await this.ensureSingleton();
+    await this.prismaService.systemConfig.update({
+      where: { id: SYSTEM_CONFIG_SINGLETON_ID },
+      data,
+    });
+    return this.getGeneralConfig();
+  }
+
   async updateDefaultMessageUnitPrice(price: number) {
     return this.prismaService.systemConfig.upsert({
       where: { id: SYSTEM_CONFIG_SINGLETON_ID },

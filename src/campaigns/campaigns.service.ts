@@ -19,6 +19,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { WalletLedgerService } from '../wallet/wallet-ledger.service';
+import { SubscriptionAccessService } from '../subscriptions/subscription-access.service';
+import { PAUSE_REASON_SUBSCRIPTION_EXPIRED } from '../subscriptions/subscription.constants';
 import {
   buildCsvTemplateContent,
   parseCampaignCsv,
@@ -66,6 +68,7 @@ export class CampaignsService {
     private readonly systemConfigService: SystemConfigService,
     private readonly oaMessagingService: OaMessagingService,
     private readonly walletLedgerService: WalletLedgerService,
+    private readonly subscriptionAccessService: SubscriptionAccessService,
   ) {}
 
   async create(
@@ -576,10 +579,11 @@ export class CampaignsService {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
     // Rows left PENDING by an OA pause are already paid for under the paused
     // run; executing again would hold their cost a second time. Resume instead.
-    if (campaign.pauseReason === PAUSE_REASON_OA_DISCONNECTED) {
+    if (this.isAutoPaused(campaign)) {
       return this.resume(workspaceId, campaignId);
     }
     this.assertCanRun(campaign);
+    await this.subscriptionAccessService.assertCanSend(workspaceId);
 
     const pendingRows = await this.prismaService.campaignRow.findMany({
       where: { campaignId: campaign.id, status: 'PENDING' },
@@ -607,6 +611,7 @@ export class CampaignsService {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
     this.assertCampaignNotOaPaused(campaign);
     this.assertCanRun(campaign);
+    await this.subscriptionAccessService.assertCanSend(workspaceId);
 
     const rows = await this.prismaService.campaignRow.findMany({
       where: {
@@ -775,7 +780,17 @@ export class CampaignsService {
     // Fail fast before claiming: with the OA down nothing can be sent, so keep
     // every remaining row PENDING instead of burning through them one by one.
     if (!(await this.isOaConnected(campaign.oaConnectionId))) {
-      return this.pauseRunForOaUnavailable(run.id, campaign.id);
+      return this.pauseRun(run.id, campaign.id, PAUSE_REASON_OA_DISCONNECTED);
+    }
+
+    // Subscription hết hạn giữa chừng: giữ nguyên các dòng PENDING (và tiền đã
+    // giữ), tạm dừng campaign; resume được sau khi gia hạn.
+    if (!(await this.subscriptionAccessService.canSend(campaign.workspaceId))) {
+      return this.pauseRun(
+        run.id,
+        campaign.id,
+        PAUSE_REASON_SUBSCRIPTION_EXPIRED,
+      );
     }
 
     const claimed = await this.prismaService.campaignRow.updateMany({
@@ -792,7 +807,7 @@ export class CampaignsService {
       isRetry: row.retryCount > 0,
     });
     if (result.oaUnavailable) {
-      return this.pauseRunForOaUnavailable(run.id, campaign.id);
+      return this.pauseRun(run.id, campaign.id, PAUSE_REASON_OA_DISCONNECTED);
     }
     await this.syncCampaignCounters(campaign.id);
   }
@@ -806,12 +821,19 @@ export class CampaignsService {
     return connection?.status === 'CONNECTED';
   }
 
+  private isAutoPaused(campaign: CampaignContext) {
+    return (
+      campaign.pauseReason === PAUSE_REASON_OA_DISCONNECTED ||
+      campaign.pauseReason === PAUSE_REASON_SUBSCRIPTION_EXPIRED
+    );
+  }
+
   /**
-   * Pauses a run whose OA cannot send. Rows stay PENDING under the same run, so
+   * Pauses a run whose OA cannot send (or whose workspace subscription expired). Rows stay PENDING under the same run, so
    * the wallet hold is kept (no refund, no second charge) and `resume` simply
    * continues where the run stopped.
    */
-  private async pauseRunForOaUnavailable(runId: string, campaignId: string) {
+  private async pauseRun(runId: string, campaignId: string, reason: string) {
     await this.prismaService.$transaction([
       this.prismaService.campaignRun.updateMany({
         where: { id: runId, status: 'RUNNING' },
@@ -821,7 +843,7 @@ export class CampaignsService {
         where: { id: campaignId },
         data: {
           status: 'PAUSED' satisfies CampaignStatus,
-          pauseReason: PAUSE_REASON_OA_DISCONNECTED,
+          pauseReason: reason,
         },
       }),
     ]);
@@ -834,18 +856,17 @@ export class CampaignsService {
    */
   async resume(workspaceId: string, campaignId: string) {
     const campaign = await this.getCampaignContext(workspaceId, campaignId);
-    if (
-      campaign.status !== 'PAUSED' ||
-      campaign.pauseReason !== PAUSE_REASON_OA_DISCONNECTED
-    ) {
+    if (campaign.status !== 'PAUSED' || !this.isAutoPaused(campaign)) {
       throw new BadRequestException(
-        'Campaign is not paused because of a disconnected OA',
+        'Campaign is not paused because of a disconnected OA or an expired subscription',
       );
     }
     if (campaign.workspace.status !== 'ACTIVE') {
       throw new BadRequestException('Workspace is not active');
     }
-    if (!(await this.isOaConnected(campaign.oaConnectionId))) {
+    if (campaign.pauseReason === PAUSE_REASON_SUBSCRIPTION_EXPIRED) {
+      await this.subscriptionAccessService.assertCanSend(workspaceId);
+    } else if (!(await this.isOaConnected(campaign.oaConnectionId))) {
       throw new BadRequestException(
         sendErrorBody(SEND_ERROR_CODES.OA_NOT_CONNECTED),
       );
@@ -1305,6 +1326,11 @@ export class CampaignsService {
     if (campaign.pauseReason === PAUSE_REASON_OA_DISCONNECTED) {
       throw new BadRequestException(
         'Campaign is paused because the OA is disconnected; reconnect the OA and resume it first',
+      );
+    }
+    if (campaign.pauseReason === PAUSE_REASON_SUBSCRIPTION_EXPIRED) {
+      throw new BadRequestException(
+        'Campaign is paused because the subscription expired; renew it and resume first',
       );
     }
   }
