@@ -968,25 +968,27 @@ Auth/Role: `OWNER` hoặc `MEMBER` + workspace context.
 - `GET /workspaces/:workspaceId/campaigns/:campaignId/rows?status=&limit=` — `limit` mặc định `100`, tối đa `500`, không có phân trang. Sắp xếp theo `createdAt`.
 - `PATCH /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
 - `DELETE /workspaces/:workspaceId/campaigns/:campaignId/rows/:rowId`
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request. **Chỉ xử lý các dòng `PENDING`** (dòng `SUCCESS` không bao giờ bị gửi lại) và `totalCharged = unitPrice × số dòng PENDING` của lần chạy đó. Khi run kết thúc, các dòng `FAILED` của run được hoàn tiền một lần. Sau lần gửi đầu, muốn gửi lại: upload `import-csv/reconcile` để đưa dòng `FAILED` về `PENDING` (kèm sửa dữ liệu), rồi gọi `execute`. Nếu không còn dòng `PENDING`, `execute` trả `400`. Nếu campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` thì `execute` hoạt động như `/resume` (không tạo run mới, không trừ ví).
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự). Trả `400` khi campaign đang tạm dừng vì OA mất kết nối (xem `resume` bên dưới).
-- `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` — không có body. Tiếp tục campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` (xem mục "Tạm dừng vì OA mất kết nối" bên dưới). Dùng lại run cũ, **không trừ ví lần nữa**. Response `{ "campaignId": "...", "status": "RUNNING", "runId": "..." }`. Lỗi `400`:
-  - Campaign không `PAUSED` hoặc `pauseReason` khác `OA_DISCONNECTED`: `{ "message": "Campaign is not paused because of a disconnected OA" }`.
-  - OA vẫn chưa `CONNECTED`: `{ "code": "OA_NOT_CONNECTED", "message": "Official Account chưa kết nối với Zalo. ..." }` (message tiếng Việt, hiển thị trực tiếp được). FE nên điều hướng user tới trang kết nối OA.
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/execute` — tạo campaign run vào database queue và trừ ví OWNER trước; response xác nhận `{ campaignId, runId, status: "QUEUED", unitPrice, totalCharged }`, không chờ gửi hết trong HTTP request. **Chỉ xử lý các dòng `PENDING`** (dòng `SUCCESS` không bao giờ bị gửi lại) và `totalCharged = unitPrice × số dòng PENDING` của lần chạy đó. Khi run kết thúc, các dòng `FAILED` của run được hoàn tiền một lần. Sau lần gửi đầu, muốn gửi lại: upload `import-csv/reconcile` để đưa dòng `FAILED` về `PENDING` (kèm sửa dữ liệu), rồi gọi `execute`. Nếu không còn dòng `PENDING`, `execute` trả `400`. Nếu campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` hoặc `"SUBSCRIPTION_EXPIRED"` thì `execute` hoạt động như `/resume` (không tạo run mới, không trừ ví). Workspace không có subscription còn hạn → `400` `SUBSCRIPTION_REQUIRED` / `SUBSCRIPTION_EXPIRED` (mục 9B.6).
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/retry` — body `{ "rowIds": ["..."] }` (chỉ rows `FAILED`, trừ ví lại, trả response queue tương tự). Trả `400` khi campaign đang tạm dừng vì OA mất kết nối hoặc subscription hết hạn (xem `resume` bên dưới); cũng kiểm tra subscription còn hạn (`SUBSCRIPTION_REQUIRED` / `SUBSCRIPTION_EXPIRED`, mục 9B.6).
+- `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` — không có body. Tiếp tục campaign đang `PAUSED` với `pauseReason = "OA_DISCONNECTED"` hoặc `"SUBSCRIPTION_EXPIRED"` (xem mục "Tạm dừng tự động (`pauseReason`)" bên dưới). Dùng lại run cũ, **không trừ ví lần nữa**. Response `{ "campaignId": "...", "status": "RUNNING", "runId": "..." }`. Lỗi `400`:
+  - Campaign không `PAUSED` hoặc `pauseReason` không thuộc hai giá trị trên: `{ "message": "Campaign is not paused because of a disconnected OA or an expired subscription" }`.
+  - `pauseReason = "OA_DISCONNECTED"` mà OA vẫn chưa `CONNECTED`: `{ "code": "OA_NOT_CONNECTED", "message": "Official Account chưa kết nối với Zalo. ..." }` (message tiếng Việt, hiển thị trực tiếp được). FE nên điều hướng user tới trang kết nối OA.
+  - `pauseReason = "SUBSCRIPTION_EXPIRED"` mà subscription vẫn không còn hạn: `{ "code": "SUBSCRIPTION_EXPIRED" | "SUBSCRIPTION_REQUIRED", "message": "..." }` (mục 9B.6). FE điều hướng user tới trang mua/gia hạn gói.
   - Workspace không `ACTIVE`, hoặc không còn dòng `PENDING` để tiếp tục.
 
-#### Tạm dừng vì OA mất kết nối (`pauseReason`)
+#### Tạm dừng tự động (`pauseReason`)
 
 `GET/list campaigns` trả thêm field `pauseReason` (`string | null`) trên campaign:
 | `status` | `pauseReason` | Ý nghĩa | FE nên làm |
 |---|---|---|---|
 | `PAUSED` | `"OA_DISCONNECTED"` | OA chưa kết nối / thiếu token / token hết hạn khi đang gửi. Tin **chưa gửi**, các dòng chưa gửi vẫn `PENDING`, tiền đã giữ ở run đó. | Báo "OA mất kết nối", dẫn user kết nối lại OA, hiện nút **Tiếp tục** gọi `/resume` |
+| `PAUSED` | `"SUBSCRIPTION_EXPIRED"` | Subscription của workspace hết hạn (hoặc chưa có kỳ hiệu lực) khi đang gửi. Các dòng chưa gửi vẫn `PENDING`, tiền đã giữ không đổi. | Báo "Gói đã hết hạn", dẫn owner tới trang mua/gia hạn (`/app/subscription`); chỉ bật nút **Tiếp tục** (`/resume`) khi `GET /subscriptions/current` có `canSend = true` |
 | `PAUSED` | `null` | Cần đối soát (có dòng `RECONCILIATION_REQUIRED`) | Như mô tả đối soát bên dưới |
 | khác | `null` | | |
 
 Quy tắc:
-- Chỉ dùng `pauseReason` để phân biệt hai kiểu `PAUSED`; các giá trị khác (nếu thêm sau này) FE nên xử lý như không rõ và hiển thị trạng thái chung.
-- Khi `pauseReason = "OA_DISCONNECTED"`: `execute` được coi như `resume` (cùng response của `resume`, **không** phải response `QUEUED`), còn `retry` và `import-csv/reconcile` trả `400`. FE nên ẩn các nút này và chỉ cho **Tiếp tục**.
+- Chỉ dùng `pauseReason` để phân biệt các kiểu `PAUSED`; các giá trị khác (nếu thêm sau này) FE nên xử lý như không rõ và hiển thị trạng thái chung.
+- Khi `pauseReason` là `"OA_DISCONNECTED"` hoặc `"SUBSCRIPTION_EXPIRED"`: `execute` được coi như `resume` (cùng response của `resume`, **không** phải response `QUEUED`), còn `retry` và `import-csv/reconcile` trả `400` (với `SUBSCRIPTION_EXPIRED` là chuỗi tiếng Anh, không có `code`; xem 9B.6). FE nên ẩn các nút này và chỉ cho **Tiếp tục**.
 - Worker kiểm tra OA trước khi gửi mỗi dòng nên không có dòng nào chuyển `FAILED`/`RECONCILIATION_REQUIRED` vì lỗi OA, và không có `MessageLog` mới. `totalPending` vẫn tính các dòng chưa gửi.
 - Resume không tự động: sau khi user kết nối lại OA, campaign vẫn `PAUSED` cho tới khi gọi `/resume`.
 
@@ -1311,7 +1313,10 @@ Response (thành công):
 Ghi chú:
 - `qrCodeUrl` là **URL ảnh QR** (PNG do backend tự sinh/convert từ nội dung Pay2S trả về, lưu ở `public/qrcodes/<topupCode>/`), không phải chuỗi QR text — FE `<img src={qrCodeUrl} />` trực tiếp.
 - Không có field `qrExpiredAt` ở phiên bản hiện tại.
-- Nếu tạo liên kết Pay2S thất bại (tài khoản ngân hàng không hợp lệ, thiếu `pay2sBankId`, lỗi API Pay2S...), backend trả `400 BadRequestException` và cập nhật topup thành `FAILED`.
+- Nếu tạo liên kết Pay2S thất bại, backend cập nhật topup thành `FAILED` và trả `400`:
+  - Lỗi phía Pay2S (API lỗi/timeout 15 giây/từ chối/không có mã QR/không lưu được ảnh QR): body `{ "code": "PAY2S_UNAVAILABLE", "message": "Cổng thanh toán đang bận, vui lòng thử lại sau." }`. FE bắt theo `code`, hiện thông báo kèm nút "Thử lại" (tạo topup mới). Thông điệp gốc của Pay2S không còn trả về client (trước đây có dạng "Failed to create Pay2S collection request: ...").
+  - Tài khoản ngân hàng không hợp lệ hoặc thiếu `pay2sBankId`: `400` với `message` thường (không có `code`), hiển thị trực tiếp.
+  - Lỗi bất ngờ khác (ví dụ lỗi DB): `500`.
 
 ### 9.5 Get topup status
 Endpoint:
@@ -1479,6 +1484,7 @@ Response:
 - `status`: `NONE` (chưa từng có gói) | `ACTIVE` | `EXPIRED` (`expiredAt` có giá trị). `canSend=false` khi `NONE`/`EXPIRED`.
 - `endsAt` đã **cộng dồn** các kỳ mua liền kề — đây là ngày hết hạn thật. `plan`/`startsAt` là của kỳ đang chạy.
 - Gợi ý FE: gọi khi vào app/đổi workspace để hiện banner "chưa đăng ký" / "sắp hết hạn" / "đã hết hạn".
+- **Kỳ chưa bắt đầu (`UPCOMING`):** nếu workspace chỉ có kỳ có `startsAt` ở tương lai (ví dụ Admin cấp tay với ngày bắt đầu tương lai) và chưa có kỳ nào từng chạy, `status` trả `NONE`, `canSend=false`. `/current` hiện **không** có field báo về kỳ sắp tới. Trường hợp này API gửi tin trả `SUBSCRIPTION_EXPIRED` (không phải `SUBSCRIPTION_REQUIRED`, xem 9B.6), nên FE không nên suy luận "đã hết hạn" chỉ từ code lỗi — dựa vào `status` của `/current` để chọn nội dung banner. *(Hành vi này đang chờ BE xác nhận, có thể đổi.)*
 
 ### 9B.3 Tạo đơn mua + QR thanh toán (giống nạp ví)
 `POST /subscriptions/purchase/create-with-pay2s` — `OWNER`
@@ -1487,7 +1493,10 @@ Response:
 { "planId": "PLAN_ID", "moneyAccountId": "MONEY_ACCOUNT_ID" }
 ```
 - `moneyAccountId` lấy từ mục 9.3 (cùng danh sách tài khoản ngân hàng dùng cho topup).
-- Gói phải đang `isActive`, ngược lại `400`.
+- Gói phải đang `isActive`, ngược lại `400` ("Gói subscription không tồn tại hoặc đã ngừng bán").
+- Tổng tiền sau VAT (`totalAmountInclVat`) phải **≥ 10.000đ** (ngưỡng tối thiểu của Pay2S), ngược lại `400` ("Giá gói quá thấp để thanh toán qua Pay2S (tối thiểu 10.000đ)").
+- **Không tạo được QR do phía Pay2S** (Pay2S lỗi/timeout/từ chối, không có mã QR, không lưu được ảnh QR) → `400` với body `{ "code": "PAY2S_UNAVAILABLE", "message": "Cổng thanh toán đang bận, vui lòng thử lại sau." }` và đơn chuyển `FAILED`. FE bắt theo `code` để hiện thông báo kèm nút "Thử lại" (tạo đơn mới, không dùng lại đơn cũ). Backend gọi Pay2S tối đa **15 giây**; nguyên nhân thật chỉ nằm trong log của backend, không trả cho client.
+- Các lỗi `400` còn lại của endpoint này (gói không bán, giá dưới ngưỡng, tài khoản ngân hàng không hợp lệ/thiếu `pay2sBankId`) là **chuỗi thông thường, không có `code`**: FE hiển thị trực tiếp `message`. Lỗi bất ngờ khác (ví dụ lỗi DB) trả `500`, đơn cũng chuyển `FAILED`.
 
 Response:
 ```json
@@ -1509,11 +1518,12 @@ Response:
   "expectedEndsAt": "..."
 }
 ```
-- `qrCodeUrl` là URL ảnh QR (dùng `<img>` trực tiếp), cách dùng y hệt 9.4. Tạo Pay2S lỗi → `400` và đơn chuyển `FAILED`.
+- `qrCodeUrl` là URL ảnh QR (dùng `<img>` trực tiếp), cách dùng y hệt 9.4. Tạo Pay2S lỗi → `400` `PAY2S_UNAVAILABLE` và đơn chuyển `FAILED` (xem trên).
 - `expectedStartsAt/expectedEndsAt` chỉ là **dự kiến** nếu thanh toán ngay; ngày thật tính lại lúc nhận tiền.
 - **Mua khi còn hạn → cộng dồn:** kỳ mới bắt đầu từ lúc kỳ cuối cùng hết hạn. Hết hạn rồi → bắt đầu từ lúc thanh toán thành công.
 - Thời hạn tính theo số **năm** Admin nhập (1, 2, 3…); hệ thống tự tính ra số ngày và ngày hết hạn.
-- Khi Pay2S báo thanh toán thành công backend tạo **Order** (`type: "SUBSCRIPTION"`, hiện trong `GET /workspaces/:workspaceId/orders`) và kỳ subscription. **Không cộng tiền vào ví.**
+- Khi Pay2S báo thanh toán thành công backend tạo **Order** (`type: "SUBSCRIPTION"`, hiện trong `GET /workspaces/:workspaceId/orders`) và kỳ subscription. **Không cộng tiền vào ví.** Lưu ý `GET /workspaces/:workspaceId/orders` trả **mảng thô** (kèm `items`), **không phân trang, không có `meta`**, khác các list có phân trang ở mục này.
+- **Route redirect sau thanh toán:** khi tạo QR, backend gửi Pay2S `redirectUrl = ${FRONTEND_URL}/subscription/success`. FE **cần có route `/subscription/success`** (trang kết quả; nên poll 9B.4 bằng `purchaseCode` đang lưu ở client rồi gọi lại 9B.2), hoặc báo BE đổi path.
 
 ### 9B.4 Polling trạng thái đơn mua
 `GET /subscriptions/purchases/:purchaseCode/status` — `OWNER`
@@ -1535,6 +1545,8 @@ Các API gửi tin trả `400` với body chuẩn của mục 8.1:
 
 - Kiểm tra diễn ra **trước** khi giữ/trừ ví nên không phát sinh `MessageLog` hay giao dịch ví.
 - **Campaign đang chạy mà hết hạn giữa chừng:** campaign chuyển `PAUSED` với `pauseReason: "SUBSCRIPTION_EXPIRED"`, các dòng còn lại giữ `PENDING` và tiền đã giữ không đổi. Sau khi gia hạn, gọi `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` (hoặc `execute`, tự chuyển sang resume) để chạy tiếp mà không bị trừ tiền lần nữa. Hết hạn mà gọi resume → `400` `SUBSCRIPTION_EXPIRED`.
+- **Campaign đang `PAUSED` vì hết hạn thì `retry` / `reconcile` bị chặn** bằng `400` có `message` là **chuỗi tiếng Anh, không có `code`** ("Campaign is paused because the subscription expired; renew it and resume first"). FE **không dựa vào lỗi này**: khi campaign có `pauseReason: "SUBSCRIPTION_EXPIRED"`, ẩn/disable nút Retry, Reconcile và hiển thị nút Resume (chỉ bật khi `GET /subscriptions/current` có `canSend=true`; `execute` cũng tự chuyển sang resume).
+- `pauseReason` chỉ có một giá trị tại một thời điểm: `OA_DISCONNECTED` (phải kết nối lại OA rồi resume) hoặc `SUBSCRIPTION_EXPIRED` (phải gia hạn rồi resume). FE hiển thị lý do và hướng dẫn tương ứng.
 
 ### 9B.7 Email nhắc
 Backend tự gửi email cho owner (không có API FE): (1) subscription còn ≤ N ngày (N = "số ngày nhắc" ở Cấu hình chung, mặc định 7; mỗi kỳ nhắc 1 lần, không nhắc nếu đã mua cộng dồn kỳ nối tiếp); (2) ví còn ≤ ngưỡng sau một giao dịch (tối đa 1 email/ngày theo giờ Việt Nam). Link trong email trỏ `/app/subscription` và `/app/wallet` của `COMVIA_APP_BASE_URL` — FE cần có route tương ứng hoặc báo BE đổi đường dẫn.

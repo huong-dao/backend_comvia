@@ -478,6 +478,9 @@ Body tạo:
 ```
 - `code` không bắt buộc (tự sinh từ tên, ví dụ `ZBS-PRO-1A2B`; trùng → `409`). `priceExclVat` là giá **chưa VAT**; `vatPercent` do Admin nhập; `durationYears` số nguyên 1-20.
 - Response (tạo/sửa/chi tiết/list) có thêm `vatAmount` và `totalAmountInclVat` do hệ thống tính (ví dụ 2.000.000 + 10% = 2.200.000) — FE hiển thị live khi nhập form bằng cùng công thức `round(price × vat / 100)`.
+- **Giá tối thiểu:** gói có `totalAmountInclVat` < 10.000đ vẫn tạo/sửa được, nhưng owner **không mua được** (`400`: tối thiểu 10.000đ của Pay2S). Form admin nên cảnh báo hoặc chặn ngưỡng này.
+- `PATCH` gói chỉ đổi được `description` sang chuỗi (kể cả rỗng), **không** set về `null`. `code` luôn được lưu dạng chữ hoa.
+- Phân trang: `limit` mặc định 20, tối đa 100.
 - Sửa gói **không** ảnh hưởng đơn đã mua (snapshot tên/giá/thời hạn theo đơn) và không đổi các subscription đang chạy. Không xoá gói; muốn ngừng bán đặt `isActive=false`.
 
 ### Subscription của workspace (menu Subscriptions → Danh sách)
@@ -489,7 +492,7 @@ Body tạo:
 | `PATCH /admin/subscriptions/:subscriptionId` | **Sửa gói / ngày bắt đầu / ngày hết hạn / trạng thái** của kỳ đang dùng |
 | `POST /admin/workspaces/:workspaceId/subscriptions` | **Cấp tay** một kỳ cho workspace (không qua thanh toán) |
 
-Query của list: `page`, `limit` (≤100), `workspaceId`, `keyword` (tên/slug workspace hoặc email owner), `planId`, `state` ∈ `ACTIVE | UPCOMING | EXPIRED | CANCELLED` (theo thời điểm hiện tại), `endsAtFrom`, `endsAtTo` (ISO, lọc theo ngày hết hạn).
+Query của list: `page`, `limit` (mặc định 30, tối đa 100; sắp theo `endsAt` giảm dần), `workspaceId`, `keyword` (tên/slug workspace hoặc email owner), `planId`, `state` ∈ `ACTIVE | UPCOMING | EXPIRED | CANCELLED` (theo thời điểm hiện tại), `endsAtFrom`, `endsAtTo` (ISO, lọc theo ngày hết hạn).
 
 Mỗi phần tử:
 ```json
@@ -507,6 +510,9 @@ Mỗi phần tử:
 }
 ```
 - `status` là trạng thái lưu (`ACTIVE | CANCELLED`); `state` là trạng thái suy ra theo thời gian (kể cả `EXPIRED`/`UPCOMING`).
+- Response của `POST /admin/workspaces/:workspaceId/subscriptions` và `PATCH /admin/subscriptions/:id` có **cùng shape** với một phần tử list ở trên. Lỗi: `404` (không thấy workspace/gói/subscription), `400` (ngày không hợp lệ hoặc `endsAt` ≤ `startsAt`).
+- `ADMIN_GRANT` / `PURCHASE` suy ra từ `purchaseId` (null = cấp tay). Sửa một kỳ `PURCHASE` vẫn hợp lệ và không đổi `source`.
+- Kỳ `UPCOMING` (chưa tới `startsAt`) **không** cho workspace gửi tin; nếu workspace chỉ có kỳ này, phía workspace `GET /subscriptions/current` trả `NONE` (xem guide 9B.2). Khi cấp tay với `startsAt` tương lai cho workspace chưa có gói, lưu ý workspace vẫn chưa gửi được tin cho tới ngày đó.
 
 Body sửa (mọi field tùy chọn): `{ "planId", "startsAt", "endsAt", "status": "ACTIVE|CANCELLED", "note" }` — ngày dạng ISO; `endsAt` phải sau `startsAt` (`400`). Đổi `endsAt` sẽ reset cờ đã nhắc hết hạn để nhắc lại theo hạn mới. `status: "CANCELLED"` = thu hồi ngay (workspace không gửi được tin nếu không còn kỳ khác).
 
@@ -528,6 +534,7 @@ Mọi thay đổi đều ghi audit log (`subscription_plan.created|updated`, `su
 
 ### Đơn hàng (mục 6)
 `GET /admin/orders` thêm filter `type` ∈ `TOPUP | SUBSCRIPTION`; mỗi order có `type` và `subscriptionPurchaseId` (đơn subscription không có `topupRequestId`).
+- `GET /admin/orders/:orderId` (chi tiết) include `topupRequest` nhưng **không** include thông tin purchase: với order `SUBSCRIPTION`, `topupRequest = null` — FE cần xử lý null và dùng `type` để chọn bố cục. `subscriptionPurchaseId` vẫn có trong bản ghi.
 
 ---
 

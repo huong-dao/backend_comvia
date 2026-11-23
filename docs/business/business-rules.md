@@ -482,6 +482,12 @@ approved --> disabled
 - Khi thanh toán thành công, trong **một transaction**: đơn mua → `PAID`; tạo **Order** (`type=SUBSCRIPTION`, 1 order item theo giá/VAT của gói) và kỳ subscription. **Không cộng ví.**
 - **Mua khi còn hạn thì cộng dồn:** kỳ mới bắt đầu từ lúc kỳ cuối cùng hết hạn; nếu đã hết hạn/chưa có thì bắt đầu từ lúc thanh toán thành công. Ngày tính lúc nhận tiền (không phải lúc tạo QR).
 - Idempotency như BR-CORE-09: callback lặp không tạo 2 order/2 kỳ; sai số tiền bị bỏ qua; mã đơn subscription `COMVIA_SUB_*` / nội dung chuyển khoản `COMVIASUB*` được tách khỏi đơn nạp ví.
+- **Gói phải đang bán:** chỉ mua được gói `isActive=true`; gói không tồn tại hoặc đã ngừng bán → từ chối tạo đơn (`400`).
+- **Tổng tiền tối thiểu:** tổng phải thanh toán (đã gồm VAT) **≥ 10.000đ** — ngưỡng tối thiểu của cổng Pay2S. Lưu ý khác nạp ví: nạp ví cũng có ngưỡng 10.000đ nhưng áp cho số tiền **chưa VAT** (`src/topups/dto/create-topup-pay2s.dto.ts:5`, chưa được ghi trong `BR-TOPUP`), còn subscription áp cho **tổng sau VAT**. Dưới ngưỡng → từ chối tạo đơn (`400`), không tạo QR.
+  - Ràng buộc chỉ kiểm lúc **mua**: Admin vẫn tạo/sửa được gói có tổng dưới 10.000đ (BR-SUB-01 không chặn), nhưng owner không mua được gói đó. _Ghi nhận hành vi đã có trong code (`src/subscriptions/subscription-purchases.service.ts:63-72`); chưa có xác nhận riêng của PO, xem Câu hỏi mở bên dưới._
+- Tạo QR Pay2S lỗi → đơn mua chuyển `FAILED` (không tạo Order, không tạo kỳ); owner tạo đơn mới để thử lại.
+
+> CÂU HỎI MỞ (PO): có chặn ngay ở bước Admin tạo/sửa gói khi tổng sau VAT < 10.000đ không (hiện chỉ chặn lúc mua)?
 
 ### BR-SUB-04: Chặn gửi tin khi không còn hạn
 
