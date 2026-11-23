@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -136,10 +137,17 @@ export class SubscriptionPurchasesService {
             updateError,
           ),
         );
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      throw new BadRequestException(
-        `Failed to create Pay2S collection request: ${message}`,
+      // Lỗi đã có mã/thông điệp an toàn cho client (ví dụ PAY2S_UNAVAILABLE,
+      // tài khoản ngân hàng không hợp lệ) → trả nguyên; không nối thông điệp
+      // gốc của Pay2S. Lỗi khác (ví dụ DB) → ghi log và để Nest trả 500.
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      console.error(
+        `Lỗi không mong đợi khi tạo đơn subscription ${purchase.purchaseCode}:`,
+        error,
       );
+      throw error;
     }
   }
 

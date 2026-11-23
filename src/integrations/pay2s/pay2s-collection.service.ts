@@ -1,10 +1,15 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createPay2sCollectionLink, Pay2sBankAccount } from './pay2s.util';
+import { Pay2sRequestError, pay2sUnavailableException } from './pay2s.errors';
+import {
+  createPay2sCollectionLink,
+  Pay2sBankAccount,
+  Pay2sCollectionLinkResponse,
+} from './pay2s.util';
 
 type Pay2sAppConfig = {
   partnerCode: string;
@@ -20,6 +25,8 @@ type Pay2sAppConfig = {
  */
 @Injectable()
 export class Pay2sCollectionService {
+  private readonly logger = new Logger(Pay2sCollectionService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
@@ -69,27 +76,33 @@ export class Pay2sCollectionService {
       },
     ];
 
-    const pay2sResponse = await createPay2sCollectionLink({
-      amount: Math.round(params.amountInclVat), // Pay2S yêu cầu số nguyên
-      orderId: params.code,
-      orderInfo: params.orderInfo,
-      bankAccounts,
-      redirectUrl: `${process.env.FRONTEND_URL}${params.redirectPath}`,
-      ipnUrl: `${process.env.BACKEND_URL}/api/v1/webhooks/pay2s`,
-      requestType: 'pay2s',
-      pay2sConfigData: {
-        partner_code: pay2sConfig.partnerCode,
-        partner_name: pay2sConfig.partnerName,
-        api_key: pay2sConfig.apiKey,
-        api_secret: pay2sConfig.apiSecret,
-        api_url: pay2sConfig.apiUrl,
-      },
-    });
-
-    if (!pay2sResponse) {
-      throw new BadRequestException(
-        'Pay2S API error: No response from Pay2S service',
-      );
+    // Từ đây mọi lỗi phía Pay2S/ảnh QR đều trả cho client cùng một lỗi
+    // `PAY2S_UNAVAILABLE`; nguyên nhân thật chỉ ghi vào log (không lộ thông
+    // điệp của Pay2S ra ngoài).
+    let pay2sResponse: Pay2sCollectionLinkResponse;
+    try {
+      pay2sResponse = await createPay2sCollectionLink({
+        amount: Math.round(params.amountInclVat), // Pay2S yêu cầu số nguyên
+        orderId: params.code,
+        orderInfo: params.orderInfo,
+        bankAccounts,
+        redirectUrl: `${process.env.FRONTEND_URL}${params.redirectPath}`,
+        ipnUrl: `${process.env.BACKEND_URL}/api/v1/webhooks/pay2s`,
+        requestType: 'pay2s',
+        pay2sConfigData: {
+          partner_code: pay2sConfig.partnerCode,
+          partner_name: pay2sConfig.partnerName,
+          api_key: pay2sConfig.apiKey,
+          api_secret: pay2sConfig.apiSecret,
+          api_url: pay2sConfig.apiUrl,
+        },
+      });
+    } catch (error) {
+      // Đã được log (kind, orderId, requestId) trong createPay2sCollectionLink.
+      if (error instanceof Pay2sRequestError) {
+        throw pay2sUnavailableException();
+      }
+      throw error;
     }
 
     // Lỗi có thể là { status: false } hoặc { resultCode !== 0 }.
@@ -98,23 +111,27 @@ export class Pay2sCollectionService {
       responseStatus === false ||
       (typeof responseStatus === 'number' && responseStatus !== 0)
     ) {
-      throw new BadRequestException(
-        `Pay2S API error: ${
-          pay2sResponse.message ||
-          pay2sResponse.resultMessage ||
-          'Unknown error'
-        }`,
+      this.logger.error(
+        `Pay2S từ chối tạo collection link: orderId=${params.code} ` +
+          `status=${String(responseStatus)} ` +
+          `message="${pay2sResponse.message ?? pay2sResponse.resultMessage ?? ''}"`,
       );
+      throw pay2sUnavailableException();
     }
 
     const qrCode = pay2sResponse.qrList?.[0]?.qrCode;
     if (!qrCode) {
-      throw new BadRequestException('No QR code received from Pay2S');
+      this.logger.error(
+        `Pay2S không trả mã QR: orderId=${params.code} requestId=${pay2sResponse.requestId ?? ''}`,
+      );
+      throw pay2sUnavailableException();
     }
 
     const qrCodeUrl = await this.saveQrCodeImage(qrCode, params.code);
     if (!qrCodeUrl) {
-      throw new BadRequestException('Lỗi tạo ảnh QR code');
+      // Nguyên nhân chi tiết đã log trong saveQrCodeImage.
+      this.logger.error(`Không lưu được ảnh QR: orderId=${params.code}`);
+      throw pay2sUnavailableException();
     }
     return qrCodeUrl;
   }
