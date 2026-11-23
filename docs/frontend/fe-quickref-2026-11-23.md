@@ -1,6 +1,6 @@
 # FE quick reference — Subscriptions + thay đổi docs gần đây (2026-11-23)
 
-Bản ngắn để làm nhanh. Contract gốc: [API guide](../FRONTEND_API_GUIDE_NEXTJS.mdc) và [Admin map](../FRONTEND_ADMIN_ROUTER_API_MAP.mdc). Bản chi tiết + checklist: [fe-subscription-handoff-2026-11-23.md](./fe-subscription-handoff-2026-11-23.md). Nếu có chỗ lệch, guide thắng.
+Bản ngắn để làm nhanh. Contract gốc: [API guide](../FRONTEND_API_GUIDE_NEXTJS.mdc) và [Admin map](../FRONTEND_ADMIN_ROUTER_API_MAP.mdc). Trạng thái triển khai, checklist nghiệm thu, câu hỏi mở và thứ tự làm: [fe-subscription-handoff-2026-11-23.md](./fe-subscription-handoff-2026-11-23.md). Nếu có chỗ lệch, guide thắng.
 
 ---
 
