@@ -990,6 +990,7 @@ Quy tắc:
 - Chỉ dùng `pauseReason` để phân biệt các kiểu `PAUSED`; các giá trị khác (nếu thêm sau này) FE nên xử lý như không rõ và hiển thị trạng thái chung.
 - Khi `pauseReason` là `"OA_DISCONNECTED"` hoặc `"SUBSCRIPTION_EXPIRED"`: `execute` được coi như `resume` (cùng response của `resume`, **không** phải response `QUEUED`), còn `retry` và `import-csv/reconcile` trả `400` (với `SUBSCRIPTION_EXPIRED` là chuỗi tiếng Anh, không có `code`; xem 9B.6). FE nên ẩn các nút này và chỉ cho **Tiếp tục**.
 - Worker kiểm tra OA trước khi gửi mỗi dòng nên không có dòng nào chuyển `FAILED`/`RECONCILIATION_REQUIRED` vì lỗi OA, và không có `MessageLog` mới. `totalPending` vẫn tính các dòng chưa gửi.
+- Từ 2026-11-23, khi campaign `PAUSED` vì `OA_DISCONNECTED`/`SUBSCRIPTION_EXPIRED`, các dòng `PENDING` đang chờ có `failureReason` là lý do chờ (ví dụ `"OA_NOT_CONNECTED: ..."`, `"OA_TOKEN_EXPIRED: ..."`, `"SUBSCRIPTION_EXPIRED: ..."`). Giá trị này bị xóa (`null`) khi `resume`. Đây **không** phải lỗi: dòng vẫn `PENDING`, chỉ hiện `failureReason` kèm trạng thái dòng, không tô như thất bại. `failureReason` của dòng `FAILED` cũng dùng dạng `"<CODE>: <chi tiết>"` (ví dụ `"ZALO_REJECTED: ..."`); dòng `RECONCILIATION_REQUIRED` bắt đầu bằng `"Dispatch outcome requires reconciliation: <CODE>: ..."`.
 - Resume không tự động: sau khi user kết nối lại OA, campaign vẫn `PAUSED` cho tới khi gọi `/resume`.
 
 Dữ liệu từng dòng nằm ở bảng `CampaignRow` (`phoneNumber`, `payloadData` JSON, `status`, `messageLog`). Worker claim `PENDING → PROCESSING` trước khi gọi provider. Chính sách **at-most-once**: `PROCESSING` gặp restart hoặc request mất response trở thành `RECONCILIATION_REQUIRED`, campaign `PAUSED`; FE phải hiển thị trạng thái cần đối soát và không gọi retry cho row này. Chỉ `FAILED` do provider đã trả lỗi xác định mới được retry; refund chỉ xảy ra một lần theo từng campaign run khi run hoàn tất.
@@ -1139,18 +1140,18 @@ Bảng `code`:
 | `OA_TOKEN_EXPIRED` | Token OA hết hạn, cần kết nối lại |
 | `WORKSPACE_INACTIVE` | Workspace không hoạt động |
 | `WALLET_NOT_INITIALIZED` | Ví chưa khởi tạo |
-| `INSUFFICIENT_CREDIT` | Số dư không đủ (không có `messageLogId`) |
+| `INSUFFICIENT_CREDIT` | Số dư không đủ |
 | `SUBSCRIPTION_REQUIRED` | Workspace chưa có subscription (xem mục 9B.6) |
 | `SUBSCRIPTION_EXPIRED` | Subscription của workspace đã hết hạn (xem mục 9B.6) |
 | `ZALO_REJECTED` | Zalo từ chối; có `detail` là lỗi gốc |
 | `SEND_FAILED` | Lỗi khác |
 
-`messageLogId` chỉ có khi tin đã được ghi nhận là `FAILED` (lỗi sau khi gọi Zalo). Các lỗi kiểm tra trước đó không tạo log.
+`messageLogId` có trong **mọi** lỗi gửi mà mẫu tin tồn tại trong workspace (từ 2026-11-23): cả lỗi kiểm tra trước khi gọi Zalo lẫn lỗi từ Zalo, đều tạo `MessageLog` `FAILED` kèm lý do và thời gian (xem 8.2). Chỉ khi `templateId` **không tồn tại** trong workspace thì không có log (không có mẫu để gắn) và body lỗi không có `messageLogId`.
 
 Ghi chú nghiệp vụ:
 - **Subscription (từ 2026-11-23):** workspace phải có subscription còn hạn, nếu không trả `400` `SUBSCRIPTION_REQUIRED` / `SUBSCRIPTION_EXPIRED` (mục 9B.6), kiểm tra trước khi đụng tới ví.
 - **Chỉ trừ ví** khi Zalo trả success.
-- Nếu Zalo fail, backend vẫn tạo `MessageLog` với `status: FAILED` (có `messageLogId` trong body lỗi).
+- Gửi lỗi ở bất kỳ bước nào, backend đều tạo `MessageLog` với `status: FAILED` (có `messageLogId` trong body lỗi) và **không trừ ví**.
 
 ### 8.2 List message logs
 Endpoint:
@@ -1161,6 +1162,12 @@ Query:
 - `sendType` (SendType)
 - `limit` (optional, 1–100, mặc định 50; áp dụng sau khi lọc)
 - `phoneNumber` (string, optional): tìm theo SĐT, khớp một phần (contains), AND với các filter khác. BE bỏ ký tự không phải số (khoảng trắng, `.`, `-`, `()`, `+`), bỏ đầu `84`/`0` và dùng tối đa 9 số cuối nên `0912`, `+84 912`, `912` cho kết quả như nhau. Ví dụ: `?phoneNumber=0912&status=SUCCESS&limit=50`
+
+Tin gửi lỗi (từ 2026-11-23; chi tiết: [fe-failed-message-log-2026-11-23.md](frontend/fe-failed-message-log-2026-11-23.md)):
+- Mọi tin lỗi đều có dòng log `status: "FAILED"`, kể cả lỗi chặn trước khi gọi Zalo (OA chưa kết nối, mẫu chưa duyệt, hết hạn subscription, thiếu số dư...), ở gửi đơn, campaign và Public API.
+- `errorCode` là lý do dạng `"<CODE>: <chi tiết>"`, ví dụ `"OA_NOT_CONNECTED: Official Account chưa kết nối với Zalo..."`, `"ZALO_REJECTED: Template is not approved"`. `<CODE>` thuộc bảng `code` ở 8.1. Tối đa 255 ký tự. Tách theo dấu `": "` **đầu tiên** để lấy mã; `detail` có thể chứa thêm dấu `:`.
+- `sentAt` là thời điểm thử gửi, luôn có với tin `FAILED` (và tin `PENDING` cần đối soát của campaign); log `FAILED` trước 2026-11-23 đã được backfill `sentAt = createdAt`. Danh sách sắp theo `sentAt` giảm dần.
+- `status: "FAILED"` nghĩa là chưa gửi được và không bị tính phí (campaign hoàn lại phần tiền đã giữ khi run kết thúc; `costAtTime` của tin lỗi campaign là đơn giá đã giữ, không cộng vào chi phí). `errorCode` của tin `SUCCESS` là `null`.
 
 Provider fields có thể dùng trong mỗi MessageLog:
 - `providerMessageId`: mã đối soát `msg_id` của Zalo.
@@ -1419,8 +1426,8 @@ Response:
 ```
 
 Ghi chú:
-- `messagesSent.value` = số tin **đã gửi** (MessageLog có `sentAt`) trong kỳ — **tính cả tin gửi lỗi** (FAILED vẫn có `sentAt`); bản ghi PENDING (`sentAt = null`) tự loại.
-- `successRate.value` = `SUCCESS/(SUCCESS+FAILED)*100`; khi không có tin nào trong kỳ (mẫu số 0) → `value = null` (FE hiển thị "—").
+- `messagesSent.value` = số tin **gửi thành công** (MessageLog `status = SUCCESS` có `sentAt`) trong kỳ. Tin `FAILED` và `PENDING` **không** tính (từ 2026-11-23 tin lỗi cũng có `sentAt` nên phải lọc theo `status`).
+- `successRate.value` = `SUCCESS/(SUCCESS+FAILED)*100` (tính theo `sentAt` trong kỳ); khi không có tin nào trong kỳ (mẫu số 0) → `value = null` (FE hiển thị "—"). Trước 2026-11-23 tin lỗi không có `sentAt` nên tỷ lệ luôn ra 100%; từ nay tính đúng, và các kỳ cũ đổi theo vì đã backfill.
 - `activeTemplates.value` = số template `APPROVED` tại thời điểm gọi (snapshot) → `changePercent` **luôn null**.
 - `changePercent` = number hoặc `null` (null khi kỳ trước = 0 / thiếu dữ liệu → FE ẩn badge).
 - **Cách so kỳ (dùng chung cho analytics và ví theo tháng):**
@@ -1544,7 +1551,7 @@ Các API gửi tin trả `400` với body chuẩn của mục 8.1:
 | `SUBSCRIPTION_REQUIRED` | Workspace chưa từng có subscription | "Workspace chưa đăng ký gói subscription. Vui lòng mua gói để gửi tin." |
 | `SUBSCRIPTION_EXPIRED` | Subscription đã hết hạn | "Gói subscription của workspace đã hết hạn. Vui lòng gia hạn để tiếp tục gửi tin." |
 
-- Kiểm tra diễn ra **trước** khi giữ/trừ ví nên không phát sinh `MessageLog` hay giao dịch ví.
+- Kiểm tra diễn ra **trước** khi giữ/trừ ví nên không phát sinh giao dịch ví. Với gửi đơn và Public API, tin bị chặn vẫn được ghi một `MessageLog` `FAILED` có lý do (`errorCode` bắt đầu bằng `SUBSCRIPTION_REQUIRED:` / `SUBSCRIPTION_EXPIRED:`), từ 2026-11-23. Chặn ở campaign `execute`/`retry`/`resume` thì không tạo log vì chưa có tin nào được thử gửi.
 - **Campaign đang chạy mà hết hạn giữa chừng:** campaign chuyển `PAUSED` với `pauseReason: "SUBSCRIPTION_EXPIRED"`, các dòng còn lại giữ `PENDING` và tiền đã giữ không đổi. Sau khi gia hạn, gọi `POST /workspaces/:workspaceId/campaigns/:campaignId/resume` (hoặc `execute`, tự chuyển sang resume) để chạy tiếp mà không bị trừ tiền lần nữa. Hết hạn mà gọi resume → `400` `SUBSCRIPTION_EXPIRED`.
 - **Campaign đang `PAUSED` vì hết hạn thì `retry` / `reconcile` bị chặn** bằng `400` có `message` là **chuỗi tiếng Anh, không có `code`** ("Campaign is paused because the subscription expired; renew it and resume first"). FE **không dựa vào lỗi này**: khi campaign có `pauseReason: "SUBSCRIPTION_EXPIRED"`, ẩn/disable nút Retry, Reconcile và hiển thị nút Resume (chỉ bật khi `GET /subscriptions/current` có `canSend=true`; `execute` cũng tự chuyển sang resume).
 - `pauseReason` chỉ có một giá trị tại một thời điểm: `OA_DISCONNECTED` (phải kết nối lại OA rồi resume) hoặc `SUBSCRIPTION_EXPIRED` (phải gia hạn rồi resume). FE hiển thị lý do và hướng dẫn tương ứng.
@@ -1749,7 +1756,7 @@ Response (Zalo ZNS thật):
 
 Ghi chú:
 - Cùng điều kiện như mục 8: OA connected, template approved + `providerTemplateId`, đủ credit.
-- Lỗi gửi tin trả `400` kèm `messageLogId` nếu đã ghi log FAILED.
+- Lỗi gửi tin trả `400` kèm `messageLogId` (từ 2026-11-23, mọi lỗi gửi mà mẫu tin tồn tại đều ghi log FAILED, kể cả lỗi kiểm tra trước khi gọi Zalo). Các lỗi kiểm tra trước giữ nguyên `message` tiếng Anh như cũ và có thêm `code` (cùng bảng mục 8.1: `TEMPLATE_NOT_APPROVED`, `TEMPLATE_NOT_SYNCED`, `OA_NOT_CONNECTED`, `WORKSPACE_INACTIVE`, `WALLET_NOT_INITIALIZED`, `INSUFFICIENT_CREDIT`, `SUBSCRIPTION_*`). Lỗi từ Zalo giữ `{ message, messageLogId }` như cũ, không có `code`.
 - `status: "success"` ở response có cùng ngữ nghĩa “Zalo đã tiếp nhận yêu cầu gửi”; không phải trạng thái delivered/received.
 
 ## 13) Quick Chat — đã ngừng sử dụng

@@ -12,6 +12,8 @@
 6. [FE quick reference — 2026-11-23](./fe-quickref-2026-11-23.md): **bản ngắn, đọc trước** — Subscriptions (route, API, lỗi, Admin) và danh sách thay đổi docs từ 2026-11-10.
 7. [FE handoff — Subscription (SUB-01) — 2026-11-23](./fe-subscription-handoff-2026-11-23.md): trạng thái triển khai, nghiệp vụ tóm tắt, acceptance criteria, câu hỏi mở và thứ tự làm của tính năng Subscription. Chi tiết API xem quick reference ở mục 6.
 
+8. [FE — Log tin gửi thất bại — 2026-11-23](./fe-failed-message-log-2026-11-23.md): mọi tin lỗi có log kèm lý do (`errorCode` dạng `<CODE>: <chi tiết>`) và `sentAt`; thay đổi ở danh sách log, gửi đơn, campaign, dashboard, Public API và checklist nghiệm thu.
+
 ## Quy tắc nhận yêu cầu
 
 - Chỉ triển khai thay đổi API sau khi BE phát hành handoff có task ID, role, request/response, validation và acceptance criteria.

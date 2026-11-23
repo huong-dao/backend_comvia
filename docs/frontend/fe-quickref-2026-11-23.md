@@ -55,7 +55,7 @@ Bản ngắn để làm nhanh. Contract gốc: [API guide](../FRONTEND_API_GUIDE
 | `PAY2S_UNAVAILABLE` | Tạo QR lỗi (mua gói **và topup**) | Hiện `message` + nút Thử lại (tạo đơn mới) |
 | không có `code` | Gói không bán; tổng < 10.000đ; tài khoản ngân hàng sai | Hiện `message` thô |
 
-- `SUBSCRIPTION_*` áp dụng cho `send-single`, campaign `execute`/`retry`/`resume`, Public API. Không tạo `MessageLog`, không trừ ví.
+- `SUBSCRIPTION_*` áp dụng cho `send-single`, campaign `execute`/`retry`/`resume`, Public API. Không trừ ví. Với `send-single` và Public API, tin bị chặn vẫn có một `MessageLog` `FAILED` kèm lý do và `messageLogId` trong body lỗi (từ 2026-11-23, xem [fe-failed-message-log-2026-11-23.md](./fe-failed-message-log-2026-11-23.md)); campaign `execute`/`retry`/`resume` thì không tạo log.
 - Disable nút gửi khi `canSend=false`, nhưng vẫn xử lý lỗi từ server (gói có thể hết giữa chừng).
 - `PAY2S_UNAVAILABLE` (commit `6e38526`) có thể chưa lên server; trước đó lỗi là chuỗi tiếng Anh → xử lý cả hai dạng.
 
@@ -106,6 +106,7 @@ Mới nhất trước. Cột "Nguồn" là mục trong guide/admin map để đ�
 
 | Ngày | Thay đổi | FE cần làm | Nguồn |
 |---|---|---|---|
+| 11-23 | **Log tin thất bại:** mọi tin lỗi có `MessageLog` `FAILED` với `sentAt` và `errorCode = "<CODE>: <chi tiết>"`; `messageLogId` có ở mọi lỗi gửi đơn; dòng campaign `PENDING` đang chờ do pause có `failureReason`; `messagesSent` chỉ đếm `SUCCESS`, `successRate` tính đúng | Hiển thị lý do + giờ; tách mã theo `": "` đầu tiên; đừng tô lỗi dòng `PENDING`; số dashboard sẽ khác | [fe-failed-message-log-2026-11-23.md](./fe-failed-message-log-2026-11-23.md); Guide 8.1, 8.2, 9B.6, analytics |
 | 11-23 | **Subscriptions** (phần A) + `PAY2S_UNAVAILABLE` cho topup và mua gói + `pauseReason = SUBSCRIPTION_EXPIRED` + order có `type`/`subscriptionPurchaseId` | Làm theo phần A | Guide 9B, 9.4, mục campaign; Admin map 8A |
 | 11-19 | **Campaign `resume` + `pauseReason`:** campaign `PAUSED` do OA mất kết nối có `pauseReason: "OA_DISCONNECTED"`; `POST …/campaigns/:id/resume` (không body, không trừ ví lại); `execute` coi như `resume`; `retry`/`reconcile` trả `400` | Hiển thị lý do, chỉ cho nút Tiếp tục; `resume` lỗi `OA_NOT_CONNECTED` → dẫn tới trang kết nối OA | Guide mục campaign ("Tạm dừng tự động") |
 | 11-19 | **Template trả `providerTemplateId`** trong list, `GET /:templateId` và response `POST` (`null` cho tới khi staff approve) | Thêm field vào type; `null` với mọi `DRAFT`/`SUBMITTED` | Guide 7.1–7.2 |
