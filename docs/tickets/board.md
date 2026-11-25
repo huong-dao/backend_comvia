@@ -13,7 +13,7 @@ Board chung, cập nhật liên tục. Phần đầu là ticket chẻ theo issue
 ### TPLLIB-01 — handoff (BE, 2026-11-25)
 
 - **Phạm vi:** module `src/template-library/` (2 bảng mới `TemplateLibraryCategory`, `TemplateLibraryItem`; user route `/template-library/*` cho USER+ADMIN, admin route `/admin/template-library/*`; audit log). Rule BR-TPLLIB-01…05, FE: `docs/frontend/fe-template-library-2026-11-25.md`.
-- **Quyết định BE cần PO xác nhận:** xóa danh mục giữ mẫu tin (về chưa phân loại) thay vì xóa cascade; không có cờ ẩn/hiện; không ghi nhận nguồn khi user dùng mẫu.
+- **Quyết định đã chốt:** chỉ xóa danh mục khi không còn mẫu tin (PO 2026-11-25, FK `RESTRICT`). BE tự chọn, chưa cần PO duyệt: không có cờ ẩn/hiện; không ghi nhận nguồn khi user dùng mẫu.
 - **Checks:** `npx jest src/template-library` 14/14 PASS; `tsc` chỉ còn 2 lỗi cũ ở `templates.service.spec.ts`; eslint file production sạch (spec có lỗi `no-unsafe-*` kiểu mock như debt hiện có). Chưa chạy `test:e2e`, chưa chạy migration trên DB thật, chưa smoke.
 - **Owner:** BE → DevOps. **Next:** deploy `dev2` + `prisma migrate deploy`, rồi FE làm theo file handoff.
 

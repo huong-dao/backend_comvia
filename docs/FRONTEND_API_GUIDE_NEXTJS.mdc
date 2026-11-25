@@ -1864,7 +1864,7 @@ Ghi chú bắt buộc cho FE (chi tiết UI + cảnh báo trên form: `FRONTEND_
 Kho mẫu tham khảo dùng chung do ADMIN quản lý; user chọn mẫu để điền sẵn form tạo/sửa mẫu tin. **Đặc tả đầy đủ cho FE: [docs/frontend/fe-template-library-2026-11-25.md](frontend/fe-template-library-2026-11-25.md).** Rule: BR-TPLLIB-01…05.
 
 - User/Admin (STAFF → 403, không cần `x-workspace-id`): `GET /template-library/categories`, `GET /template-library/items` (`page`, `limit`, `keyword`, `categoryId` (`none` = chưa phân loại), `type`), `GET /template-library/items/:itemId`.
-- Admin: `/admin/template-library/categories` và `/admin/template-library/items` — `GET`/`POST`/`PATCH :id`/`DELETE :id`. Xóa danh mục giữ mẫu tin (về chưa phân loại).
+- Admin: `/admin/template-library/categories` và `/admin/template-library/items` — `GET`/`POST`/`PATCH :id`/`DELETE :id`. Xóa danh mục chỉ được khi danh mục không còn mẫu tin (còn mẫu → `400`).
 - Danh sách trả `{ data, meta: { page, limit, total, totalPages } }`.
 
 ## 15) Common error handling (frontend)

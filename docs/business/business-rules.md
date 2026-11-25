@@ -571,7 +571,7 @@ approved --> disabled
 
 - Admin tạo/sửa/xóa danh mục. Mỗi danh mục: `name` (bắt buộc, duy nhất không phân biệt hoa thường), `description`, `sortOrder` (nhỏ hơn hiển thị trước).
 - Mỗi mẫu tin thuộc **tối đa 1 danh mục** (tùy chọn). Mẫu không có danh mục = "chưa phân loại".
-- Xóa danh mục **không** xóa mẫu tin: các mẫu trong danh mục đó chuyển thành chưa phân loại (`categoryId = null`). _Cách hiểu của BE về câu "cho xóa luôn" của PO; xem Câu hỏi mở bên dưới._
+- Chỉ xóa được danh mục **khi không còn mẫu tin nào** thuộc nó; còn mẫu tin → `400`, Admin phải chuyển mẫu sang danh mục khác (hoặc bỏ danh mục) hoặc xóa mẫu trước. (PO chốt 2026-11-25.) Mẫu "chưa phân loại" vẫn tồn tại khi tạo mẫu không chọn danh mục hoặc Admin bỏ danh mục của mẫu.
 
 ### BR-TPLLIB-03: Mẫu tin trong thư viện
 
@@ -593,5 +593,4 @@ approved --> disabled
 
 ### Câu hỏi mở (TPLLIB-01)
 
-- PO nói "có thể cho xóa luôn" khi xóa danh mục có mẫu tin: BE chọn **giữ mẫu tin, chuyển về chưa phân loại** (không mất dữ liệu). Nếu PO muốn xóa luôn cả mẫu tin trong danh mục thì đổi thành xóa cascade.
 - "Sửa mẫu tin `DRAFT`" ghi đè toàn bộ field bằng nội dung thư viện hay chỉ field có giá trị: FE quyết, mặc định ghi đè (xem file FE).

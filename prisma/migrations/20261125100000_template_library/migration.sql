@@ -40,4 +40,4 @@ CREATE INDEX "TemplateLibraryItem_createdAt_idx" ON "TemplateLibraryItem"("creat
 ALTER TABLE "TemplateLibraryItem"
   ADD CONSTRAINT "TemplateLibraryItem_categoryId_fkey"
   FOREIGN KEY ("categoryId") REFERENCES "TemplateLibraryCategory"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
+  ON DELETE RESTRICT ON UPDATE CASCADE;

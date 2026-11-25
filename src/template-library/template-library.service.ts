@@ -145,12 +145,17 @@ export class TemplateLibraryService {
     return category;
   }
 
-  /** Mẫu tin thuộc danh mục được giữ lại, `categoryId` về null (chưa phân loại). */
+  /** Chỉ xóa được danh mục không còn mẫu tin nào (BR-TPLLIB-02). */
   async deleteCategory(actorUserId: string, categoryId: string) {
     const category = await this.findCategoryOrThrow(categoryId);
-    const orphanedItems = await this.prismaService.templateLibraryItem.count({
+    const itemCount = await this.prismaService.templateLibraryItem.count({
       where: { categoryId },
     });
+    if (itemCount > 0) {
+      throw new BadRequestException(
+        `Library category still has ${itemCount} template(s); move or delete them first`,
+      );
+    }
     await this.prismaService.templateLibraryCategory.delete({
       where: { id: categoryId },
     });
@@ -159,9 +164,9 @@ export class TemplateLibraryService {
       AUDIT_ACTIONS.TEMPLATE_LIBRARY_CATEGORY_DELETED,
       AUDIT_RESOURCE_TYPES.TEMPLATE_LIBRARY_CATEGORY,
       categoryId,
-      { name: category.name, orphanedItems },
+      { name: category.name },
     );
-    return { id: categoryId, deleted: true, orphanedItems };
+    return { id: categoryId, deleted: true };
   }
 
   // ---- Mẫu tin ------------------------------------------------------------

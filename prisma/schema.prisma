@@ -1052,7 +1052,7 @@ model TemplateLibraryItem {
   ctaButtons         Json?
   createdById        String?
 
-  category TemplateLibraryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category TemplateLibraryCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

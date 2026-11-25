@@ -36,7 +36,7 @@ Trang dạng **lưới card**, mỗi mẫu tin là một card, **trình bày gi�
 **Admin** — mỗi card có nút **"Sửa"** và **"Xóa"**:
 - "Sửa": mở **popup** form sửa mẫu tin thư viện (các field mục 4.3, thêm select danh mục).
 - "Xóa": **hộp thoại xác nhận** ("Bạn có chắc muốn xóa mẫu tin này?"), đồng ý mới gọi `DELETE`. Xóa xong tải lại danh sách (nếu trang rỗng thì lùi một trang).
-- Có nút **"Thêm mẫu tin"** (popup tạo) và khu **quản lý danh mục** (danh sách + thêm/sửa/xóa; xóa danh mục cũng cần xác nhận, ghi chú: "Các mẫu tin trong danh mục sẽ chuyển thành *Chưa phân loại*").
+- Có nút **"Thêm mẫu tin"** (popup tạo) và khu **quản lý danh mục** (danh sách + thêm/sửa/xóa; xóa danh mục cũng cần xác nhận; **chỉ xóa được khi danh mục không còn mẫu tin** — nếu còn, BE trả `400` và FE hiện thông báo "Danh mục còn mẫu tin, hãy chuyển hoặc xóa các mẫu tin trước"; có thể tắt/ẩn nút Xóa khi `itemCount > 0`).
 - Admin gọi các API `/admin/template-library/*` (mục 4.2–4.3) cho thao tác quản lý; dùng luôn cùng route cho danh sách của trang quản lý.
 
 **User thường** — mỗi card có nút **"Sử dụng"** (không có Sửa/Xóa):
@@ -136,9 +136,9 @@ Role: `ADMIN` (USER/STAFF → `403`). Base: `/admin/template-library`.
 | `GET /admin/template-library/categories` | — (query như 4.1) | Như 4.1 |
 | `POST /admin/template-library/categories` | `{ "name": "…", "description"?: "…", "sortOrder"?: 0 }` | Danh mục vừa tạo |
 | `PATCH /admin/template-library/categories/:categoryId` | `{ "name"?, "description"?: string\|null, "sortOrder"? }` (bỏ field = giữ nguyên; `description: null` = xóa) | Danh mục sau cập nhật |
-| `DELETE /admin/template-library/categories/:categoryId` | — | `{ "id": "…", "deleted": true, "orphanedItems": 3 }` |
+| `DELETE /admin/template-library/categories/:categoryId` | — | `{ "id": "…", "deleted": true }` hoặc `400` "Library category still has N template(s); move or delete them first" nếu còn mẫu tin |
 
-Ràng buộc: `name` 1–100 ký tự, **duy nhất không phân biệt hoa thường** (trùng → `400` "Library category name already exists"); `description` ≤ 500; `sortOrder` 0–100000. **Xóa danh mục không xóa mẫu tin**: các mẫu đó thành chưa phân loại (`orphanedItems` = số mẫu bị ảnh hưởng — có thể dùng hiện toast).
+Ràng buộc: `name` 1–100 ký tự, **duy nhất không phân biệt hoa thường** (trùng → `400` "Library category name already exists"); `description` ≤ 500; `sortOrder` 0–100000. **Chỉ xóa được danh mục khi không còn mẫu tin nào** (dùng `itemCount` từ danh sách để tắt nút Xóa hoặc cảnh báo trước; vẫn phải xử lý `400` vì có thể có người vừa thêm mẫu).
 
 ### 4.3 API Admin — mẫu tin
 
@@ -225,7 +225,7 @@ Admin: thêm/sửa/xóa
 - [ ] Select danh mục lọc ngay khi chọn, **không có nút "Áp dụng"**; có "Tất cả" (và "Chưa phân loại" nếu làm).
 - [ ] Tìm theo tên hoạt động, có phân trang đúng `meta`.
 - [ ] Admin: card có "Sửa" (popup) và "Xóa" (hộp thoại xác nhận); thêm/sửa/xóa mẫu và danh mục chạy được, lỗi validate hiển thị rõ.
-- [ ] Xóa danh mục: mẫu thuộc danh mục vẫn còn, hiện ở "Chưa phân loại".
+- [ ] Xóa danh mục chỉ thành công khi danh mục không còn mẫu tin; còn mẫu thì hiện thông báo lỗi từ `400` và không xóa.
 - [ ] User thường: card có "Sử dụng"; bấm mở popup "Tạo mẫu tin" đã fill đúng mọi field (kể cả `placeholder_labels`, `placeholderOrder`, `ctaButtons`, `otpExpiryMinutes`); user chọn OA rồi lưu được.
 - [ ] Dashboard: popup tạo mới và popup **sửa mẫu DRAFT** có select "Tạo thủ công / Tạo từ thư viện" (USER); mẫu không phải DRAFT và STAFF **không** có select.
 - [ ] "Tạo từ thư viện": popup thư viện che lên popup tạo/sửa, lưới 3 cột, có lọc danh mục, có nút **X** đóng; "Sử dụng" đóng popup thư viện và fill popup bên dưới; bấm X không làm mất dữ liệu đang nhập.
@@ -236,4 +236,4 @@ Admin: thêm/sửa/xóa
 - Backend đã có trên `dev2`; cần deploy + chạy migration trước khi FE test với môi trường thật. Đến lúc đó danh mục/mẫu trong thư viện đang **trống**, Admin cần tạo dữ liệu đầu tiên.
 - Không có endpoint "tạo mẫu tin từ thư viện": FE dùng API template hiện có (xem `docs/FRONTEND_API_GUIDE_NEXTJS.mdc` mục 7).
 - Phần nội dung ban đầu của thư viện (seed) PO chưa yêu cầu; Admin nhập tay.
-- Câu hỏi mở đã chuyển PO: xóa danh mục hiện **giữ** mẫu tin (xem BR-TPLLIB-02). Nếu PO đổi sang xóa luôn mẫu tin, response `DELETE category` sẽ đổi tương ứng và BE báo lại FE.
+

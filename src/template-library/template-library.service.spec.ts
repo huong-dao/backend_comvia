@@ -233,14 +233,25 @@ describe('TemplateLibraryService categories', () => {
     expect(result.data).toEqual([{ id: 'c1', name: 'A', itemCount: 3 }]);
   });
 
-  it('deleting a category keeps its items and reports how many are orphaned', async () => {
+  it('refuses to delete a category that still has items', async () => {
     const { service, prisma } = build();
     prisma.templateLibraryItem.count.mockResolvedValue(4);
+    await expect(
+      service.deleteCategory('admin-1', 'cat-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.templateLibraryCategory.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty category', async () => {
+    const { service, prisma, audit } = build();
+    prisma.templateLibraryItem.count.mockResolvedValue(0);
     await expect(service.deleteCategory('admin-1', 'cat-1')).resolves.toEqual({
       id: 'cat-1',
       deleted: true,
-      orphanedItems: 4,
     });
-    expect(prisma.templateLibraryItem.delete).not.toHaveBeenCalled();
+    expect(prisma.templateLibraryCategory.delete).toHaveBeenCalledWith({
+      where: { id: 'cat-1' },
+    });
+    expect(audit.write).toHaveBeenCalledTimes(1);
   });
 });
