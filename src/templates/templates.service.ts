@@ -851,6 +851,8 @@ export class TemplatesService {
     actorRole: UserRole,
     dto: UpdateTemplateDto,
   ) {
+    // null means "remove every CTA button", same as [].
+    if (dto.ctaButtons === null) dto.ctaButtons = [];
     const template = await this.prismaService.template.findFirst({
       where: { workspaceId, id: templateId },
       select: {

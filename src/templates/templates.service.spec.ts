@@ -1004,3 +1004,117 @@ describe('TemplatesService content2 / secondaryContent2', () => {
     ).rejects.toThrow('Template content can only be edited');
   });
 });
+
+describe('TemplatesService.update switching type (DRAFT)', () => {
+  let service: TemplatesService;
+  const stored = {
+    id: 'tpl-1',
+    status: 'DRAFT',
+    requiresOwnerRevision: false,
+    type: TemplateType.TEXT,
+    content: 'Xin chào',
+    placeholdersJson: { a: 'x' },
+    placeholderOrder: ['a'],
+    otpExpiryMinutes: null,
+  };
+  const template = { findFirst: jest.fn(), update: jest.fn() };
+  const tx = {
+    template,
+    templateCtaButton: {
+      findMany: jest.fn().mockResolvedValue([{ id: 'b1' }]),
+      deleteMany: jest.fn(),
+      updateMany: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+  const lastData = () =>
+    (template.update.mock.calls as [{ data: Record<string, unknown> }][])[0][0]
+      .data;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    template.findFirst.mockResolvedValue(stored);
+    const module = await Test.createTestingModule({
+      providers: [
+        TemplatesService,
+        {
+          provide: PrismaService,
+          useValue: {
+            template,
+            $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
+          },
+        },
+        { provide: AuditLogService, useValue: { write: jest.fn() } },
+        {
+          provide: SystemConfigService,
+          useValue: { resolveCtaDefaultUnitPrice: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(TemplatesService);
+  });
+
+  it('TEXT -> OTP: validates the merged shape and nulls the cleared fields', async () => {
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      type: TemplateType.OTP,
+      placeholdersJson: { otp: '1', phut: '5' },
+      otpExpiryMinutes: 5,
+      content: null as never,
+      content2: null,
+      secondaryContent: null,
+      secondaryContent2: null,
+      placeholder_labels: null,
+      placeholderOrder: null,
+      ctaButtons: null,
+    });
+    expect(lastData()).toMatchObject({
+      type: TemplateType.OTP,
+      otpExpiryMinutes: 5,
+      content: null,
+      content2: null,
+      secondaryContent: null,
+      secondaryContent2: null,
+    });
+    expect(tx.templateCtaButton.deleteMany).toHaveBeenCalledWith({
+      where: { templateId: 'tpl-1', id: { notIn: [] } },
+    });
+  });
+
+  it('TEXT -> OTP without otpExpiryMinutes is rejected', async () => {
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+        type: TemplateType.OTP,
+        placeholdersJson: { otp: '1', phut: '5' },
+      }),
+    ).rejects.toThrow('otpExpiryMinutes is required');
+  });
+
+  it('OTP -> TEXT requires content, and otpExpiryMinutes: null is accepted', async () => {
+    template.findFirst.mockResolvedValue({
+      ...stored,
+      type: TemplateType.OTP,
+      content: null,
+      placeholdersJson: { otp: '1', phut: '5' },
+      otpExpiryMinutes: 5,
+    });
+    await expect(
+      service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+        type: TemplateType.TEXT,
+        otpExpiryMinutes: null as never,
+      }),
+    ).rejects.toThrow('content is required');
+
+    await service.update('ws-1', 'tpl-1', 'u', UserRole.USER, {
+      type: TemplateType.TEXT,
+      content: 'Hello',
+      placeholdersJson: { a: 'x' },
+      otpExpiryMinutes: null as never,
+    });
+    expect(lastData()).toMatchObject({
+      type: TemplateType.TEXT,
+      content: 'Hello',
+      otpExpiryMinutes: null,
+    });
+  });
+});

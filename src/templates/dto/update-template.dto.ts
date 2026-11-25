@@ -92,5 +92,5 @@ export class UpdateTemplateDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TemplateCtaButtonDto)
-  ctaButtons?: TemplateCtaButtonDto[];
+  ctaButtons?: TemplateCtaButtonDto[] | null;
 }
