@@ -83,6 +83,7 @@ flowchart TB
 | Tổ chức | `Workspace`, `WorkspaceMember`, `WorkspaceBillingProfile` |
 | Tài chính | `WalletAccount`, `WalletTransaction`, `TopupRequest`, `Order`, `Invoice` |
 | Subscription | `SubscriptionPlan`, `SubscriptionPurchase`, `WorkspaceSubscription` |
+| Thư viện mẫu tin | `TemplateLibraryCategory`, `TemplateLibraryItem` (không FK tới `Template`) |
 | Giao tiếp | `WorkspaceOa`, `WorkspaceOaConnection`, `Template`, `MessageLog`, `Campaign` |
 | Dữ liệu lịch sử Quick Chat | `QuickChatAgentProfile`, `QuickChatSession`, `QuickChatMessage` (giữ lại sau REL-01, chờ quyết định retention) |
 

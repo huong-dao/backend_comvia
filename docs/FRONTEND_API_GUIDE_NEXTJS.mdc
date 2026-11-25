@@ -1859,6 +1859,14 @@ Ghi chú bắt buộc cho FE (chi tiết UI + cảnh báo trên form: `FRONTEND_
 - `MANUAL_ADJUSTMENT` chỉ đổi `balance`: **không** cộng `totalTopup`/`totalSpent`/`totalRefund` (mục 9.1), không tạo order, không tính VAT/doanh thu. Sau khi điều chỉnh chỉ `balance` đổi, các ô tổng giữ nguyên.
 - Mỗi lần gọi thành công ghi `AuditLog` action `wallet.manual_adjusted` trong cùng transaction với bút toán (mục 11.4).
 
+## 14A) Thư viện mẫu tin (TPLLIB-01)
+
+Kho mẫu tham khảo dùng chung do ADMIN quản lý; user chọn mẫu để điền sẵn form tạo/sửa mẫu tin. **Đặc tả đầy đủ cho FE: [docs/frontend/fe-template-library-2026-11-25.md](frontend/fe-template-library-2026-11-25.md).** Rule: BR-TPLLIB-01…05.
+
+- User/Admin (STAFF → 403, không cần `x-workspace-id`): `GET /template-library/categories`, `GET /template-library/items` (`page`, `limit`, `keyword`, `categoryId` (`none` = chưa phân loại), `type`), `GET /template-library/items/:itemId`.
+- Admin: `/admin/template-library/categories` và `/admin/template-library/items` — `GET`/`POST`/`PATCH :id`/`DELETE :id`. Xóa danh mục giữ mẫu tin (về chưa phân loại).
+- Danh sách trả `{ data, meta: { page, limit, total, totalPages } }`.
+
 ## 15) Common error handling (frontend)
 
 Backend NestJS thường trả lỗi theo dạng (tùy middleware/exceptions):

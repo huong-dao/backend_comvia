@@ -26,6 +26,12 @@ export const AUDIT_ACTIONS = {
   SUBSCRIPTION_PURCHASE_FAILED: 'subscription.purchase_failed',
   SUBSCRIPTION_ADMIN_GRANTED: 'subscription.admin_granted',
   SUBSCRIPTION_ADMIN_UPDATED: 'subscription.admin_updated',
+  TEMPLATE_LIBRARY_CATEGORY_CREATED: 'template_library_category.created',
+  TEMPLATE_LIBRARY_CATEGORY_UPDATED: 'template_library_category.updated',
+  TEMPLATE_LIBRARY_CATEGORY_DELETED: 'template_library_category.deleted',
+  TEMPLATE_LIBRARY_ITEM_CREATED: 'template_library_item.created',
+  TEMPLATE_LIBRARY_ITEM_UPDATED: 'template_library_item.updated',
+  TEMPLATE_LIBRARY_ITEM_DELETED: 'template_library_item.deleted',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -45,6 +51,8 @@ export const AUDIT_RESOURCE_TYPES = {
   SUBSCRIPTION_PLAN: 'SubscriptionPlan',
   SUBSCRIPTION_PURCHASE: 'SubscriptionPurchase',
   WORKSPACE_SUBSCRIPTION: 'WorkspaceSubscription',
+  TEMPLATE_LIBRARY_CATEGORY: 'TemplateLibraryCategory',
+  TEMPLATE_LIBRARY_ITEM: 'TemplateLibraryItem',
 } as const;
 
 export type AuditResourceType =

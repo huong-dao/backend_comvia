@@ -1016,3 +1016,48 @@ model WorkspaceSubscription {
   @@index([workspaceId, endsAt])
   @@index([status, endsAt])
 }
+
+// Thư viện mẫu tin (BR-TPLLIB-*): mẫu tham khảo do ADMIN quản lý, user chỉ đọc
+// rồi copy nội dung vào mẫu tin của mình. Không có liên kết với Template.
+model TemplateLibraryCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  sortOrder   Int     @default(0)
+
+  items TemplateLibraryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
+model TemplateLibraryItem {
+  id                 String       @id @default(cuid())
+  categoryId         String?
+  name               String
+  description        String?
+  type               TemplateType @default(TEXT)
+  title              String?
+  content            String?
+  secondaryContent   String?
+  content2           String?
+  secondaryContent2  String?
+  otpExpiryMinutes   Int?
+  placeholdersJson   Json?
+  placeholder_labels Json?
+  placeholderOrder   Json?
+  // [{ type, label?, target?, position }] — không có đơn giá.
+  ctaButtons         Json?
+  createdById        String?
+
+  category TemplateLibraryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([type])
+  @@index([createdAt])
+}

@@ -555,3 +555,43 @@ approved --> disabled
 ### BR-CORE-10: Subscription
 
 - Gửi tin (single, campaign, Public API) yêu cầu workspace có subscription còn hạn; mua subscription tạo Order và không cộng ví; mua khi còn hạn thì cộng dồn (BR-SUB-01 → BR-SUB-06).
+
+## Module 16 — Thư viện mẫu tin (Template Library)
+
+> Thêm 2026-11-25 (PO yêu cầu, TPLLIB-01). Thư viện là kho mẫu **tham khảo dùng chung toàn hệ thống** do ADMIN quản lý; user chọn một mẫu để **điền sẵn** form tạo/sửa mẫu tin của mình. Mẫu thư viện **không liên kết** với `Template` của workspace (không FK, không đồng bộ hai chiều).
+
+### BR-TPLLIB-01: Quyền truy cập
+
+- `ADMIN`: quản lý toàn bộ (thêm/sửa/xóa mẫu tin và danh mục) qua `/admin/template-library/*`, đồng thời xem được thư viện như user.
+- `USER` (user thường, bất kể là Owner hay Member của workspace): chỉ **xem** (danh sách, chi tiết, danh mục) qua `/template-library/*` và dùng mẫu để tạo/sửa mẫu tin của mình.
+- `STAFF`: **không** có quyền truy cập thư viện (menu ẩn; API trả `403`).
+- Thư viện không gắn workspace: không cần header `x-workspace-id`; không phụ thuộc trạng thái workspace hay subscription.
+
+### BR-TPLLIB-02: Danh mục
+
+- Admin tạo/sửa/xóa danh mục. Mỗi danh mục: `name` (bắt buộc, duy nhất không phân biệt hoa thường), `description`, `sortOrder` (nhỏ hơn hiển thị trước).
+- Mỗi mẫu tin thuộc **tối đa 1 danh mục** (tùy chọn). Mẫu không có danh mục = "chưa phân loại".
+- Xóa danh mục **không** xóa mẫu tin: các mẫu trong danh mục đó chuyển thành chưa phân loại (`categoryId = null`). _Cách hiểu của BE về câu "cho xóa luôn" của PO; xem Câu hỏi mở bên dưới._
+
+### BR-TPLLIB-03: Mẫu tin trong thư viện
+
+- Gồm: `name` (bắt buộc), `description` (mô tả ngắn), `categoryId`, `type` (`TEXT`/`TABLE`/`OTP`, mặc định `TEXT`), `title`, `content`, `secondaryContent`, `content2`, `secondaryContent2`, `otpExpiryMinutes`, `placeholdersJson`, `placeholder_labels`, `placeholderOrder`, `ctaButtons` (`type`, `label`, `target`, `position`; tối đa 2).
+- **Không có**: đơn giá CTA/template, OA, `trackingId`, `providerTemplateId`, trạng thái duyệt/`code`. Mẫu thư viện không gửi được và không qua quy trình duyệt.
+- Validate cùng luật cấu trúc theo `type` như mẫu tin thật (BR-TPL-01): `TEXT`/`TABLE` cần `content` và `placeholdersJson`; `OTP` cần `otpExpiryMinutes` và placeholder đúng `otp`/`phut`, không có content tự do; `placeholder_labels`/`placeholderOrder` chỉ chứa slug có trong `placeholdersJson`; CTA hợp lệ như BR-TPL-01.
+- Không có trạng thái ẩn/hiện: tạo xong user thấy ngay; xóa là xóa hẳn (hard delete). Mẫu tin user đã tạo từ thư viện là bản sao độc lập, không bị ảnh hưởng khi mẫu thư viện sửa/xóa.
+- Mọi thao tác tạo/sửa/xóa mẫu và danh mục ghi audit log (`template_library_item.*`, `template_library_category.*`).
+
+### BR-TPLLIB-04: Xem, lọc, tìm kiếm
+
+- Danh sách mẫu tin có phân trang (`page`, `limit`), tìm theo tên/mô tả/tiêu đề (`keyword`), lọc theo danh mục (`categoryId`, giá trị `none` = chưa phân loại) và theo `type`. Sắp xếp mới nhất trước.
+- Danh mục lấy riêng một endpoint (kèm `itemCount`) để FE dựng select lọc; lọc áp dụng ngay khi chọn, không có nút "Áp dụng".
+
+### BR-TPLLIB-05: Dùng mẫu từ thư viện (hành vi FE, BE không ghi nhận nguồn)
+
+- Chỉ user không phải STAFF và chỉ khi **tạo mới** hoặc **sửa mẫu tin `DRAFT`**: form có lựa chọn "Tạo thủ công" / "Tạo từ thư viện". Chọn mẫu → FE gọi chi tiết mẫu thư viện, điền sẵn form; người dùng vẫn tự chọn OA, chỉnh nội dung rồi lưu bằng API template hiện có. BE không lưu `libraryItemId` và không có endpoint "sử dụng".
+- Menu "Thư viện mẫu tin" hiện cho ADMIN và user thường, ẩn với STAFF.
+
+### Câu hỏi mở (TPLLIB-01)
+
+- PO nói "có thể cho xóa luôn" khi xóa danh mục có mẫu tin: BE chọn **giữ mẫu tin, chuyển về chưa phân loại** (không mất dữ liệu). Nếu PO muốn xóa luôn cả mẫu tin trong danh mục thì đổi thành xóa cascade.
+- "Sửa mẫu tin `DRAFT`" ghi đè toàn bộ field bằng nội dung thư viện hay chỉ field có giá trị: FE quyết, mặc định ghi đè (xem file FE).

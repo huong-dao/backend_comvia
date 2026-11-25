@@ -7,7 +7,15 @@ Board chung, cập nhật liên tục. Phần đầu là ticket chẻ theo issue
 | TICKET-007 | ISSUE-006 | WalletLedgerService.adjust() — bút toán MANUAL_ADJUSTMENT trung tính counter | — | — | Todo |
 | TICKET-008 | ISSUE-006 | Endpoint admin điều chỉnh số dư ví thủ công | TICKET-007 | Không | Todo |
 | SUB-01 | PO request 2026-11-23 | Quản lý Subscription (gói, mua QR Pay2S, chặn gửi tin khi hết hạn, email nhắc) | — | — | Đã deploy lên server (dev xác nhận 2026-11-23; code ở commit `35452c2` trên `dev2`, kèm migration `20261123100000_subscriptions`). FE đã tích hợp (FE commit `ba5a7f3` nhánh `dev`, chưa smoke với server thật). Không chạy smoke test mua gói thật (quyết định dev 2026-11-23), thay bằng theo dõi, xem `docs/handoff/sub-01-monitoring-runbook.md`. Còn lại: cấp gói cho workspace cũ, deploy đợt `PAY2S_UNAVAILABLE`, chốt các điểm FE nêu |
+| TPLLIB-01 | PO request 2026-11-25 | Thư viện mẫu tin (Admin CRUD mẫu + danh mục; user xem/lọc/dùng để điền sẵn; ẩn với STAFF) | — | — | Code + docs + FE handoff xong trên `dev2`; migration `20261125100000_template_library` chưa deploy |
 | PUBLIC-TPL-01 | PO request 2026-11-25 | Public API đọc template bằng API key (list + detail, BR-PUBLICAPI-02) | — | — | Code + docs xong trên `dev2`; chưa deploy |
+
+### TPLLIB-01 — handoff (BE, 2026-11-25)
+
+- **Phạm vi:** module `src/template-library/` (2 bảng mới `TemplateLibraryCategory`, `TemplateLibraryItem`; user route `/template-library/*` cho USER+ADMIN, admin route `/admin/template-library/*`; audit log). Rule BR-TPLLIB-01…05, FE: `docs/frontend/fe-template-library-2026-11-25.md`.
+- **Quyết định BE cần PO xác nhận:** xóa danh mục giữ mẫu tin (về chưa phân loại) thay vì xóa cascade; không có cờ ẩn/hiện; không ghi nhận nguồn khi user dùng mẫu.
+- **Checks:** `npx jest src/template-library` 14/14 PASS; `tsc` chỉ còn 2 lỗi cũ ở `templates.service.spec.ts`; eslint file production sạch (spec có lỗi `no-unsafe-*` kiểu mock như debt hiện có). Chưa chạy `test:e2e`, chưa chạy migration trên DB thật, chưa smoke.
+- **Owner:** BE → DevOps. **Next:** deploy `dev2` + `prisma migrate deploy`, rồi FE làm theo file handoff.
 
 ### PUBLIC-TPL-01 — handoff (BE, 2026-11-25)
 

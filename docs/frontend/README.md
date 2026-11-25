@@ -14,6 +14,8 @@
 
 8. [FE — Log tin gửi thất bại — 2026-11-23](./fe-failed-message-log-2026-11-23.md): mọi tin lỗi có log kèm lý do (`errorCode` dạng `<CODE>: <chi tiết>`) và `sentAt`; thay đổi ở danh sách log, gửi đơn, campaign, dashboard, Public API và checklist nghiệm thu.
 
+9. [FE — Thư viện mẫu tin (TPLLIB-01) — 2026-11-25](./fe-template-library-2026-11-25.md): **một file đủ để làm** menu Thư viện mẫu tin (Admin quản lý / User xem + Sử dụng), select "Tạo thủ công / Tạo từ thư viện" ở popup tạo/sửa mẫu tin DRAFT, API, quyền (ẩn với STAFF), checklist nghiệm thu.
+
 ## Quy tắc nhận yêu cầu
 
 - Chỉ triển khai thay đổi API sau khi BE phát hành handoff có task ID, role, request/response, validation và acceptance criteria.

@@ -59,7 +59,7 @@ flowchart LR
 ## 7. Phạm vi
 
 ### Trong phạm vi nghiệp vụ (mức triển khai không đồng đều)
-14 nhóm: Authentication & Account, User Profile & Security, Workspace Management, Workspace Members & Permissions, Workspace Context & Session, Wallet Credit & Transactions, Topup Payment, Order/Invoice, Zalo OA Connection, ZNS/ZBS Template Management, Messaging (Test/Single/Campaign), API Key & Public API, Admin Backoffice, Notification/Audit Log/Background Jobs. Đây là phạm vi yêu cầu, không phải tuyên bố tất cả đã nghiệm thu. Chi tiết yêu cầu ở `business-rules.md`; phần còn lại và kiểm chứng ở `planning/project-closeout-plan.md`.
+14 nhóm: Authentication & Account, User Profile & Security, Workspace Management, Workspace Members & Permissions, Workspace Context & Session, Wallet Credit & Transactions, Topup Payment, Order/Invoice, Zalo OA Connection, ZNS/ZBS Template Management, Messaging (Test/Single/Campaign), API Key & Public API, Admin Backoffice, Notification/Audit Log/Background Jobs. Đây là phạm vi yêu cầu, không phải tuyên bố tất cả đã nghiệm thu. Bổ sung (2026-11-25): **Thư viện mẫu tin** — Admin quản lý kho mẫu tham khảo theo danh mục, user thường chọn mẫu để điền sẵn khi tạo/sửa mẫu tin (BR-TPLLIB-01 → 05, Module 16). Chi tiết yêu cầu ở `business-rules.md`; phần còn lại và kiểm chứng ở `planning/project-closeout-plan.md`.
 
 ### Ngoài phạm vi (tại thời điểm này)
 - Nhiều Zalo OA trên một workspace (hiện giới hạn 1 workspace = 1 OA).
