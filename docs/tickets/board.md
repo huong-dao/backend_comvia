@@ -7,6 +7,13 @@ Board chung, cập nhật liên tục. Phần đầu là ticket chẻ theo issue
 | TICKET-007 | ISSUE-006 | WalletLedgerService.adjust() — bút toán MANUAL_ADJUSTMENT trung tính counter | — | — | Todo |
 | TICKET-008 | ISSUE-006 | Endpoint admin điều chỉnh số dư ví thủ công | TICKET-007 | Không | Todo |
 | SUB-01 | PO request 2026-11-23 | Quản lý Subscription (gói, mua QR Pay2S, chặn gửi tin khi hết hạn, email nhắc) | — | — | Đã deploy lên server (dev xác nhận 2026-11-23; code ở commit `35452c2` trên `dev2`, kèm migration `20261123100000_subscriptions`). FE đã tích hợp (FE commit `ba5a7f3` nhánh `dev`, chưa smoke với server thật). Không chạy smoke test mua gói thật (quyết định dev 2026-11-23), thay bằng theo dõi, xem `docs/handoff/sub-01-monitoring-runbook.md`. Còn lại: cấp gói cho workspace cũ, deploy đợt `PAY2S_UNAVAILABLE`, chốt các điểm FE nêu |
+| PUBLIC-TPL-01 | PO request 2026-11-25 | Public API đọc template bằng API key (list + detail, BR-PUBLICAPI-02) | — | — | Code + docs xong trên `dev2`; chưa deploy |
+
+### PUBLIC-TPL-01 — handoff (BE, 2026-11-25)
+
+- **Phạm vi:** `GET /public/templates` và `GET /public/templates/:templateId` đã tồn tại từ trước; ticket này ghi thành rule BR-PUBLICAPI-02, thêm `title` vào list, và chi tiết trả thêm nội dung phụ, `otpExpiryMinutes`, `placeholder_labels`, `placeholderOrder`, `providerTemplateId`, `ctaButtons`. Chỉ thêm field, không đổi field cũ hay status code.
+- **Checks:** `npx jest src/public-api` 8/8 PASS; eslint `public-api.service.ts` sạch. `tsc` còn 2 lỗi cũ ở `templates.service.spec.ts` (không thuộc thay đổi này). Chưa chạy `test:e2e`, chưa deploy/smoke với API key thật.
+- **Owner:** BE. **Next:** deploy `dev2` rồi smoke 2 endpoint bằng `x-api-key` thật.
 
 ### SUB-01 — handoff (BE, 2026-11-23)
 

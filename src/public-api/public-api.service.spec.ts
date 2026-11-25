@@ -190,6 +190,85 @@ describe('PublicApiService workspace status', () => {
   });
 });
 
+describe('PublicApiService template read APIs', () => {
+  const activeWorkspace = {
+    workspace: {
+      findUnique: jest.fn().mockResolvedValue({ status: 'ACTIVE' }),
+    },
+  };
+
+  it('lists only APPROVED templates of the key workspace', async () => {
+    const prisma = {
+      ...activeWorkspace,
+      template: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new PublicApiService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.listApprovedTemplates({ workspaceId: 'workspace-1' });
+
+    expect(prisma.template.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { workspaceId: 'workspace-1', status: 'APPROVED' },
+      }),
+    );
+  });
+
+  it('scopes detail lookup by id or code, workspace and APPROVED', async () => {
+    const prisma = {
+      ...activeWorkspace,
+      template: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'template-1' }),
+      },
+    };
+    const service = new PublicApiService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.getApprovedTemplate(
+      { workspaceId: 'workspace-1' },
+      '123456',
+    );
+
+    expect(prisma.template.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [{ id: '123456' }, { code: '123456' }],
+          workspaceId: 'workspace-1',
+          status: 'APPROVED',
+        },
+      }),
+    );
+  });
+
+  it('rejects detail of a missing or non-approved template', async () => {
+    const prisma = {
+      ...activeWorkspace,
+      template: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new PublicApiService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.getApprovedTemplate({ workspaceId: 'workspace-1' }, 'nope'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
 describe('PublicApiService.sendSingle subscription gate', () => {
   it('rejects before touching the wallet when the subscription is not valid', async () => {
     const prisma = {

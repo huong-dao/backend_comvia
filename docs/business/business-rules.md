@@ -424,6 +424,14 @@ approved --> disabled
 - API gửi tin: input `api_key`, `template_id`, `phone_number`, data mapping → backend xác định workspace từ api_key, check template thuộc workspace + approved, check OA connected, check ví đủ tiền → gọi Zalo API → ghi log → trừ credit.
 - Cần có thêm: rate limit, IP restriction nếu cần, error code chuẩn, API docs.
 
+### BR-PUBLICAPI-02: Public API đọc template (list + detail)
+
+- Hệ thống bên ngoài dùng API key (header `x-api-key`, hoặc `?api_key=`) để tra cứu mẫu tin trước khi gửi: `GET /public/templates` (danh sách) và `GET /public/templates/:templateId` (chi tiết, `:templateId` nhận id hoặc code 6 số).
+- Phạm vi dữ liệu: chỉ template của workspace gắn với API key và có trạng thái `APPROVED`; template `DRAFT`/`SUBMITTED`/`REJECTED`/… và template workspace khác coi như không tồn tại. Workspace không `ACTIVE` bị từ chối như các endpoint `/public/*` khác (BR-WS-05).
+- Danh sách trả: `id`, `code`, `name`, `title`, `type`, `status`, `placeholdersJson`. Chi tiết trả thêm: `content` và nội dung phụ (`secondaryContent`, `content2`, `secondaryContent2`), `otpExpiryMinutes`, `placeholder_labels`, `placeholderOrder`, `oaConnectionId`, `providerTemplateId`, `ctaButtons` (`type`, `label`, `target`, `position`).
+- Không trả giá (đơn giá template/CTA), `trackingId`, lý do từ chối/revision hay dữ liệu nội bộ khác. Chỉ đọc: không ghi log tin nhắn, không trừ ví, không yêu cầu subscription (khác API gửi tin, BR-SUB-04).
+- Template không tồn tại / không `APPROVED` → `400` (giữ hành vi hiện có để không phá client).
+
 ## Module 13 — Admin Backoffice
 
 ### BR-ADMIN-01: System Admin

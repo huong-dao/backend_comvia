@@ -1707,16 +1707,20 @@ Response:
     "id": "TEMPLATE_ID",
     "name": "Template Demo",
     "code": "482391",
+    "title": "Tiêu đề hiển thị",
+    "type": "TEXT",
     "placeholdersJson": {},
     "status": "APPROVED"
   }
 ]
 ```
 
+Chỉ trả template `APPROVED` của workspace gắn với API key, mới nhất trước (không phân trang). Không trả giá hay dữ liệu nội bộ (BR-PUBLICAPI-02).
+
 ### 12.3 Get template detail
 - `GET /public/templates/:templateId`
 
-`:templateId` nhận **id** hoặc **code** (6 chữ số) của template, ví dụ `/public/templates/123456`. Chỉ trả template `APPROVED` của workspace gắn với API key; không tìm thấy trả `400`. Response có thêm `content` và `oaConnectionId` so với danh sách.
+`:templateId` nhận **id** hoặc **code** (6 chữ số) của template, ví dụ `/public/templates/123456`. Chỉ trả template `APPROVED` của workspace gắn với API key; không tìm thấy trả `400`. Response có thêm so với danh sách (từ 2026-11-25): `content`, `secondaryContent`, `content2`, `secondaryContent2`, `otpExpiryMinutes` (template OTP), `placeholder_labels`, `placeholderOrder`, `oaConnectionId`, `providerTemplateId`, `ctaButtons` (`[{ type, label, target, position }]`, sắp theo `position`). Không trả đơn giá. Endpoint chỉ đọc: không trừ ví, không cần subscription.
 
 ### 12.4 Send public message
 - `POST /public/messages/send`
